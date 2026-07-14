@@ -4,23 +4,35 @@ Private repository containing the API Server, Replay Engine, and infrastructure-
 
 ## Architecture
 
-- **API Server**: FastAPI service for ingesting and replaying forensic snapshots
-- **Replay Engine**: Asynchronous worker for processing and analyzing captured events
-- **Infrastructure**: Terraform/CDK definitions for AWS ECR, ECS, RDS, S3, KMS, and Secrets Manager
+- **API Server**: FastAPI service for ingesting forensic snapshots, managing incidents, and issuing evidence certificates.
+- **Replay Engine**: Asynchronous worker scaffold for replaying captured events and generating derived analysis.
+- **Infrastructure**: Terraform stubs for AWS ECR, ECS, RDS, S3 evidence storage, and Secrets Manager.
 
 ## Repository Structure
 
-- `src/notary_platform/` — Platform application code
-  - `api_server/` — FastAPI application and API routes
-  - `replay_engine/` — Event replay and processing worker
-- `infra/` — Infrastructure-as-code (Terraform or CDK)
-- `docker/` — Dockerfiles for API Server and Replay Engine
-- `tests/` — Test suite
-- `.github/workflows/` — CI/CD pipelines
+- `src/notary_platform/` — Platform application code.
+  - `api_server/` — FastAPI application and API routes.
+  - `replay_engine/` — Event replay and processing worker.
+- `infra/` — Infrastructure-as-code documentation and Terraform stubs.
+- `docker/` — Dockerfiles for API Server and Replay Engine images.
+- `tests/` — Test suite.
+- `.github/workflows/` — CI pipeline.
 
 ## Development
 
-See [SETUP.md](./SETUP.md) for setup instructions.
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+mypy src
+pytest -q
+```
+
+## Docker
+
+```bash
+docker build -f docker/api_server.Dockerfile -t notary-api .
+docker build -f docker/replay_engine.Dockerfile -t notary-replay .
+```
 
 ## License
 
