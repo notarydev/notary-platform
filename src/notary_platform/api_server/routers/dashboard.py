@@ -78,15 +78,11 @@ def _incident_row(inc: object) -> str:
         )
     elif status == "replayed":
         actions = (
-            f"<form method='post' action='/v1/incidents/{inc_id}/mutation' "
-            f"enctype='application/json' style='display:inline'>"
-            f"<input type='hidden' name='fix_config' value='{{\"threshold\":620}}'>"
-            f"<button type='submit'>Apply Fix</button></form>"
+            f"<button onclick=\"applyFix('{inc_id}')\">Apply Fix</button>"
         )
     elif status == "mitigated":
         actions = (
-            f"<form method='post' action='/v1/certificates/{inc_id}' style='display:inline'>"
-            f"<button type='submit'>Issue Certificate</button></form>"
+            f"<button onclick=\"issueCert('{inc_id}')\">Issue Certificate</button>"
         )
     elif status == "certified":
         actions = (
@@ -128,7 +124,20 @@ def dashboard() -> str:
     incidents = storage.list_incidents()
     rows = "".join(_incident_row(i) for i in incidents)
     return (
-        "<html><head><title>Notary Dashboard</title></head><body>"
+        "<html><head><title>Notary Dashboard</title>"
+        "<script>"
+        "function applyFix(id){"
+        "fetch('/v1/incidents/'+id+'/mutation',{"
+        "method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({fix_config:{threshold:620}})"
+        "}).then(()=>location.reload());"
+        "}"
+        "function issueCert(id){"
+        "fetch('/v1/certificates/'+id,{method:'POST'})"
+        ".then(()=>location.reload());"
+        "}"
+        "</script>"
+        "</head><body>"
         "<h1>Incident Dashboard</h1>"
         "<form method='post' action='/v1/demo/lending-seed' style='margin-bottom:16px'>"
         "<button type='submit'>Seed Lending Demo</button>"
