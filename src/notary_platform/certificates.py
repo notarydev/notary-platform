@@ -29,6 +29,7 @@ def generate_certificate(
         "replay_method": replay_method,
         "verified_outcome": verified_outcome,
         "timestamp": timestamp,
+        "signature_note": "dev signing only",
     }
     cert["signature"] = _sign(cert)
     return cert
