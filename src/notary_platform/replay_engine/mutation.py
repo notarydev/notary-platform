@@ -12,6 +12,7 @@ def run_mutation(
     agent_fn: Callable[..., Any],
     fix_config: dict[str, Any],
     agent_kwargs: Optional[dict[str, Any]] = None,
+    expected_correct_behavior: str = "APPROVE",
 ) -> dict[str, Any]:
     """Replay with the mutated config and return both decisions.
 
@@ -27,11 +28,13 @@ def run_mutation(
     original_decision = original_result.get("decision")
     mutated_decision = mutated_result.get("decision")
 
-    mitigated = original_decision != mutated_decision
+    mitigated = mutated_decision == expected_correct_behavior
 
     return {
         "original_decision": original_decision,
         "mutated_decision": mutated_decision,
         "mitigated": mitigated,
         "replay_status": mutated_result.get("replay_status", "unknown"),
+        "fix_config": fix_config,
+        "expected_correct_behavior": expected_correct_behavior,
     }

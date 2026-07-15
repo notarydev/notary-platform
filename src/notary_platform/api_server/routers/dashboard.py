@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-from notary_platform.api_server.routers.incidents import storage
+from notary_platform.api_server.routers.incidents import set_demo_agent, storage
 from notary_platform.replay_engine.cassette import ResponseCassette
 from notary_platform.snapshot import (
     CapturedElement,
@@ -73,8 +73,7 @@ def _incident_row(inc: object) -> str:
     actions = ""
     if status == "ingested":
         actions = (
-            f"<form method='post' action='/v1/incidents/{inc_id}/replay' style='display:inline'>"
-            f"<button type='submit'>Replay</button></form>"
+            f"<button onclick=\"replay('{inc_id}')\">Replay</button>"
         )
     elif status == "replayed":
         actions = (
@@ -126,6 +125,10 @@ def dashboard() -> str:
     return (
         "<html><head><title>Notary Dashboard</title>"
         "<script>"
+        "function replay(id){"
+        "fetch('/v1/incidents/'+id+'/replay',{method:'POST'})"
+        ".then(()=>location.reload());"
+        "}"
         "function applyFix(id){"
         "fetch('/v1/incidents/'+id+'/mutation',{"
         "method:'POST',headers:{'Content-Type':'application/json'},"
@@ -153,6 +156,7 @@ def dashboard() -> str:
 
 @router.post("/v1/demo/lending-seed", response_class=HTMLResponse)
 def seed_lending_demo() -> HTMLResponse:
+    set_demo_agent(_lending_agent)
     snap = _make_demo_snapshot()
     storage.create_incident(snap)
     from fastapi.responses import RedirectResponse

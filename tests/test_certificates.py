@@ -116,13 +116,28 @@ class TestMutationEndpoint:
 
         resp = client.post(
             f"/v1/incidents/{inc_id}/mutation",
-            json={"fix_config": {"threshold": 620}},
+            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["original_decision"] == "DENY"
         assert data["mutated_decision"] == "APPROVE"
         assert data["mitigated"] is True
+
+    def test_mutation_deny_to_deny_not_mitigated(self) -> None:
+        snap = _make_snapshot_dict(score=650)
+        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
+        inc_id = ingested["incident_id"]
+
+        resp = client.post(
+            f"/v1/incidents/{inc_id}/mutation",
+            json={"fix_config": {"threshold": 900}, "expected_correct_behavior": "APPROVE"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["original_decision"] == "DENY"
+        assert data["mutated_decision"] == "DENY"
+        assert data["mitigated"] is False
 
     def test_mutation_404(self) -> None:
         resp = client.post(
@@ -168,6 +183,7 @@ class TestCertificateEndpoint:
         assert cert["replay_method"] == "sealed cassette replay"
         assert cert["original_decision"] == "DENY"
         assert cert["mutated_decision"] == "APPROVE"
+        assert cert["fix_config"] == {"threshold": 620}
 
     def test_certificate_only_when_mitigated(self) -> None:
         snap = _make_snapshot_dict(score=650)

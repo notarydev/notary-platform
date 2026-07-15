@@ -17,6 +17,7 @@ router = APIRouter(tags=["certificates"])
 
 class MutationRequest(BaseModel):
     fix_config: dict[str, Any]
+    expected_correct_behavior: str = "APPROVE"
 
 
 @router.post("/incidents/{incident_id}/mutation")
@@ -33,7 +34,12 @@ def apply_mutation(incident_id: str, body: MutationRequest) -> dict[str, Any]:
     if agent_fn is None:
         raise HTTPException(status_code=400, detail="no agent function registered")
 
-    result = run_mutation(snapshot_dict, agent_fn, body.fix_config)
+    result = run_mutation(
+        snapshot_dict,
+        agent_fn,
+        body.fix_config,
+        expected_correct_behavior=body.expected_correct_behavior,
+    )
 
     inc.mutation_result = result
     if result.get("mitigated"):
@@ -60,7 +66,7 @@ def issue_certificate(incident_id: str) -> dict[str, Any]:
         incident_id=incident_id,
         original_decision=mutation.get("original_decision"),
         mutated_decision=mutation.get("mutated_decision"),
-        fix_config={},
+        fix_config=mutation.get("fix_config", {}),
         timestamp=inc.snapshot_summary.get("timestamp", ""),
     )
 

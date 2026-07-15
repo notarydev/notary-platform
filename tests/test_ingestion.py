@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 
 from fastapi.testclient import TestClient
-from notary_platform.api_server.main import app
 
+from notary_platform.api_server.main import app
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.snapshot import (
     CapturedElement,
@@ -81,6 +81,7 @@ class TestIngestion:
     def test_ingest_tampered_snapshot_with_key(self) -> None:
         import base64
 
+        _clear_storage()
         snap_dict = _make_snapshot_dict()
         snap_dict["elements"][0]["payload"]["prompt"] = "tampered"
         key_b64 = base64.b64encode(SECRET).decode()
@@ -88,8 +89,11 @@ class TestIngestion:
             "/v1/ingestion/snapshots",
             json={"snapshot": snap_dict, "secret_key_b64": key_b64},
         )
-        assert resp.status_code == 200
-        assert resp.json()["integrity"] == "not_verified_tampered"
+        assert resp.status_code == 400
+        assert "integrity" not in resp.json() or resp.json()["integrity"] != "verified"
+
+        # Verify empty incidents list
+        assert len(client.get("/v1/incidents").json()) == 0
 
     def test_ingest_missing_fields(self) -> None:
         resp = client.post("/v1/ingestion/snapshots", json={"snapshot": {"schema_version": 1}})

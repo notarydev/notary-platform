@@ -28,16 +28,16 @@ def ingest_snapshot(body: SnapshotIngestRequest) -> dict[str, Any]:
     snapshot = ForensicSnapshot.from_dict(snapshot_dict)
 
     integrity_status = "verified"
-    if body.secret_key_b64:
+    if body.secret_key_b64 is not None:
         import base64
 
         try:
             key = base64.b64decode(body.secret_key_b64)
         except Exception:
-            integrity_status = "not_verified_invalid_key"
-        else:
-            if not verify_snapshot(snapshot, key):
-                integrity_status = "not_verified_tampered"
+            raise HTTPException(status_code=400, detail="secret_key_b64 cannot decode")
+
+        if not verify_snapshot(snapshot, key):
+            raise HTTPException(status_code=400, detail="snapshot integrity validation failed")
     else:
         integrity_status = "not_verified_missing_key"
 
