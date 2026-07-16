@@ -39,6 +39,13 @@ class TestDashboard:
         assert "Customer-service failed handoff" in resp.text
         assert "Scenario Intelligence" in resp.text
         assert "Claim Scope" in resp.text
+        assert "fully replayable from sealed cassette" in resp.text
+        assert "customer-approved expected outcome" in resp.text
+        assert "Replayability Status" in resp.text
+        assert "Label Provenance" in resp.text
+        assert "Cassette" in resp.text
+        assert "Sandbox" in resp.text
+        assert "Production" in resp.text
 
     def test_dashboard_shows_control_center_language(self) -> None:
         _clear_storage()
@@ -75,7 +82,9 @@ class TestDashboard:
         resp = client.get("/dashboard")
         assert "Claim Scope" in resp.text
         assert "does not certify general AI safety" in resp.text
-        assert "prototype dev signing / demo data" in resp.text
+        assert "customer-approved expected outcome" in resp.text
+        assert "demo data / dev signing" in resp.text
+        assert "fully replayable from sealed cassette" in resp.text
 
     def test_dashboard_mitigated_proof_wording(self) -> None:
         client.post("/v1/demo/lending-seed?scenario_id=lending-denial")
@@ -106,13 +115,13 @@ class TestDashboard:
         assert "inc-" in resp.text
 
     def test_environment_toggle_changes_copy(self) -> None:
-        assert "Active: replay from sealed recorded responses." in client.get(
+        assert "Active default. Replay uses sealed recorded responses." in client.get(
             "/dashboard?mode=cassette"
         ).text
-        assert "no sandbox calls in this prototype" in client.get(
+        assert "No sandbox calls in this prototype." in client.get(
             "/dashboard?mode=sandbox"
         ).text
-        assert "never replays or tests fixes against production" in client.get(
+        assert "Capture source only. Notary never replays or tests fixes against production." in client.get(
             "/dashboard?mode=production"
         ).text
 

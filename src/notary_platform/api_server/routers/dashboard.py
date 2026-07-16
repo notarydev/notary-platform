@@ -105,16 +105,16 @@ def _mode_copy(mode: str) -> tuple[str, str]:
     if mode == "sandbox":
         return (
             "Sandbox escalation view",
-            "Sandbox: Escalation path where configured; no sandbox calls in this prototype.",
+            "Escalation path where configured. No sandbox calls in this prototype.",
         )
     if mode == "production":
         return (
             "Production capture view",
-            "Production: Capture source only; Notary never replays or tests fixes against production.",
+            "Capture source only. Notary never replays or tests fixes against production.",
         )
     return (
         "Cassette replay view",
-        "Active: replay from sealed recorded responses.",
+        "Active default. Replay uses sealed recorded responses.",
     )
 
 
@@ -243,18 +243,18 @@ def _proof_panel(inc: Incident | None, scenario_id: str, mode: str) -> str:
       <div class="proof-card">
         <h3>Replay Proof</h3>
         <p class="label">What replay proves</p>
-        <p>The original decision can be reproduced from sealed evidence, without calling production.</p>
+        <p>Failure reproduced from sealed cassette.</p>
         <div class="compare">
           <div><span>Original</span><strong>{_safe(scenario.original_decision)}</strong></div>
           <div><span>Replay</span><strong>{_safe(replay_decision)}</strong></div>
         </div>
-        <p class="result">{'Reproduced' if status in ('replayed', 'mitigated', 'certified') else 'Not run yet'}</p>
+        <p class="result">{'Reproduced from sealed cassette' if status in ('replayed', 'mitigated', 'certified') else 'Not run yet'}</p>
       </div>
 
       <div class="proof-card">
         <h3>Fix Verification</h3>
         <p class="label">What fix testing proves</p>
-        <p>The customer-supplied fix is tested against the same recorded conditions.</p>
+        <p>Expected outcome was customer-labeled.</p>
         <div class="compare">
           <div><span>Expected</span><strong>{_safe(scenario.expected_correct_behavior)}</strong></div>
           <div><span>Fixed output</span><strong>{_safe(mutated_decision)}</strong></div>
@@ -285,7 +285,7 @@ def _scenario_intelligence_panel(scenario: DemoScenario) -> str:
       <div class="detail-row"><span>Candidate cluster</span><strong>{_safe(scenario.candidate_cluster)}</strong></div>
       <div class="detail-row"><span>Pattern</span><strong>{_safe(scenario.pattern)}</strong></div>
       <div class="detail-row"><span>Policy gap</span><strong>{_safe(scenario.policy_gap)}</strong></div>
-      <div class="detail-row"><span>Regulatory / policy mapping</span><strong>{_safe(scenario.regulatory_mapping)}</strong></div>
+      <div class="detail-row"><span>Mapping</span><strong>{_safe(scenario.regulatory_mapping)}</strong></div>
       <div class="detail-row"><span>Human label</span><strong>{_safe(scenario.label_source)}</strong></div>
       <div class="detail-row"><span>Replayability</span><strong>{_safe(scenario.replayability)}</strong></div>
       <div class="detail-row"><span>Release gate</span><strong>{_safe(scenario.release_gate)}</strong></div>
@@ -299,15 +299,30 @@ def _claim_scope_panel(scenario: DemoScenario, inc: Incident | None) -> str:
     return f"""
     <section class="panel claim-scope">
       <div class="panel-title">Claim Scope</div>
-      <p class="panel-copy">Notary verifies that the fixed agent produced the customer-approved
-      expected outcome under the recorded scenario conditions. It does not certify general AI safety.</p>
+      <p class="panel-copy">Verifies the fixed agent produced the customer-approved expected outcome here. It does not certify general AI safety.</p>
       <div class="detail-row"><span>Scenario</span><strong>{_safe(scenario.title)}</strong></div>
       <div class="detail-row"><span>Evidence source</span><strong>sealed cassette</strong></div>
-      <div class="detail-row"><span>Candidate / fix config</span><code>{_safe(fix_config)}</code></div>
+      <div class="detail-row"><span>Agent / release version</span><strong>{_safe(scenario.model_version)}</strong></div>
+      <div class="detail-row"><span>Fix config</span><code>{_safe(fix_config)}</code></div>
       <div class="detail-row"><span>Expected outcome</span><strong>{_safe(scenario.expected_correct_behavior)}</strong></div>
       <div class="detail-row"><span>Label source</span><strong>{_safe(scenario.label_source)}</strong></div>
-      <div class="detail-row"><span>Verification scope</span><strong>recorded scenario conditions only</strong></div>
-      <div class="detail-row"><span>Known limitation</span><strong>prototype dev signing / demo data</strong></div>
+      <div class="detail-row"><span>Known limitation</span><strong>demo data / dev signing</strong></div>
+    </section>
+    """
+
+
+def _assurance_status(scenario: DemoScenario) -> str:
+    return f"""
+    <section class="assurance-strip">
+      <div class="assurance-item">
+        <span class="assurance-label">Replayability Status</span>
+        <strong class="assurance-value ok">{_safe(scenario.replayability)}</strong>
+      </div>
+      <div class="assurance-item">
+        <span class="assurance-label">Label Provenance</span>
+        <strong class="assurance-value">{_safe(scenario.label_source)}</strong>
+        <span class="assurance-sub">human label: {_safe(scenario.expected_correct_behavior)}</span>
+      </div>
     </section>
     """
 
@@ -416,6 +431,13 @@ code {{ color:#93c5fd; font-size:12px; }}
 .step-sub {{ color:var(--muted); font-size:12px; }}
 .proof-grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }}
 .intel-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }}
+.assurance-strip {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }}
+.assurance-item {{ background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px 18px; }}
+.assurance-label {{ display:block; color:var(--muted); text-transform:uppercase; font-size:12px; font-weight:900; letter-spacing:.14em; }}
+.assurance-value {{ display:block; margin-top:6px; font-size:18px; font-weight:900; color:var(--text); }}
+.assurance-value.ok {{ color:var(--green); }}
+.assurance-sub {{ display:block; margin-top:4px; color:var(--muted); font-size:13px; }}
+@media(max-width: 980px) {{ .assurance-strip {{ grid-template-columns:1fr; }} }}
 .panel-copy {{ color:var(--muted); margin:0 0 14px; }}
 .intelligence .panel-title, .claim-scope .panel-title {{ color:var(--blue); }}
 @media(max-width: 980px) {{ .intel-grid {{ grid-template-columns:1fr; }} }}
@@ -525,6 +547,8 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
     </section>
 
     {_proof_panel(incident, scenario_id, mode)}
+
+    {_assurance_status(scenario)}
 
     <section class="intel-grid">
       {_scenario_intelligence_panel(scenario)}

@@ -132,7 +132,7 @@ SCENARIOS: dict[str, DemoScenario] = {
             "escalation-policy-v3 requires escalation after 2 human requests or negative"
             " sentiment"
         ),
-        regulatory_mapping="Support SLA; CX escalation policy v3",
+        regulatory_mapping="Support SLA / CX escalation policy",
         label_source="QA lead / demo label",
         replayability="fully replayable from sealed cassette",
         release_gate="added to support-agent release suite",
