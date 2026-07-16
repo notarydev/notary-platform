@@ -1,24 +1,13 @@
-"""Tests for the WO-6 minimal dashboard."""
+"""Tests for the Phase 1 Forensic Control Center dashboard."""
 
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
-from notary_platform.api_server.routers.incidents import set_demo_agent
 from notary_platform.api_server.routers.ingestion import storage
-from notary_platform.replay_engine.cassette import ResponseCassette
 
-SECRET = b"test-secret-key-32-bytes-long!!!"
 client = TestClient(app)
-
-
-def _lending_agent(cassette: ResponseCassette, threshold: int = 700) -> str:
-    result = cassette.lookup("POST", "https://api.example.com/credit-check")
-    if result is None:
-        return "UNKNOWN"
-    score = result.get("response", {}).get("score", 0)
-    return "APPROVE" if score >= threshold else "DENY"
 
 
 def _clear_storage() -> None:
@@ -42,27 +31,32 @@ class TestDashboard:
     def test_index(self) -> None:
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "Forensic Control Center" in resp.text
-
-    def test_dashboard_empty(self) -> None:
-        resp = client.get("/dashboard")
-        assert resp.status_code == 200
-        assert "Forensic Control Center" in resp.text
+        assert "FORENSIC CONTROL CENTER" in resp.text
 
     def test_dashboard_shows_control_center_language(self) -> None:
         _clear_storage()
         resp = client.get("/dashboard")
         assert resp.status_code == 200
-        assert "Forensic Control Center" in resp.text
+        assert "FORENSIC CONTROL CENTER" in resp.text
+        assert "Decision graph" in resp.text
+        assert "Cassette" in resp.text
+        assert "Sandbox" in resp.text
+        assert "Production" in resp.text
 
         client.post("/v1/demo/lending-seed")
         resp = client.get("/dashboard")
-        assert "Decision Path" in resp.text
-        assert "Replay Proof" in resp.text
-        assert "Fix Verification" in resp.text
-        assert "Signed Proof" in resp.text
-        assert "Credit API" in resp.text
-        assert "failure point" in resp.text
+        assert "Replay failure" in resp.text
+
+    def test_dashboard_empty(self) -> None:
+        resp = client.get("/dashboard")
+        assert resp.status_code == 200
+        assert "FORENSIC CONTROL CENTER" in resp.text
+
+    def test_dashboard_has_three_scenarios(self) -> None:
+        resp = client.get("/dashboard")
+        assert "Qualified borrower denied" in resp.text
+        assert "Necessary care auto-denied" in resp.text
+        assert "Qualified candidate rejected" in resp.text
 
     def test_seed_lending_demo(self) -> None:
         resp = client.post("/v1/demo/lending-seed", follow_redirects=False)
@@ -70,10 +64,36 @@ class TestDashboard:
         resp = client.get("/dashboard")
         assert "inc-" in resp.text
 
-    def test_full_e2e_flow(self) -> None:
-        set_demo_agent(_lending_agent)
+    def test_seed_each_scenario(self) -> None:
+        _clear_storage()
 
-        client.post("/v1/demo/lending-seed")
+        for scenario_id in [
+            "lending-denial",
+            "prior-auth-denial",
+            "hiring-screen-rejection",
+        ]:
+            resp = client.post(
+                f"/v1/demo/lending-seed?scenario_id={scenario_id}",
+                follow_redirects=False,
+            )
+            assert resp.status_code == 303
+
+        incidents = client.get("/v1/incidents").json()
+        assert len(incidents) == 3
+
+    def test_environment_toggle_changes_copy(self) -> None:
+        assert "Cassette mode is the active prototype path" in client.get(
+            "/dashboard?mode=cassette"
+        ).text
+        assert "Sandbox mode shows where a real provider" in client.get(
+            "/dashboard?mode=sandbox"
+        ).text
+        assert "Production mode shows where the original decision" in client.get(
+            "/dashboard?mode=production"
+        ).text
+
+    def test_full_e2e_flow_lending(self) -> None:
+        client.post("/v1/demo/lending-seed?scenario_id=lending-denial")
         incidents = client.get("/v1/incidents").json()
         assert len(incidents) == 1
         inc_id = incidents[0]["incident_id"]
@@ -84,7 +104,7 @@ class TestDashboard:
 
         resp = client.post(
             f"/v1/incidents/{inc_id}/mutation",
-            json={"fix_config": {"threshold": 620}},
+            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         assert resp.status_code == 200
         assert resp.json()["mitigated"] is True
