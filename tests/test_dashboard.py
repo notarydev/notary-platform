@@ -42,12 +42,27 @@ class TestDashboard:
     def test_index(self) -> None:
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "Notary Platform" in resp.text
+        assert "Forensic Control Center" in resp.text
 
     def test_dashboard_empty(self) -> None:
         resp = client.get("/dashboard")
         assert resp.status_code == 200
-        assert "Incident Dashboard" in resp.text
+        assert "Forensic Control Center" in resp.text
+
+    def test_dashboard_shows_control_center_language(self) -> None:
+        _clear_storage()
+        resp = client.get("/dashboard")
+        assert resp.status_code == 200
+        assert "Forensic Control Center" in resp.text
+
+        client.post("/v1/demo/lending-seed")
+        resp = client.get("/dashboard")
+        assert "Decision Path" in resp.text
+        assert "Replay Proof" in resp.text
+        assert "Fix Verification" in resp.text
+        assert "Signed Proof" in resp.text
+        assert "Credit API" in resp.text
+        assert "failure point" in resp.text
 
     def test_seed_lending_demo(self) -> None:
         resp = client.post("/v1/demo/lending-seed", follow_redirects=False)

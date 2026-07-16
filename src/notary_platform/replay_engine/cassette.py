@@ -41,17 +41,31 @@ class ResponseCassette:
             self._entries[sig] = {
                 "method": method,
                 "url": url,
+                "body": body,
                 "response": payload.get("response"),
                 "status": payload.get("status"),
             }
 
     def lookup(self, method: str, url: str, body: Optional[str] = None) -> Optional[dict[str, Any]]:
-        """Look up a recorded response by call signature."""
+        """Look up a recorded response by call signature.
+
+        Falls back to an exact-method+url+body match when a body-less lookup
+        does not resolve, so agents may call ``lookup(method, url)`` without
+        passing the recorded request body.
+        """
         sig = _call_signature(method, url, body)
         entry = self._entries.get(sig)
-        if entry is None:
-            return None
-        return {"response": entry["response"], "status": entry["status"]}
+        if entry is not None:
+            return {"response": entry["response"], "status": entry["status"]}
+        if body is None:
+            for entry in self._entries.values():
+                if (
+                    entry.get("method", "").upper() == method.upper()
+                    and entry.get("url") == url
+                    and entry.get("body") is not None
+                ):
+                    return {"response": entry["response"], "status": entry["status"]}
+        return None
 
     def has_entry(self, method: str, url: str, body: Optional[str] = None) -> bool:
         return self.lookup(method, url, body) is not None
