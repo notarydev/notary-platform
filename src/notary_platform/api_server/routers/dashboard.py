@@ -85,7 +85,9 @@ def _mode_copy(mode: str) -> tuple[str, str]:
     if mode == "sandbox":
         return (
             "Sandbox escalation view",
-            "Sandbox mode shows where a real provider/customer test system would be used if a fix introduced new external calls. In this prototype, sandbox adapters are intentionally not configured.",
+            "Sandbox mode shows where a real provider/customer test system would be used if a"
+            " fix introduced new external calls. In this prototype, sandbox adapters are"
+            " intentionally not configured.",
         )
     if mode == "production":
         return (
@@ -391,7 +393,12 @@ function verifySignature(id) {{
   fetch('/v1/certificates/' + id + '/verify')
     .then(r => r.json())
     .then(j => {{
-      panel.innerHTML = '<div>1. Certificate loaded ✓</div><div>2. Digest recomputed ✓</div><div>3. Signature check ' + (j.signature_valid ? '✓' : '✕') + '</div><strong>Result: ' + (j.signature_valid ? 'valid and unaltered' : 'invalid') + '</strong><details><summary>Technical JSON</summary><pre>' + JSON.stringify(j, null, 2) + '</pre></details>';
+      panel.innerHTML = '<div>1. Certificate loaded ✓</div>'
+        + '<div>2. Digest recomputed ✓</div>'
+        + '<div>3. Signature check ' + (j.signature_valid ? '✓' : '✕') + '</div>'
+        + '<strong>Result: ' + (j.signature_valid ? 'valid and unaltered' : 'invalid') + '</strong>'
+        + '<details><summary>Technical JSON</summary><pre>'
+        + JSON.stringify(j, null, 2) + '</pre></details>';
     }});
 }}
 </script>
@@ -460,7 +467,10 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
     {_proof_panel(incident, scenario_id, mode)}
 
     <section class="actions">
-      { _action_buttons(incident.incident_id, incident.to_dict()['status'], scenario_id) if incident else '<form method="post" action="/v1/demo/lending-seed?scenario_id=' + scenario_id + '"><button class="primary" type="submit">Seed this scenario</button></form><p class="hint">Create a sealed demo incident to begin the proof workflow.</p>' }
+      { _action_buttons(incident.incident_id, incident.to_dict()['status'], scenario_id) if incident
+        else '<form method="post" action="/v1/demo/lending-seed?scenario_id=' + scenario_id + '">'
+        + '<button class="primary" type="submit">Seed this scenario</button></form>'
+        + '<p class="hint">Create a sealed demo incident to begin the proof workflow.</p>' }
     </section>
 
     <section>
