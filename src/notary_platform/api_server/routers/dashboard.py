@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from notary_platform.api_server.routers.incidents import set_demo_agent, storage
-from notary_platform.demo_scenarios import SCENARIOS, build_snapshot, get_scenario
+from notary_platform.demo_scenarios import SCENARIOS, DemoScenario, build_snapshot, get_scenario
 from notary_platform.models import Incident
 from notary_platform.replay_engine.cassette import ResponseCassette
 
@@ -43,6 +43,26 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
                 return "ADVANCE_TO_REVIEW"
             return "REJECT"
 
+        if scenario.scenario_id == "customer-service-handoff":
+            recorded = dict(scenario.cassette_response)
+            try:
+                intent_lookup = cassette.lookup(
+                    "POST", "https://demo.notary.local/intent-classifier"
+                )
+                if intent_lookup is not None and isinstance(intent_lookup.get("response"), dict):
+                    recorded.update(intent_lookup["response"])
+            except Exception:
+                pass
+            human_request_count = int(recorded.get("human_request_count", 0))
+            negative_sentiment = str(recorded.get("sentiment", "")).lower() == "negative"
+            enforce = bool(
+                kwargs.get("escalate_after_repeated_human_request")
+                or mode == "fixed"
+            )
+            if enforce and (human_request_count >= 2 or negative_sentiment):
+                return "ESCALATE_TO_HUMAN"
+            return "CONTINUE_BOT"
+
         return scenario.original_decision
 
     return agent
@@ -63,8 +83,8 @@ def _workflow_steps(status: str) -> str:
     labels = {
         "ingested": "Evidence sealed",
         "replayed": "Failure reproduced",
-        "mitigated": "Fix verified",
-        "certified": "Proof issued",
+        "mitigated": "Verified for this scenario",
+        "certified": "Proof issued for tested scenario",
     }
 
     return "".join(
@@ -85,18 +105,16 @@ def _mode_copy(mode: str) -> tuple[str, str]:
     if mode == "sandbox":
         return (
             "Sandbox escalation view",
-            "Sandbox mode shows where a real provider/customer test system would be used if a"
-            " fix introduced new external calls. In this prototype, sandbox adapters are"
-            " intentionally not configured.",
+            "Sandbox: Escalation path where configured; no sandbox calls in this prototype.",
         )
     if mode == "production":
         return (
             "Production capture view",
-            "Production mode shows where the original decision was captured. Notary never replays or tests fixes against production systems.",
+            "Production: Capture source only; Notary never replays or tests fixes against production.",
         )
     return (
         "Cassette replay view",
-        "Cassette mode is the active prototype path: replay runs from sealed recorded responses, independent of the provider's current state.",
+        "Active: replay from sealed recorded responses.",
     )
 
 
@@ -241,7 +259,7 @@ def _proof_panel(inc: Incident | None, scenario_id: str, mode: str) -> str:
           <div><span>Expected</span><strong>{_safe(scenario.expected_correct_behavior)}</strong></div>
           <div><span>Fixed output</span><strong>{_safe(mutated_decision)}</strong></div>
         </div>
-        <p class="result">{'Fix verified' if status in ('mitigated', 'certified') else 'Not verified yet'}</p>
+        <p class="result">{'Verified for this scenario' if status in ('mitigated', 'certified') else 'Not verified yet'}</p>
       </div>
 
       <div class="proof-card">
@@ -253,6 +271,43 @@ def _proof_panel(inc: Incident | None, scenario_id: str, mode: str) -> str:
           <div><span>Signature</span><strong>{signature_state}</strong></div>
         </div>
       </div>
+    </section>
+    """
+
+
+def _scenario_intelligence_panel(scenario: DemoScenario) -> str:
+    return f"""
+    <section class="panel intelligence">
+      <div class="panel-title">Scenario Intelligence</div>
+      <p class="panel-copy">Notary does not wait for one manually noticed failure. It mines
+      historical overrides, escalations, denials, and complaints for candidate failure patterns.</p>
+      <div class="detail-row"><span>Source corpus</span><strong>{_safe(scenario.source_corpus)}</strong></div>
+      <div class="detail-row"><span>Candidate cluster</span><strong>{_safe(scenario.candidate_cluster)}</strong></div>
+      <div class="detail-row"><span>Pattern</span><strong>{_safe(scenario.pattern)}</strong></div>
+      <div class="detail-row"><span>Policy gap</span><strong>{_safe(scenario.policy_gap)}</strong></div>
+      <div class="detail-row"><span>Regulatory / policy mapping</span><strong>{_safe(scenario.regulatory_mapping)}</strong></div>
+      <div class="detail-row"><span>Human label</span><strong>{_safe(scenario.label_source)}</strong></div>
+      <div class="detail-row"><span>Replayability</span><strong>{_safe(scenario.replayability)}</strong></div>
+      <div class="detail-row"><span>Release gate</span><strong>{_safe(scenario.release_gate)}</strong></div>
+    </section>
+    """
+
+
+def _claim_scope_panel(scenario: DemoScenario, inc: Incident | None) -> str:
+    certificate = (inc.to_dict().get("certificate") or {}) if inc is not None else {}
+    fix_config = certificate.get("fix_config") or scenario.fix_config
+    return f"""
+    <section class="panel claim-scope">
+      <div class="panel-title">Claim Scope</div>
+      <p class="panel-copy">Notary verifies that the fixed agent produced the customer-approved
+      expected outcome under the recorded scenario conditions. It does not certify general AI safety.</p>
+      <div class="detail-row"><span>Scenario</span><strong>{_safe(scenario.title)}</strong></div>
+      <div class="detail-row"><span>Evidence source</span><strong>sealed cassette</strong></div>
+      <div class="detail-row"><span>Candidate / fix config</span><code>{_safe(fix_config)}</code></div>
+      <div class="detail-row"><span>Expected outcome</span><strong>{_safe(scenario.expected_correct_behavior)}</strong></div>
+      <div class="detail-row"><span>Label source</span><strong>{_safe(scenario.label_source)}</strong></div>
+      <div class="detail-row"><span>Verification scope</span><strong>recorded scenario conditions only</strong></div>
+      <div class="detail-row"><span>Known limitation</span><strong>prototype dev signing / demo data</strong></div>
     </section>
     """
 
@@ -360,6 +415,10 @@ code {{ color:#93c5fd; font-size:12px; }}
 .step-name {{ font-weight:900; }}
 .step-sub {{ color:var(--muted); font-size:12px; }}
 .proof-grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }}
+.intel-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }}
+.panel-copy {{ color:var(--muted); margin:0 0 14px; }}
+.intelligence .panel-title, .claim-scope .panel-title {{ color:var(--blue); }}
+@media(max-width: 980px) {{ .intel-grid {{ grid-template-columns:1fr; }} }}
 .proof-card h3 {{ margin:0 0 8px; }}
 .label {{ color:var(--blue); text-transform:uppercase; font-size:11px; font-weight:900; }}
 .compare {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }}
@@ -378,7 +437,8 @@ function applyFix(id, scenario) {{
   let fixes = {{
     'lending-denial': {{fix_config:{{threshold:620}}, expected_correct_behavior:'APPROVE'}},
     'prior-auth-denial': {{fix_config:{{require_human_review_for_high_risk_note:true}}, expected_correct_behavior:'ESCALATE_TO_HUMAN_REVIEW'}},
-    'hiring-screen-rejection': {{fix_config:{{remove_age_proxy:true, route_borderline_to_human_review:true}}, expected_correct_behavior:'ADVANCE_TO_REVIEW'}}
+    'hiring-screen-rejection': {{fix_config:{{remove_age_proxy:true, route_borderline_to_human_review:true}}, expected_correct_behavior:'ADVANCE_TO_REVIEW'}},
+    'customer-service-handoff': {{fix_config:{{escalate_after_repeated_human_request:true}}, expected_correct_behavior:'ESCALATE_TO_HUMAN'}}
   }};
   fetch('/v1/incidents/' + id + '/mutation', {{
     method:'POST',
@@ -466,6 +526,11 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
 
     {_proof_panel(incident, scenario_id, mode)}
 
+    <section class="intel-grid">
+      {_scenario_intelligence_panel(scenario)}
+      {_claim_scope_panel(scenario, incident)}
+    </section>
+
     <section class="actions">
       { _action_buttons(incident.incident_id, incident.to_dict()['status'], scenario_id) if incident
         else '<form method="post" action="/v1/demo/lending-seed?scenario_id=' + scenario_id + '">'
@@ -483,12 +548,12 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    return HTMLResponse(_render_dashboard("lending-denial", "cassette"))
+    return HTMLResponse(_render_dashboard("customer-service-handoff", "cassette"))
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(
-    scenario_id: str = Query("lending-denial"),
+    scenario_id: str = Query("customer-service-handoff"),
     mode: str = Query("cassette"),
 ) -> HTMLResponse:
     if mode not in {"cassette", "sandbox", "production"}:
