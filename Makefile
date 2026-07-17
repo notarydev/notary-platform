@@ -49,4 +49,4 @@ demo:
 	@./scripts/demo.sh "$(SCENARIO_ID)"
 
 topology:
-	$(VENV)/bin/python -m scripts.gen_topology
+	@if [ -x $(PY) ]; then $(PY) -m scripts.gen_topology; else $(PYTHON) -m scripts.gen_topology; fi
