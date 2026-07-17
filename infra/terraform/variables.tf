@@ -1,6 +1,6 @@
 # Variables for the Notary Platform Terraform configuration (single AWS account).
 
-# Region to deploy into.
+# Region to deploy into. The Phase 1 dev/test account is provisioned in us-east-2.
 variable "aws_region" {
   description = "AWS region to deploy into"
   type        = string

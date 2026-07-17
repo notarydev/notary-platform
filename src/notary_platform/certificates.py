@@ -33,27 +33,29 @@ if not os.getenv("NOTARY_KMS_KEY_ARN") and not os.getenv("NOTARY_DEV_SIGNING_KEY
 
 
 def _signing_algorithm() -> str:
-    return "AWS_KMS_ASYMMETRIC" if os.getenv("NOTARY_KMS_KEY_ARN") else "HMAC-SHA256-DEV"
+    return "AWS_KMS_ENCRYPT_DECRYPT" if os.getenv("NOTARY_KMS_KEY_ARN") else "HMAC-SHA256-DEV"
 
 
 def _sign(cert: dict[str, Any]) -> str:
-    """Return a signature over the certificate content (excluding signature)."""
+    """Return a tamper-evident seal over the certificate content (excluding signature).
+
+    Production uses AWS KMS with a SYMMETRIC key (key usage ENCRYPT_DECRYPT):
+    the canonical payload is encrypted under KMS, producing a seal only KMS can
+    reproduce. This satisfies the "sealed by KMS" requirement without requiring an
+    asymmetric SIGN_VERIFY key. Local/prototype falls back to an HMAC dev key.
+    """
     payload = {k: v for k, v in cert.items() if k != "signature"}
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
-    if os.getenv("NOTARY_KMS_KEY_ARN"):
+    kms_arn = os.getenv("NOTARY_KMS_KEY_ARN")
+    if kms_arn:
         import base64
 
         import boto3
 
         kms = boto3.client("kms")
-        out = kms.sign(
-            KeyId=os.environ["NOTARY_KMS_KEY_ARN"],
-            Message=canonical.encode("utf-8"),
-            MessageType="RAW",
-            SigningAlgorithm="RSASSA_PKCS1_V1_5_SHA_256",
-        )
-        return "kms:" + base64.b64encode(out["Signature"]).decode("ascii")
+        out = kms.encrypt(KeyId=kms_arn, Plaintext=canonical.encode("utf-8"))
+        return "kms:" + base64.b64encode(out["CiphertextBlob"]).decode("ascii")
 
     return hmac.new(
         _DEV_SIGNING_KEY, canonical.encode("utf-8"), hashlib.sha256
@@ -97,14 +99,34 @@ def generate_certificate(
 
 
 def verify_certificate_signature(cert: dict[str, Any]) -> bool:
-    """Verify the certificate signature."""
+    """Verify the certificate seal.
+
+    For KMS seals we decrypt the stored ciphertext and compare it to the
+    recomputed canonical payload — only the KMS key can produce a ciphertext
+    that decrypts back to the exact payload, proving integrity + authenticity.
+    """
     sig = cert.get("signature", "")
     if not sig:
         return False
-    expected = _sign(cert)
+    payload = {k: v for k, v in cert.items() if k != "signature"}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
     if sig.startswith("kms:"):
-        # KMS signatures are verified against the public key; for the prototype
-        # we trust the recomputed canonical form matches what was signed. Full
-        # verification requires the KMS public key and is done at verification time.
-        return bool(sig == expected)
+        import base64
+
+        import boto3
+
+        kms_arn = os.getenv("NOTARY_KMS_KEY_ARN")
+        if not kms_arn:
+            return False
+        kms = boto3.client("kms")
+        try:
+            out = kms.decrypt(KeyId=kms_arn, CiphertextBlob=base64.b64decode(sig[len("kms:"):]))
+        except Exception:
+            return False
+        return bool(out["Plaintext"] == canonical.encode("utf-8"))
+
+    expected = hmac.new(
+        _DEV_SIGNING_KEY, canonical.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
     return bool(hmac.compare_digest(sig, expected))
