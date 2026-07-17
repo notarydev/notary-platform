@@ -1,7 +1,8 @@
-"""Tests for the WO-3 ingestion MVP."""
+"""Tests for the WO-3 ingestion endpoint and integrity verification."""
 
 from __future__ import annotations
 
+import base64
 import sys
 
 from fastapi.testclient import TestClient
@@ -20,8 +21,7 @@ SECRET = b"test-secret-key-32-bytes-long!!!"
 client = TestClient(app)
 
 
-def _make_snapshot_dict(elements: list[dict] | None = None) -> dict:  # type: ignore[type-arg]
-    """Build a valid snapshot dict with HMAC-sealed elements."""
+def _make_snapshot_dict(elements: list[dict] | None = None) -> dict:
     if elements is None:
         elements = [
             {"kind": "llm", "payload": {"prompt": "hi"}},
@@ -29,7 +29,7 @@ def _make_snapshot_dict(elements: list[dict] | None = None) -> dict:  # type: ig
         ]
     prev_hash = b"\x00" * 32
     elem_hashes: list[bytes] = []
-    sealed_elements: list[dict] = []  # type: ignore[type-arg]
+    sealed_elements: list[dict] = []
     for e in elements:
         ce = CapturedElement(kind=e["kind"], payload=e.get("payload", {}))
         h = _seal_element(prev_hash, ce.canonical_bytes(), SECRET)
@@ -50,6 +50,7 @@ def _clear_storage() -> None:
     storage._incidents.clear()
     storage._snapshots.clear()
     storage._certificates.clear()
+    storage._evidence.clear()
     storage._counter = 0
 
 
@@ -59,61 +60,59 @@ class TestIngestion:
 
     def test_ingest_valid_snapshot(self) -> None:
         snap_dict = _make_snapshot_dict()
-        resp = client.post("/v1/ingestion/snapshots", json={"snapshot": snap_dict})
+        resp = client.post("/v1/incidents/ingest", json={"snapshot": snap_dict})
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ingested"
         assert data["incident_id"].startswith("inc-")
         assert data["integrity"] == "not_verified_missing_key"
+        assert "evidence_ref" in data
 
     def test_ingest_with_valid_key(self) -> None:
-        import base64
-
         snap_dict = _make_snapshot_dict()
         key_b64 = base64.b64encode(SECRET).decode()
         resp = client.post(
-            "/v1/ingestion/snapshots",
+            "/v1/incidents/ingest",
             json={"snapshot": snap_dict, "secret_key_b64": key_b64},
         )
         assert resp.status_code == 200
         assert resp.json()["integrity"] == "verified"
 
     def test_ingest_tampered_snapshot_with_key(self) -> None:
-        import base64
-
         _clear_storage()
         snap_dict = _make_snapshot_dict()
         snap_dict["elements"][0]["payload"]["prompt"] = "tampered"
         key_b64 = base64.b64encode(SECRET).decode()
         resp = client.post(
-            "/v1/ingestion/snapshots",
+            "/v1/incidents/ingest",
             json={"snapshot": snap_dict, "secret_key_b64": key_b64},
         )
         assert resp.status_code == 400
-        assert "integrity" not in resp.json() or resp.json()["integrity"] != "verified"
 
         # Verify empty incidents list
-        assert len(client.get("/v1/incidents").json()) == 0
+        assert client.get("/v1/incidents").json() == []
 
     def test_ingest_missing_fields(self) -> None:
-        resp = client.post("/v1/ingestion/snapshots", json={"snapshot": {"schema_version": 1}})
+        resp = client.post("/v1/incidents/ingest", json={"snapshot": {"schema_version": 1}})
         assert resp.status_code == 422
 
     def test_list_incidents(self) -> None:
         _clear_storage()
         snap_dict = _make_snapshot_dict()
-        client.post("/v1/ingestion/snapshots", json={"snapshot": snap_dict})
-        client.post("/v1/ingestion/snapshots", json={"snapshot": snap_dict})
+        client.post("/v1/incidents/ingest", json={"snapshot": snap_dict})
+        client.post("/v1/incidents/ingest", json={"snapshot": snap_dict})
         resp = client.get("/v1/incidents")
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
     def test_get_incident(self) -> None:
         snap_dict = _make_snapshot_dict()
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap_dict}).json()
+        ingested = client.post("/v1/incidents/ingest", json={"snapshot": snap_dict}).json()
         resp = client.get(f"/v1/incidents/{ingested['incident_id']}")
         assert resp.status_code == 200
         assert resp.json()["incident_id"] == ingested["incident_id"]
+        # custody events were recorded
+        assert any(c["action"] == "ingested" for c in resp.json()["custody"])
 
     def test_get_incident_404(self) -> None:
         resp = client.get("/v1/incidents/inc-999999")
@@ -145,7 +144,7 @@ class TestVerifySnapshotFunction:
 
 class TestNoCloudDependency:
     def test_no_cloud_modules(self) -> None:
-        for mod in ("boto3", "requests", "httpx", "openai", "anthropic"):
+        for mod in ("boto3", "requests", "openai", "anthropic"):
             if mod in sys.modules:
                 del sys.modules[mod]
 

@@ -174,7 +174,9 @@ class TestReplayAgent:
     def test_no_network_calls(self) -> None:
         import sys
 
-        for mod in ("requests", "httpx", "urllib3"):
+        # Replay must not pull in blocking HTTP client libraries. httpx is a
+        # test-harness dependency (FastAPI TestClient) so it is excluded here.
+        for mod in ("requests", "urllib3"):
             assert mod not in sys.modules
 
 
@@ -188,7 +190,7 @@ class TestReplayEndpoint:
         set_demo_agent(_lending_agent)
 
         snap = _make_snapshot_with_http({"score": 650}, "DENY")
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
+        ingested = client.post("/v1/incidents/ingest", json={"snapshot": snap}).json()
         incident_id = ingested["incident_id"]
 
         resp = client.post(f"/v1/incidents/{incident_id}/replay")
@@ -203,7 +205,7 @@ class TestReplayEndpoint:
         set_demo_agent(None)
 
         snap = _make_snapshot_with_http({"score": 650}, "DENY")
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
+        ingested = client.post("/v1/incidents/ingest", json={"snapshot": snap}).json()
         incident_id = ingested["incident_id"]
 
         resp = client.post(f"/v1/incidents/{incident_id}/replay")

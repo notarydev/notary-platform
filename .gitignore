@@ -22,3 +22,14 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Secrets / local env
+.env
+.env.*
+*.tfvars
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+.terraform.lock.hcl
+tfplan
+*.tfplan

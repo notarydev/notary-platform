@@ -1,24 +1,35 @@
-"""Ingestion router — accepts SDK snapshots and creates incidents."""
+"""Ingestion router — accepts SDK snapshots and creates incidents (WO-3).
 
+Spec endpoints:
+  POST /v1/incidents/ingest
+  GET  /v1/incidents
+  GET  /v1/incidents/{incident_id}
+"""
+
+from __future__ import annotations
+
+import base64
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from notary_platform.api_server.auth import require_auth
 from notary_platform.snapshot import ForensicSnapshot, verify_snapshot
-from notary_platform.storage import Storage
+from notary_platform.storage import get_storage
 
-router = APIRouter(tags=["ingestion"])
-storage = Storage()
+router = APIRouter(tags=["incidents"])
+storage = get_storage()
 
 
 class SnapshotIngestRequest(BaseModel):
     snapshot: dict[str, Any]
     secret_key_b64: Optional[str] = None
+    org_id: Optional[str] = None
 
 
-@router.post("/ingestion/snapshots")
-def ingest_snapshot(body: SnapshotIngestRequest) -> dict[str, Any]:
+@router.post("/incidents/ingest")
+def ingest_snapshot(body: SnapshotIngestRequest, org_id: str = Depends(require_auth)) -> dict[str, Any]:
     snapshot_dict = body.snapshot
 
     for field in ("schema_version", "timestamp", "elements", "merkle_chain", "root_hash"):
@@ -29,8 +40,6 @@ def ingest_snapshot(body: SnapshotIngestRequest) -> dict[str, Any]:
 
     integrity_status = "verified"
     if body.secret_key_b64 is not None:
-        import base64
-
         try:
             key = base64.b64decode(body.secret_key_b64)
         except Exception:
@@ -41,18 +50,54 @@ def ingest_snapshot(body: SnapshotIngestRequest) -> dict[str, Any]:
     else:
         integrity_status = "not_verified_missing_key"
 
-    incident = storage.create_incident(snapshot_dict)
+    acting_org = body.org_id or org_id
+    incident = storage.create_incident(snapshot_dict, org_id=acting_org)
+    incident._record_custody(
+        "ingested",
+        actor=acting_org,
+        detail=f"snapshot ingested; integrity={integrity_status}",
+    )
+    incident.snapshot_summary = {
+        **incident.snapshot_summary,
+        "integrity": integrity_status,
+    }
+    storage.update_incident(incident)
+
+    # Persist the raw snapshot as immutable evidence.
+    evidence_ref = storage.persist_evidence(incident.incident_id, "snapshot", snapshot_dict)
+    incident._record_custody("evidence_stored", actor="system", detail=evidence_ref)
+    storage.update_incident(incident)
 
     return {
         "incident_id": incident.incident_id,
+        "org_id": acting_org,
         "status": incident.status.value,
         "integrity": integrity_status,
+        "evidence_ref": evidence_ref,
     }
 
 
-@router.get("/ingestion/snapshots/{incident_id}")
-def get_snapshot(incident_id: str) -> dict[str, Any]:
+@router.get("/incidents")
+def list_incidents(org_id: str = Depends(require_auth)) -> list[dict[str, Any]]:
+    return [inc.to_dict() for inc in storage.list_incidents(org_id=org_id)]
+
+
+@router.get("/incidents/{incident_id}")
+def get_incident(incident_id: str, org_id: str = Depends(require_auth)) -> dict[str, Any]:
+    inc = storage.get_incident(incident_id)
+    if inc is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    if inc.org_id != org_id:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return inc.to_dict()
+
+
+@router.get("/incidents/{incident_id}/snapshot")
+def get_incident_snapshot(incident_id: str, org_id: str = Depends(require_auth)) -> dict[str, Any]:
     snap = storage.get_snapshot(incident_id)
     if snap is None:
-        raise HTTPException(status_code=404, detail="incident not found")
+        raise HTTPException(status_code=404, detail="snapshot not found")
+    inc = storage.get_incident(incident_id)
+    if inc is not None and inc.org_id != org_id:
+        raise HTTPException(status_code=404, detail="snapshot not found")
     return snap

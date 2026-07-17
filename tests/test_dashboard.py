@@ -91,13 +91,13 @@ class TestDashboard:
         inc_id = client.get("/v1/incidents").json()[0]["incident_id"]
         client.post(f"/v1/incidents/{inc_id}/replay")
         client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         resp = client.get("/dashboard?scenario_id=lending-denial")
         assert "Verified for this scenario" in resp.text
 
-        client.post(f"/v1/certificates/{inc_id}")
+        client.post(f"/v1/incidents/{inc_id}/certificates")
         resp = client.get("/dashboard?scenario_id=lending-denial")
         assert "Proof issued for tested scenario" in resp.text
 
@@ -154,17 +154,17 @@ class TestDashboard:
         assert resp.status_code == 200
 
         resp = client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         assert resp.status_code == 200
         assert resp.json()["mitigated"] is True
 
-        resp = client.post(f"/v1/certificates/{inc_id}")
+        resp = client.post(f"/v1/incidents/{inc_id}/certificates")
         assert resp.status_code == 200
         assert resp.json()["replay_method"] == "sealed cassette replay"
 
-        resp = client.get(f"/v1/certificates/{inc_id}/verify")
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/pom-cert-v1/verify")
         assert resp.json()["signature_valid"] is True
 
         resp = client.get(f"/v1/incidents/{inc_id}")
@@ -182,7 +182,7 @@ class TestDashboard:
         assert resp.json()["decision"] == "CONTINUE_BOT"
 
         resp = client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={
                 "fix_config": {"escalate_after_repeated_human_request": True},
                 "expected_correct_behavior": "ESCALATE_TO_HUMAN",
@@ -192,11 +192,11 @@ class TestDashboard:
         assert resp.json()["mitigated"] is True
         assert resp.json()["mutated_decision"] == "ESCALATE_TO_HUMAN"
 
-        resp = client.post(f"/v1/certificates/{inc_id}")
+        resp = client.post(f"/v1/incidents/{inc_id}/certificates")
         assert resp.status_code == 200
         assert resp.json()["replay_method"] == "sealed cassette replay"
 
-        resp = client.get(f"/v1/certificates/{inc_id}/verify")
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/pom-cert-v1/verify")
         assert resp.json()["signature_valid"] is True
 
         resp = client.get(f"/v1/incidents/{inc_id}")

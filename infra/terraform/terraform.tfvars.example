@@ -1,0 +1,26 @@
+# Example Terraform variables.
+# Copy to terraform.tfvars and fill in real values — NEVER commit terraform.tfvars.
+#
+# Required (no defaults): db_username, db_password
+# db_password MUST come from your environment or a secrets manager, not this file.
+
+aws_region        = "us-east-2"
+project_name      = "notary"
+environment       = "dev"
+
+db_username       = "notary_admin"
+db_password       = "CHANGE_ME_STRONG_PASSWORD"   # SENSITIVE — do not commit real value
+
+db_instance_class = "db.t3.micro"
+kms_key_alias     = "notary/signing"
+
+# Org sealing key material. Empty string is allowed; supply via env in CI.
+sealing_key_secret = ""
+
+# External LLM test API keys. Empty = placeholder secret only; supply via env in CI.
+openai_api_key    = ""
+anthropic_api_key = ""
+
+api_image         = "notary-api:latest"
+api_ingress_cidr  = "0.0.0.0/0"      # RESTRICT in production
+api_dns           = ""

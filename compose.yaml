@@ -1,0 +1,53 @@
+# Local development only.
+# Production infrastructure is managed with Terraform under infra/terraform.
+# NOTE: This compose file is NOT used in production — it exists for quick local
+# bring-up of the API + Postgres (and optional LocalStack for S3 dev).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Point the app at the local postgres service.
+      NOTARY_DB_HOST: postgres
+      NOTARY_DB_PORT: "5432"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: notary
+      POSTGRES_USER: notary
+      POSTGRES_PASSWORD: notary
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notary -d notary"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Optional local S3 emulator for evidence-bucket dev work.
+  # Uncomment the block below to bring up LocalStack instead of hitting real AWS.
+  # localstack:
+  #   image: localstack/localstack:latest
+  #   ports:
+  #     - "4566:4566"
+  #   environment:
+  #     SERVICES: s3
+  #   volumes:
+  #     - "./.cache/localstack:/var/lib/localstack"
+
+volumes:
+  postgres_data:

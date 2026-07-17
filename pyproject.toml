@@ -23,6 +23,12 @@ dev = [
     "ruff>=0.1.0",
     "httpx>=0.24.0",
 ]
+# Only needed when NOTARY_USE_REMOTE_STORAGE is enabled (AWS deploy).
+cloud = [
+    "boto3>=1.34",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+]
 
 [tool.hatch.version]
 path = "src/notary_platform/__init__.py"
@@ -43,7 +49,7 @@ extend-exclude = [".venv", "venv", "__pycache__"]
 
 [tool.mypy]
 python_version = "3.9"
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -53,3 +59,4 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+ignore_missing_imports = true

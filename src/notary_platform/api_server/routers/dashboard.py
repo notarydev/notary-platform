@@ -462,17 +462,17 @@ function applyFix(id, scenario) {{
     'hiring-screen-rejection': {{fix_config:{{remove_age_proxy:true, route_borderline_to_human_review:true}}, expected_correct_behavior:'ADVANCE_TO_REVIEW'}},
     'customer-service-handoff': {{fix_config:{{escalate_after_repeated_human_request:true}}, expected_correct_behavior:'ESCALATE_TO_HUMAN'}}
   }};
-  fetch('/v1/incidents/' + id + '/mutation', {{
+  fetch('/v1/incidents/' + id + '/mutation-tests', {{
     method:'POST',
     headers:{{'Content-Type':'application/json'}},
     body:JSON.stringify(fixes[scenario])
   }}).then(() => location.reload());
 }}
-function issueCert(id) {{ fetch('/v1/certificates/' + id, {{method:'POST'}}).then(() => location.reload()); }}
+function issueCert(id) {{ fetch('/v1/incidents/' + id + '/certificates', {{method:'POST'}}).then(() => location.reload()); }}
 function verifySignature(id) {{
   let panel = document.getElementById('verify-panel');
   panel.innerHTML = '<div>1. Certificate loaded ✓</div><div>2. Digest recomputed ✓</div><div>3. Checking signature…</div>';
-  fetch('/v1/certificates/' + id + '/verify')
+  fetch('/v1/incidents/' + id + '/certificates/pom-cert-v1/verify')
     .then(r => r.json())
     .then(j => {{
       panel.innerHTML = '<div>1. Certificate loaded ✓</div>'
@@ -589,5 +589,8 @@ def dashboard(
 def seed_lending_demo(scenario_id: str = Query("lending-denial")) -> RedirectResponse:
     scenario = get_scenario(scenario_id)
     set_demo_agent(_scenario_agent_factory(scenario.scenario_id))
-    storage.create_incident(build_snapshot(scenario))
+    incident = storage.create_incident(build_snapshot(scenario), org_id="demo-org")
+    incident._record_custody("seeded", actor="demo", detail=f"demo scenario {scenario.scenario_id}")
+    storage.update_incident(incident)
+    storage.persist_evidence(incident.incident_id, "snapshot", build_snapshot(scenario))
     return RedirectResponse(url=f"/dashboard?scenario_id={scenario.scenario_id}", status_code=303)

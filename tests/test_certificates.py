@@ -1,4 +1,4 @@
-"""Tests for the WO-5 mutation verification and certificate MVP."""
+"""Tests for the WO-5 mutation verification and certificate endpoints."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from notary_platform.api_server.main import app
 from notary_platform.api_server.routers.incidents import set_demo_agent
 from notary_platform.api_server.routers.ingestion import storage
-from notary_platform.certificates import generate_certificate, verify_certificate_signature
+from notary_platform.certificates import CERTIFICATE_ID, generate_certificate, verify_certificate_signature
 from notary_platform.replay_engine.cassette import ResponseCassette
 from notary_platform.snapshot import (
     CapturedElement,
@@ -70,6 +70,7 @@ def _clear_storage() -> None:
     storage._incidents.clear()
     storage._snapshots.clear()
     storage._certificates.clear()
+    storage._evidence.clear()
     storage._counter = 0
 
 
@@ -93,15 +94,18 @@ class TestCertificateGeneration:
         cert["mutated_decision"] = "DENY"
         assert verify_certificate_signature(cert) is False
 
-    def test_contains_replay_method(self) -> None:
+    def test_contains_replay_method_and_root(self) -> None:
         cert = generate_certificate(
             incident_id="inc-000001",
             original_decision="DENY",
             mutated_decision="APPROVE",
             fix_config={},
+            root_hash="abc123",
         )
         assert cert["replay_method"] == "sealed cassette replay"
         assert cert["certificate_type"] == "proof_of_mitigation"
+        assert cert["root_hash"] == "abc123"
+        assert cert["certificate_id"] == CERTIFICATE_ID
 
 
 class TestMutationEndpoint:
@@ -109,13 +113,18 @@ class TestMutationEndpoint:
         _clear_storage()
         set_demo_agent(_lending_agent)
 
-    def test_mutation_deny_to_approve(self) -> None:
-        snap = _make_snapshot_dict(score=650)
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
-        inc_id = ingested["incident_id"]
+    def _ingest(self, score: int = 650) -> str:
+        snap = _make_snapshot_dict(score=score)
+        return client.post("/v1/incidents/ingest", json={"snapshot": snap}).json()["incident_id"]
 
+    def _replay(self, inc_id: str) -> None:
+        client.post(f"/v1/incidents/{inc_id}/replay")
+
+    def test_mutation_deny_to_approve(self) -> None:
+        inc_id = self._ingest()
+        self._replay(inc_id)
         resp = client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         assert resp.status_code == 200
@@ -125,12 +134,10 @@ class TestMutationEndpoint:
         assert data["mitigated"] is True
 
     def test_mutation_deny_to_deny_not_mitigated(self) -> None:
-        snap = _make_snapshot_dict(score=650)
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
-        inc_id = ingested["incident_id"]
-
+        inc_id = self._ingest()
+        self._replay(inc_id)
         resp = client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 900}, "expected_correct_behavior": "APPROVE"},
         )
         assert resp.status_code == 200
@@ -139,20 +146,26 @@ class TestMutationEndpoint:
         assert data["mutated_decision"] == "DENY"
         assert data["mitigated"] is False
 
+    def test_mutation_rejected_before_replay(self) -> None:
+        inc_id = self._ingest()
+        resp = client.post(
+            f"/v1/incidents/{inc_id}/mutation-tests",
+            json={"fix_config": {"threshold": 620}},
+        )
+        assert resp.status_code == 409
+
     def test_mutation_404(self) -> None:
         resp = client.post(
-            "/v1/incidents/inc-999999/mutation",
+            "/v1/incidents/inc-999999/mutation-tests",
             json={"fix_config": {"threshold": 620}},
         )
         assert resp.status_code == 404
 
     def test_incident_status_becomes_mitigated(self) -> None:
-        snap = _make_snapshot_dict(score=650)
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
-        inc_id = ingested["incident_id"]
-
+        inc_id = self._ingest()
+        self._replay(inc_id)
         client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 620}},
         )
         resp = client.get(f"/v1/incidents/{inc_id}")
@@ -165,18 +178,19 @@ class TestCertificateEndpoint:
         set_demo_agent(_lending_agent)
 
     def _mitigate_incident(self) -> str:
-        snap = _make_snapshot_dict(score=650)
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
-        inc_id = ingested["incident_id"]
+        inc_id = client.post(
+            "/v1/incidents/ingest", json={"snapshot": _make_snapshot_dict(score=650)}
+        ).json()["incident_id"]
+        client.post(f"/v1/incidents/{inc_id}/replay")
         client.post(
-            f"/v1/incidents/{inc_id}/mutation",
+            f"/v1/incidents/{inc_id}/mutation-tests",
             json={"fix_config": {"threshold": 620}},
         )
         return inc_id
 
     def test_issue_certificate(self) -> None:
         inc_id = self._mitigate_incident()
-        resp = client.post(f"/v1/certificates/{inc_id}")
+        resp = client.post(f"/v1/incidents/{inc_id}/certificates")
         assert resp.status_code == 200
         cert = resp.json()
         assert cert["certificate_type"] == "proof_of_mitigation"
@@ -184,30 +198,46 @@ class TestCertificateEndpoint:
         assert cert["original_decision"] == "DENY"
         assert cert["mutated_decision"] == "APPROVE"
         assert cert["fix_config"] == {"threshold": 620}
+        assert cert["certificate_id"] == CERTIFICATE_ID
 
     def test_certificate_only_when_mitigated(self) -> None:
-        snap = _make_snapshot_dict(score=650)
-        ingested = client.post("/v1/ingestion/snapshots", json={"snapshot": snap}).json()
-        inc_id = ingested["incident_id"]
-        resp = client.post(f"/v1/certificates/{inc_id}")
+        inc_id = client.post(
+            "/v1/incidents/ingest", json={"snapshot": _make_snapshot_dict(score=650)}
+        ).json()["incident_id"]
+        resp = client.post(f"/v1/incidents/{inc_id}/certificates")
         assert resp.status_code == 409
 
     def test_get_certificate(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/certificates/{inc_id}")
-        resp = client.get(f"/v1/certificates/{inc_id}")
+        client.post(f"/v1/incidents/{inc_id}/certificates")
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}")
         assert resp.status_code == 200
         assert resp.json()["certificate_type"] == "proof_of_mitigation"
 
+    def test_download_certificate(self) -> None:
+        inc_id = self._mitigate_incident()
+        client.post(f"/v1/incidents/{inc_id}/certificates")
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}/download")
+        assert resp.status_code == 200
+        assert "attachment" in resp.headers.get("content-disposition", "")
+
     def test_verify_certificate_signature(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/certificates/{inc_id}")
-        resp = client.get(f"/v1/certificates/{inc_id}/verify")
+        client.post(f"/v1/incidents/{inc_id}/certificates")
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}/verify")
         assert resp.status_code == 200
         assert resp.json()["signature_valid"] is True
 
+    def test_modified_certificate_fails(self) -> None:
+        # Tampering is detected because signature covers the whole payload.
+        inc_id = self._mitigate_incident()
+        client.post(f"/v1/incidents/{inc_id}/certificates")
+        cert = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}").json()
+        cert["mutated_decision"] = "DENY"
+        assert verify_certificate_signature(cert) is False
+
     def test_incident_status_becomes_certified(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/certificates/{inc_id}")
+        client.post(f"/v1/incidents/{inc_id}/certificates")
         resp = client.get(f"/v1/incidents/{inc_id}")
         assert resp.json()["status"] == "certified"
