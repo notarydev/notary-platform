@@ -98,6 +98,7 @@ resource "aws_iam_role_policy" "api_task" {
         Sid    = "KmsSignDecrypt"
         Effect = "Allow"
         Action = [
+          "kms:Encrypt",
           "kms:Sign",
           "kms:Decrypt",
           "kms:DescribeKey",
