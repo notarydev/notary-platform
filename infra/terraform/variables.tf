@@ -4,7 +4,7 @@
 variable "aws_region" {
   description = "AWS region to deploy into"
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 # Resource Groups application ARN, applied as the awsApplication default tag.
@@ -12,7 +12,17 @@ variable "aws_region" {
 variable "aws_application_arn" {
   description = "myApplications (Resource Groups) ARN for the awsApplication default tag"
   type        = string
-  default     = "arn:aws:resource-groups:us-east-1:447633181871:group/Notary/072xw6nolrnxzw18spteuir5vt"
+  default     = "arn:aws:resource-groups:us-east-2:447633181871:group/Notary/072xw6nolrnxzw18spteuir5vt"
+}
+
+# Whether to create a NAT gateway for private-subnet outbound internet.
+# Default is false to save cost (~$33/mo) for demo/dev. When false, the API
+# service runs in public subnets with a public IP so it can reach ECR and
+# Secrets Manager. Set true for a production-style private-subnet deployment.
+variable "enable_nat" {
+  description = "Create a NAT gateway (true) or run the API in public subnets (false, cheaper)"
+  type        = bool
+  default     = false
 }
 
 # Project name used as a prefix for resources.
@@ -43,6 +53,14 @@ variable "db_password" {
   type        = string
   sensitive   = true
   # No default — must be provided via terraform.tfvars or -var.
+}
+
+# RDS automated backup retention in days. Free-tier accounts must use 0.
+# Set to 7+ once the account is upgraded from free tier.
+variable "db_backup_retention_days" {
+  description = "RDS automated backup retention in days (0 for free tier)"
+  type        = number
+  default     = 0
 }
 
 # RDS instance class.

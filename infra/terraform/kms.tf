@@ -2,7 +2,7 @@
 
 resource "aws_kms_key" "signing" {
   description             = "Notary Platform signing and custody key"
-  enable_key_rotation    = true
+  enable_key_rotation     = true
   deletion_window_in_days = 10
 
   tags = {

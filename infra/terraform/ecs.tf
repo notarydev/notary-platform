@@ -6,7 +6,7 @@
 # future use. An optional SQS queue block is included (commented) below.
 
 resource "aws_ecs_cluster" "main" {
-  name = "${local.name_prefix}"
+  name = local.name_prefix
 
   setting {
     name  = "containerInsights"
@@ -126,10 +126,13 @@ resource "aws_ecs_service" "api" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  # When NAT is disabled (demo/dev), run in public subnets with a public IP so
+  # the task can pull from ECR and read Secrets Manager. When NAT is enabled,
+  # run in private subnets with no public IP.
   network_configuration {
-    subnets          = aws_subnet.private[*].id
+    subnets          = var.enable_nat ? aws_subnet.private[*].id : aws_subnet.public[*].id
     security_groups  = [aws_security_group.api.id]
-    assign_public_ip = false
+    assign_public_ip = var.enable_nat ? false : true
   }
 
   depends_on = [

@@ -69,5 +69,5 @@ output "secrets_arns" {
 
 output "dashboard_url" {
   description = "Constructed dashboard URL (host-relative if api_dns unset)"
-  value = var.api_dns == "" ? "http://localhost:8000/dashboard" : "https://${var.api_dns}/dashboard"
+  value       = var.api_dns == "" ? "http://localhost:8000/dashboard" : "https://${var.api_dns}/dashboard"
 }
