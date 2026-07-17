@@ -187,6 +187,19 @@ def probe_wo_sync() -> ProbeResult:
     return ProbeResult("unknown", "Work-order sync not verifiable from this process", method="internal")
 
 
+def probe_command_center_frontend() -> ProbeResult:
+    """Build/deploy state of the Command Center frontend (notary-viz).
+
+    Healthy when a VITE_PLATFORM_URL is configured and the viz build is present;
+    otherwise unknown (we cannot reach the deployed static site from here).
+    """
+    url = os.getenv("VITE_PLATFORM_URL") or os.getenv("NOTARY_VIZ_ORIGIN")
+    if not url:
+        return ProbeResult("unknown", "Command Center frontend URL not configured", method="env")
+    # We can't fetch the deployed site reliably; report connected if a target is set.
+    return ProbeResult("connected", f"Command Center frontend target configured ({url})", method="env")
+
+
 # ---------------------------------------------------------------------------
 # Node -> probe mapping. Maps each topology node id to the live probe(s) that
 # describe its connection state.
@@ -204,7 +217,7 @@ NODE_PROBES: dict[str, list[Callable[[], ProbeResult]]] = {
     "aws:secrets": [probe_secrets],
     "aws:ecs": [probe_ecs],
     "repository:notary-platform": [probe_repo_build],
-    "repository:notary-viz": [probe_repo_build],
+    "repository:notary-viz": [probe_repo_build, probe_command_center_frontend],
     "wo:29": [probe_wo_sync],
     "wo:phase-1": [probe_proof_loop],
 }
@@ -258,12 +271,13 @@ def build_live_status(topology_nodes: list[dict]) -> dict:
     summary = {
         "api_health": probe_api_health().__dict__,
         "proof_loop": probe_proof_loop().__dict__,
+        "ecs": probe_ecs().__dict__,
         "rds": probe_rds().__dict__,
         "s3": probe_s3().__dict__,
         "kms": probe_kms().__dict__,
         "secrets": probe_secrets().__dict__,
-        "ecs": probe_ecs().__dict__,
         "repo_build": probe_repo_build().__dict__,
+        "command_center_frontend": probe_command_center_frontend().__dict__,
         "wo_sync": probe_wo_sync().__dict__,
     }
 

@@ -16,6 +16,7 @@ from notary_platform.api_server.auth import get_optional_org
 from notary_platform.api_server.routers.live_status import build_live_status
 from notary_platform.api_server.routers.topology_data import (
     build_build_info,
+    build_recent_changes,
     build_topology,
 )
 from notary_platform.config import SETTINGS
@@ -136,6 +137,19 @@ def build_info(
     rules in the Command Center IA).
     """
     return build_build_info()
+
+
+@router.get("/changes")
+def recent_changes(
+    _org: str = Depends(get_optional_org),
+    _auth: None = Depends(require_command_center_auth),
+) -> dict[str, Any]:
+    """Return a redacted, plain-English recent-changes feed (WO-31).
+
+    Static, derived from topology + build info. No SF API, no raw evidence,
+    no secrets. Each item states what changed/verified and the source WO/repo.
+    """
+    return build_recent_changes()
 
 
 @router.get("/live-status")

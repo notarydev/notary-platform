@@ -58,6 +58,38 @@ class TestTopologyShape:
         assert "stages" in body
         assert "legacy_edges" in body
 
+    def test_every_node_has_domain(self) -> None:
+        body = client.get("/v1/topology").json()
+        for node in body["nodes"]:
+            assert "domain" in node
+            assert node["domain"] in {
+                "customer_side", "notary_platform", "aws_infra",
+                "internal_ops", "go_to_market", "future_platform",
+            }
+
+    def test_future_catalog_expanded(self) -> None:
+        body = client.get("/v1/topology").json()
+        future_ids = {n["id"] for n in body["nodes"] if n["node_type"] == "future_capability"}
+        for expected in (
+            "future:testing-playground", "future:async-workers", "future:customer-portal",
+            "future:capture-rules", "future:proof-of-readiness",
+            "future:evidence-export", "future:grc-integrations",
+        ):
+            assert expected in future_ids
+
+    def test_changes_endpoint_redacted(self) -> None:
+        resp = client.get("/v1/changes")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "items" in body
+        assert len(body["items"]) > 0
+        text = resp.text
+        for forbidden in ("AKIA", "sk-", "password", "tfstate", "CHANGE_ME"):
+            assert forbidden not in text
+        # every item has the required operator-readable fields
+        for item in body["items"]:
+            assert {"id", "title", "detail", "source", "when"} <= item.keys()
+
 
 class TestStatusLabeling:
     def test_unknown_is_reported_not_green(self) -> None:

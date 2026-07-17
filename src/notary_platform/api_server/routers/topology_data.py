@@ -49,6 +49,16 @@ STATUSES = {
 
 MATURITIES = {"demo", "prototype", "platform"}
 
+# Domain grouping for the System Map (WO-31 target: grouped by area, not node_type).
+DOMAINS = {
+    "customer_side",
+    "notary_platform",
+    "aws_infra",
+    "internal_ops",
+    "go_to_market",
+    "future_platform",
+}
+
 
 @dataclass
 class Node:
@@ -66,6 +76,7 @@ class Node:
     linked_work_orders: list[str] = field(default_factory=list)
     status: str = "unknown"
     maturity: str = "demo"
+    domain: str = "notary_platform"
     risk: Optional[str] = None
     next_action: Optional[str] = None
 
@@ -450,6 +461,58 @@ _NODES: list[Node] = [
         status="future",
         maturity="demo",
     ),
+    Node(
+        id="future:capture-rules",
+        node_type="future_capability",
+        name="Capture Rules",
+        plain_purpose="Declarative rules that decide which decisions get captured and sealed automatically.",
+        why_it_matters="Lets teams scope assurance to the decisions that matter instead of capturing everything.",
+        owner_repo="repository:notary-platform",
+        key_files=[],
+        linked_work_orders=[],
+        dependencies=["repository:notary-sdk"],
+        status="future",
+        maturity="demo",
+    ),
+    Node(
+        id="future:proof-of-readiness",
+        node_type="future_capability",
+        name="Proof of Readiness",
+        plain_purpose="A certificate that proves a system or process is ready to go live, not just a single decision.",
+        why_it_matters="Extends the assurance model from incident-level to system-level readiness.",
+        owner_repo="repository:notary-platform",
+        key_files=[],
+        linked_work_orders=[],
+        dependencies=["service:certificate-service"],
+        status="future",
+        maturity="demo",
+    ),
+    Node(
+        id="future:evidence-export",
+        node_type="future_capability",
+        name="Evidence Export",
+        plain_purpose="Exports proofs and custody records in audit-ready formats for customers and regulators.",
+        why_it_matters="Auditors and enterprise buyers need portable evidence, not a locked-in dashboard.",
+        owner_repo="repository:notary-platform",
+        key_files=[],
+        linked_work_orders=[],
+        dependencies=["evidence_artifact:pom-certificate"],
+        status="future",
+        maturity="demo",
+    ),
+    Node(
+        id="future:grc-integrations",
+        node_type="future_capability",
+        name="GRC Integrations",
+        plain_purpose="Connectors to governance, risk, and compliance tools (e.g. ticketing, SIEM, control frameworks).",
+        why_it_matters="Proofs only create value when they flow into the compliance systems teams already use.",
+        owner_repo="repository:notary-platform",
+        key_files=[],
+        linked_work_orders=[],
+        dependencies=["service:command-center"],
+        status="future",
+        maturity="demo",
+    ),
 ]
 
 
@@ -533,6 +596,33 @@ def _derive_dependents(nodes: list[Node], edges: list[Edge]) -> dict[str, list[s
     return deps
 
 
+# Default domain per node_type; specific nodes can override via the DOMAIN_OVERRIDES map.
+_DOMAIN_BY_TYPE: dict[str, str] = {
+    "repository": "internal_ops",
+    "service": "notary_platform",
+    "component": "notary_platform",
+    "aws_resource": "aws_infra",
+    "evidence_artifact": "notary_platform",
+    "work_order": "internal_ops",
+    "external_dependency": "notary_platform",
+    "future_capability": "future_platform",
+}
+
+# Per-node domain overrides for nodes that don't follow the type default.
+DOMAIN_OVERRIDES: dict[str, str] = {
+    "repository:notary-sdk": "customer_side",
+    "external:replay-sandbox": "notary_platform",
+    "evidence_artifact:pom-certificate": "notary_platform",
+    "service:web-dashboard": "customer_side",
+    "repository:notary-site": "go_to_market",
+    "external:cloudflare": "go_to_market",
+}
+
+
+def _domain_for(n: Node) -> str:
+    return DOMAIN_OVERRIDES.get(n.id, _DOMAIN_BY_TYPE.get(n.node_type, "notary_platform"))
+
+
 def _node_to_dict(n: Node, dependents: list[str]) -> dict:
     return {
         "id": n.id,
@@ -546,6 +636,7 @@ def _node_to_dict(n: Node, dependents: list[str]) -> dict:
         "dependencies": n.dependencies,
         "dependents": dependents,
         "status": n.status,
+        "domain": _domain_for(n),
         "maturity": n.maturity,
         "risk": n.risk,
         "next_action": n.next_action,
@@ -608,6 +699,66 @@ def _environment() -> str:
     if os.getenv("NOTARY_USE_REMOTE_STORAGE") or os.getenv("NOTARY_KMS_KEY_ARN"):
         return "aws-prototype"
     return "local"
+
+
+def build_recent_changes() -> dict:
+    """Return a redacted, plain-English recent-changes feed for the Command Center.
+
+    Derived statically from the topology + build info (no live SF API). Each entry
+    is honest: it states what was verified and never fabricates a timestamp.
+    """
+    info = build_build_info()
+    nodes = list(_NODES)
+
+    items: list[dict] = []
+
+    # Most-recently-built signal: the platform/SDK/viz commits + generated time.
+    items.append(
+        {
+            "id": "change:build-provenance",
+            "title": "Build provenance refreshed",
+            "detail": (
+                f"platform={info['platform_commit']}, sdk={info['sdk_commit']}, "
+                f"viz={info['viz_commit']} (environment: {info['environment']})"
+            ),
+            "source": "build-info",
+            "when": info["generated_at"],
+            "next_action": None,
+        }
+    )
+
+    # Verified-complete nodes become "recently verified" entries.
+    verified = [n for n in nodes if n.status == "complete"]
+    for n in verified[:6]:
+        items.append(
+            {
+                "id": f"change:verified:{n.id}",
+                "title": f"{n.name} verified complete",
+                "detail": n.plain_purpose,
+                "source": ", ".join(n.linked_work_orders) or n.owner_repo or "Command Center",
+                "when": info["generated_at"],
+                "next_action": n.next_action,
+            }
+        )
+
+    # Blockers/unknowns become open items with next action.
+    open_items = [n for n in nodes if n.status in ("blocked", "unknown")]
+    for n in open_items:
+        items.append(
+            {
+                "id": f"change:open:{n.id}",
+                "title": f"{n.name} needs attention",
+                "detail": n.risk or "State could not be determined.",
+                "source": ", ".join(n.linked_work_orders) or n.owner_repo or "Command Center",
+                "when": info["generated_at"],
+                "next_action": n.next_action,
+            }
+        )
+
+    return {
+        "generated_at": info["generated_at"],
+        "items": items,
+    }
 
 
 def _known_limitations() -> list[str]:

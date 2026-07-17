@@ -68,6 +68,13 @@ class TestLiveStatusHonesty:
         # repo_build is 'unknown' locally (no CI signal) -> overall cannot be healthy.
         assert body["overall_connection_state"] != "healthy"
 
+    def test_command_center_frontend_probe_present(self, _reset_token) -> None:
+        body = client.get("/v1/live-status").json()
+        # viz node should now report a frontend connection state.
+        viz = next(n for n in body["nodes"] if n["id"] == "repository:notary-viz")
+        assert viz["connection_state"] in CONNECTION_STATES
+        assert "command_center_frontend" in body["summary"]
+
     def test_no_secrets_in_payload(self, _reset_token) -> None:
         text = client.get("/v1/live-status").text
         for forbidden in ("AKIA", "sk-", "password", "tfstate", "CHANGE_ME"):
