@@ -37,6 +37,9 @@ class Settings:
     # an in-memory store is used so the demo runs with zero cloud setup.
     use_remote_storage: bool = bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", ""))
 
+    # Viz SPA origin for CORS.
+    viz_origin: str = os.getenv("NOTARY_VIZ_ORIGIN", "http://localhost:5173")
+
     @property
     def auth_enabled(self) -> bool:
         return bool(self.api_auth_token)
@@ -52,6 +55,7 @@ def load_settings() -> Settings:
         signing_key_id=os.getenv("NOTARY_SIGNING_KEY_ID", ""),
         kms_key_arn=os.getenv("NOTARY_KMS_KEY_ARN", ""),
         use_remote_storage=bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", "")),
+        viz_origin=os.getenv("NOTARY_VIZ_ORIGIN", "http://localhost:5173"),
     )
 
 

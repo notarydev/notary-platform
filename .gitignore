@@ -23,6 +23,9 @@ htmlcov/
 .idea/
 .vscode/
 
+# Cloudflare Wrangler
+.wrangler/
+
 # Secrets / local env
 .env
 .env.*

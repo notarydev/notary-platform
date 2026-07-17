@@ -22,5 +22,7 @@ jobs:
         run: ruff check .
       - name: Mypy
         run: mypy src
+      - name: Topology
+        run: make topology
       - name: Pytest
         run: pytest -q

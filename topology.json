@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-07-17T15:54:35.879792+00:00",
+  "stages": [
+    {
+      "id": "sdk",
+      "label": "SDK (client)",
+      "status": "stub",
+      "detail": "sealing/interception not yet implemented"
+    },
+    {
+      "id": "ingest",
+      "label": "Ingest",
+      "status": "implemented",
+      "endpoint": "POST /v1/incidents/ingest"
+    },
+    {
+      "id": "evidence-store",
+      "label": "Evidence Store",
+      "status": "implemented",
+      "endpoint": "Memory/Postgres+S3"
+    },
+    {
+      "id": "replay",
+      "label": "Replay",
+      "status": "implemented",
+      "endpoint": "POST /v1/incidents/{id}/replay"
+    },
+    {
+      "id": "mutation",
+      "label": "Mutation Test",
+      "status": "implemented",
+      "endpoint": "POST /v1/incidents/{id}/mutation-tests"
+    },
+    {
+      "id": "certificate",
+      "label": "Certificate",
+      "status": "implemented",
+      "endpoint": "POST /v1/incidents/{id}/certificates"
+    },
+    {
+      "id": "dashboard",
+      "label": "Dashboard",
+      "status": "implemented",
+      "endpoint": "GET /dashboard"
+    }
+  ],
+  "edges": [
+    [
+      "sdk",
+      "ingest"
+    ],
+    [
+      "ingest",
+      "evidence-store"
+    ],
+    [
+      "evidence-store",
+      "replay"
+    ],
+    [
+      "replay",
+      "mutation"
+    ],
+    [
+      "mutation",
+      "certificate"
+    ],
+    [
+      "certificate",
+      "dashboard"
+    ]
+  ]
+}
