@@ -15,8 +15,10 @@ is unknown versus verified.
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ class Node:
     plain_purpose: str
     why_it_matters: str
     dependencies: list[str] = field(default_factory=list)
+    dependents: list[str] = field(default_factory=list)
     owner_repo: Optional[str] = None
     key_files: list[str] = field(default_factory=list)
     linked_work_orders: list[str] = field(default_factory=list)
@@ -132,8 +135,8 @@ _NODES: list[Node] = [
         dependencies=["repository:notary-sdk", "component:evidence-store"],
         status="complete",
         maturity="prototype",
-        risk="Live Stripe sandbox replay pending real creds; synchronous dispatch today (async = Phase 2).",
-        next_action="Wire real Stripe sandbox credentials for live replay.",
+        risk="Live replay against a real sandbox pending credentials; synchronous dispatch today (async = Phase 2).",
+        next_action="Wire replay-sandbox credentials so live replay can be exercised end to end.",
     ),
     Node(
         id="component:mutation-tester",
@@ -340,19 +343,19 @@ _NODES: list[Node] = [
         maturity="prototype",
     ),
     Node(
-        id="external:stripe-sandbox",
+        id="external:replay-sandbox",
         node_type="external_dependency",
-        name="Stripe Sandbox",
-        plain_purpose="A test payment environment used to replay real decision flows.",
-        why_it_matters="Live replay proof needs a real sandbox, not a mock.",
+        name="Replay Sandbox",
+        plain_purpose="A safe, isolated test environment used to replay real decision flows end to end.",
+        why_it_matters="Live replay proof needs a real sandbox, not a mock — without it the replay engine cannot be exercised against live inputs.",
         owner_repo="repository:notary-platform",
         key_files=[],
         linked_work_orders=["WO-4"],
         dependencies=[],
         status="unknown",
         maturity="demo",
-        risk="Real sandbox credentials not yet wired for live replay.",
-        next_action="Provision Stripe sandbox API keys for WO-4 live replay.",
+        risk="Sandbox credentials not yet wired for live replay.",
+        next_action="Provision replay-sandbox access so live replay can run end to end.",
     ),
     Node(
         id="external:github-actions",
@@ -497,15 +500,18 @@ def build_topology() -> dict:
     """Return the extended TopologyResponse (node-type model)."""
     nodes = list(_NODES)
     edges = _build_edges(nodes)
+    dependents = _derive_dependents(nodes, edges)
     blockers = _derive_blockers(nodes)
     status_counts: dict[str, int] = {}
     for n in nodes:
         status_counts[n.status] = status_counts.get(n.status, 0) + 1
 
+    node_dicts = [_node_to_dict(n, dependents.get(n.id, [])) for n in nodes]
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "maturity_stage": _overall_maturity(nodes),
-        "nodes": [_node_to_dict(n) for n in nodes],
+        "nodes": node_dicts,
         "edges": [{"source": e.source, "target": e.target, "kind": e.kind} for e in edges],
         "blockers": blockers,
         "status_counts": status_counts,
@@ -515,7 +521,19 @@ def build_topology() -> dict:
     }
 
 
-def _node_to_dict(n: Node) -> dict:
+def _derive_dependents(nodes: list[Node], edges: list[Edge]) -> dict[str, list[str]]:
+    """Incoming edges per node id (who relies on this node)."""
+    by_id = {n.id for n in nodes}
+    deps: dict[str, list[str]] = {n.id: [] for n in nodes}
+    for e in edges:
+        if e.target in by_id:
+            deps.setdefault(e.target, [])
+            if e.source not in deps[e.target]:
+                deps[e.target].append(e.source)
+    return deps
+
+
+def _node_to_dict(n: Node, dependents: list[str]) -> dict:
     return {
         "id": n.id,
         "node_type": n.node_type,
@@ -526,6 +544,7 @@ def _node_to_dict(n: Node) -> dict:
         "key_files": n.key_files,
         "linked_work_orders": n.linked_work_orders,
         "dependencies": n.dependencies,
+        "dependents": dependents,
         "status": n.status,
         "maturity": n.maturity,
         "risk": n.risk,
@@ -555,6 +574,36 @@ def _env_commit(var: str, default: str = "unknown") -> str:
     return val or default
 
 
+def _git_commit(repo_root: str, default: str = "unknown") -> str:
+    """Resolve the current commit SHA of a repo via `git rev-parse HEAD`.
+
+    Falls back to an env override (NOTARY_*_COMMIT) and then to 'unknown'.
+    Never invents a value.
+    """
+    env_key = {
+        "notary-platform": "NOTARY_PLATFORM_COMMIT",
+        "notary-sdk": "NOTARY_SDK_COMMIT",
+        "notary-viz": "NOTARY_VIZ_COMMIT",
+    }.get(os.path.basename(repo_root.rstrip("/")), "")
+    if env_key:
+        env_val = os.getenv(env_key, "").strip()
+        if env_val:
+            return env_val
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return default
+
+
 def _environment() -> str:
     if os.getenv("NOTARY_USE_REMOTE_STORAGE") or os.getenv("NOTARY_KMS_KEY_ARN"):
         return "aws-prototype"
@@ -573,13 +622,18 @@ def _known_limitations() -> list[str]:
 
 def build_build_info() -> dict:
     """Return the extended BuildInfoResponse."""
+    # Resolve repo roots relative to this file so commit SHAs are real, not "unknown".
+    here = Path(__file__).resolve()
+    platform_root = here.parents[4]
+    viz_root = platform_root.parent / "notary-viz"
+    sdk_root = platform_root.parent / "notary-sdk-main" / "notary-sdk"
     return {
         "version": "0.0.1",
         "ci_status": os.getenv("NOTARY_CI_STATUS", "unknown"),
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "platform_commit": _env_commit("NOTARY_PLATFORM_COMMIT"),
-        "sdk_commit": _env_commit("NOTARY_SDK_COMMIT"),
-        "viz_commit": _env_commit("NOTARY_VIZ_COMMIT"),
+        "platform_commit": _git_commit(str(platform_root)),
+        "sdk_commit": _git_commit(str(sdk_root)),
+        "viz_commit": _git_commit(str(viz_root)),
         "environment": _environment(),
         "api_base_url": os.getenv("NOTARY_BASE_URL", "http://localhost:8001"),
         "known_limitations": _known_limitations(),

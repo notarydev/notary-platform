@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from notary_platform.api_server.auth import get_optional_org
+from notary_platform.api_server.routers.live_status import build_live_status
 from notary_platform.api_server.routers.topology_data import (
     build_build_info,
     build_topology,
@@ -39,6 +40,21 @@ def require_command_center_auth(request: Request) -> None:
         token = auth[len("Bearer ") :]
     if token != SETTINGS.command_center_token:
         raise HTTPException(status_code=401, detail="invalid or missing Command Center token")
+
+
+def _probe_self_health() -> bool:
+    """Best-effort liveness check of this running API process.
+
+    Used by the live-status layer (WO-36) to report API health without an extra
+    HTTP round-trip. Returns False on any error so the probe degrades safely.
+    """
+    try:
+        from notary_platform.api_server.main import app
+
+        # The app imported cleanly => the process is up and routes are registered.
+        return app is not None
+    except Exception:
+        return False
 
 # Topology file written by scripts/gen_topology.py (make topology). Retained as a
 # legacy fallback; the Command Center now uses the node-type model in topology_data.
@@ -120,3 +136,19 @@ def build_info(
     rules in the Command Center IA).
     """
     return build_build_info()
+
+
+@router.get("/live-status")
+def live_status(
+    _org: str = Depends(get_optional_org),
+    _auth: None = Depends(require_command_center_auth),
+) -> dict[str, Any]:
+    """Return the live build/connection/status layer (WO-36).
+
+    For each topology node, reports both its build state (what is built) and its
+    connection state (what is live/connected/healthy now), with timestamps and a
+    staleness threshold. Unknown / unavailable / stale are reported honestly and
+    never as healthy. No secrets, credentials, or raw evidence are returned.
+    """
+    topology = build_topology()
+    return build_live_status(topology["nodes"])

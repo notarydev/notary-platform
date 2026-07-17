@@ -64,11 +64,19 @@ class TestStatusLabeling:
         """Unknown/blocked nodes surface as blockers, never as complete."""
         body = client.get("/v1/topology").json()
         blocker_ids = {b["id"] for b in body["blockers"]}
-        # stripe-sandbox is 'unknown' and must appear as a blocker.
-        assert "external:stripe-sandbox" in blocker_ids
+        # the neutral replay sandbox is 'unknown' and must appear as a blocker.
+        assert "external:replay-sandbox" in blocker_ids
         # no blocker should be labeled complete.
         for b in body["blockers"]:
             assert b["status"] != "complete"
+
+    def test_node_has_dependents(self) -> None:
+        body = client.get("/v1/topology").json()
+        api = next(n for n in body["nodes"] if n["id"] == "service:api-server")
+        assert "repository:notary-sdk" in api["dependents"]
+        # replay-sandbox has no dependents (leaf external dep).
+        sandbox = next(n for n in body["nodes"] if n["id"] == "external:replay-sandbox")
+        assert sandbox["dependents"] == []
 
     def test_future_nodes_marked_future(self) -> None:
         body = client.get("/v1/topology").json()
@@ -90,11 +98,14 @@ class TestRedaction:
             assert forbidden not in text
 
     def test_build_info_unknown_is_explicit(self) -> None:
-        """Unknown commit values are the literal string 'unknown', not empty."""
+        """Commit values are either real SHAs or the literal 'unknown' — never empty."""
         body = client.get("/v1/build-info").json()
-        assert body["platform_commit"] == "unknown"
-        assert body["sdk_commit"] == "unknown"
-        assert body["viz_commit"] == "unknown"
+        import re
+
+        sha = re.compile(r"^[0-9a-f]{7,40}$")
+        for key in ("platform_commit", "sdk_commit", "viz_commit"):
+            val = body[key]
+            assert val == "unknown" or sha.match(val), f"{key}={val!r} neither SHA nor 'unknown'"
 
 
 class TestBuildInfoShape:
