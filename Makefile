@@ -27,13 +27,13 @@ docker-build:
 	docker build -t notary-platform .
 
 run:
-	$(VENV)/bin/uvicorn notary_platform.api_server.main:app --reload --port 8002
+	$(VENV)/bin/uvicorn notary_platform.api_server.main:app --reload --port 8001
 
 # Phase 1 end-to-end demo.
 #
 # This target does the following:
 #   1. Ensures a virtualenv exists (and installs deps if missing).
-#   2. Starts the uvicorn server in the background (serving on :8000).
+#   2. Starts the uvicorn server in the background (serving on :8001).
 #   3. Waits briefly for the server to come up.
 #   4. POSTs to the demo seed endpoint to create a "lending-denial" scenario.
 #   5. Prints the dashboard URL for the seeded scenario.
@@ -43,7 +43,7 @@ run:
 # target stays readable. Pass SCENARIO_ID to override the default scenario.
 demo:
 	@test -d $(VENV) || $(MAKE) install
-	@$(VENV)/bin/uvicorn notary_platform.api_server.main:app --port 8002 > /tmp/notary-demo.log 2>&1 &
+	@$(VENV)/bin/uvicorn notary_platform.api_server.main:app --port 8001 > /tmp/notary-demo.log 2>&1 &
 	@echo "Starting Notary API server (pid $$!)..."
 	@sleep 4
 	@./scripts/demo.sh "$(SCENARIO_ID)"

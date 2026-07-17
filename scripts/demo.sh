@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCENARIO_ID="${1:-lending-denial}"
-BASE="http://localhost:8000"
+BASE="${NOTARY_BASE_URL:-http://localhost:8001}"
 
 echo "Seeding scenario '${SCENARIO_ID}' via ${BASE}/v1/demo/lending-seed ..."
 curl -fsS -X POST "${BASE}/v1/demo/lending-seed?scenario_id=${SCENARIO_ID}" \
