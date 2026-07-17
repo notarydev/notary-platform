@@ -145,10 +145,10 @@ class TestVerifySnapshotFunction:
 class TestNoCloudDependency:
     def test_no_cloud_modules(self) -> None:
         for mod in ("boto3", "requests", "openai", "anthropic"):
-            if mod in sys.modules:
-                del sys.modules[mod]
+            sys.modules.pop(mod, None)
 
         import notary_platform.snapshot  # noqa: F401
 
+        # snapshot verification must work with no cloud SDKs imported or present.
         for mod in ("boto3", "openai", "anthropic"):
             assert mod not in sys.modules
