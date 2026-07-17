@@ -7,20 +7,22 @@ no credentials to show the architecture map and scenario list.
 
 from __future__ import annotations
 
-import json
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
 
 from notary_platform.api_server.auth import get_optional_org
+from notary_platform.api_server.routers.topology_data import (
+    build_build_info,
+    build_topology,
+)
 from notary_platform.demo_scenarios import SCENARIOS
 
 router = APIRouter(tags=["viz"])
 
-# Topology file written by scripts/gen_topology.py (make topology).
+# Topology file written by scripts/gen_topology.py (make topology). Retained as a
+# legacy fallback; the Command Center now uses the node-type model in topology_data.
 _TOPOLOGY_PATH = Path(__file__).resolve().parents[5] / "topology.json"
 
 # Canonical pipeline order used as the fallback when topology.json is missing.
@@ -45,17 +47,14 @@ _FALLBACK_EDGES = [
 
 @router.get("/topology")
 def get_topology(_org: str = Depends(get_optional_org)) -> dict[str, Any]:
-    """Return topology.json if present; fall back to the hardcoded pipeline."""
-    if _TOPOLOGY_PATH.exists():
-        try:
-            return json.loads(_TOPOLOGY_PATH.read_text())
-        except Exception:
-            pass
-    return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "stages": _FALLBACK_STAGES,
-        "edges": _FALLBACK_EDGES,
-    }
+    """Return the Command Center node-type topology.
+
+    The primary payload is the node-type model (``nodes`` / ``edges`` / ``blockers``
+    / ``maturity_stage``) built from ``topology_data``. A legacy ``stages`` /
+    ``legacy_edges`` shape is included for backward compatibility with older
+    frontends.
+    """
+    return build_topology()
 
 
 @router.get("/scenarios")
@@ -85,10 +84,11 @@ def list_scenarios(_org: str = Depends(get_optional_org)) -> list[dict[str, Any]
 
 
 @router.get("/build-info")
-def build_info(_org: str = Depends(get_optional_org)) -> dict[str, str]:
-    """Return version, CI status, and generation timestamp."""
-    return {
-        "version": "0.0.1",
-        "ci_status": os.getenv("NOTARY_CI_STATUS", "unknown"),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
+def build_info(_org: str = Depends(get_optional_org)) -> dict[str, Any]:
+    """Return extended build/commit/environment metadata for the Command Center.
+
+    Unknown values are reported explicitly as ``"unknown"`` rather than invented.
+    Secrets, credentials, and Terraform state are never included (see redaction
+    rules in the Command Center IA).
+    """
+    return build_build_info()
