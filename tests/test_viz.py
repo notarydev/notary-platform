@@ -6,6 +6,7 @@ for the viz endpoints.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
@@ -16,6 +17,7 @@ from notary_platform.api_server.routers.topology_data import (
     build_build_info,
     build_topology,
 )
+from notary_platform.config import SETTINGS
 
 client = TestClient(app)
 
@@ -119,6 +121,33 @@ class TestReadOnlyBehavior:
     def test_build_info_requires_no_auth(self) -> None:
         resp = client.get("/v1/build-info")
         assert resp.status_code == 200
+
+
+class TestCommandCenterAuth:
+    @pytest.fixture(autouse=True)
+    def _cc_token(self):
+        prev = SETTINGS.command_center_token
+        SETTINGS.command_center_token = "secret-cc"
+        try:
+            yield
+        finally:
+            SETTINGS.command_center_token = prev
+
+    def test_missing_token_rejected_when_configured(self) -> None:
+        resp = client.get("/v1/topology")
+        assert resp.status_code == 401
+
+    def test_valid_token_accepted(self) -> None:
+        resp = client.get("/v1/topology", headers={"X-Command-Center-Token": "secret-cc"})
+        assert resp.status_code == 200
+
+    def test_bearer_token_accepted(self) -> None:
+        resp = client.get("/v1/build-info", headers={"Authorization": "Bearer secret-cc"})
+        assert resp.status_code == 200
+
+    def test_wrong_token_rejected(self) -> None:
+        resp = client.get("/v1/topology", headers={"X-Command-Center-Token": "nope"})
+        assert resp.status_code == 401
 
 
 class TestDataFunctions:

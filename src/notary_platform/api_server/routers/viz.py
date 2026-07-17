@@ -10,16 +10,35 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from notary_platform.api_server.auth import get_optional_org
 from notary_platform.api_server.routers.topology_data import (
     build_build_info,
     build_topology,
 )
+from notary_platform.config import SETTINGS
 from notary_platform.demo_scenarios import SCENARIOS
 
 router = APIRouter(tags=["viz"])
+
+
+def require_command_center_auth(request: Request) -> None:
+    """Enforce NOTARY_COMMAND_CENTER_TOKEN on viz endpoints when configured.
+
+    When unset (local/demo), the endpoints remain auth-optional. When set, the
+    caller must present the token via ``Authorization: Bearer`` or the
+    ``X-Command-Center-Token`` header. This is the WO-33 hardening gate for any
+    shared or production deployment of the Command Center.
+    """
+    if not SETTINGS.command_center_token:
+        return
+    token = request.headers.get("X-Command-Center-Token")
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[len("Bearer ") :]
+    if token != SETTINGS.command_center_token:
+        raise HTTPException(status_code=401, detail="invalid or missing Command Center token")
 
 # Topology file written by scripts/gen_topology.py (make topology). Retained as a
 # legacy fallback; the Command Center now uses the node-type model in topology_data.
@@ -46,7 +65,10 @@ _FALLBACK_EDGES = [
 
 
 @router.get("/topology")
-def get_topology(_org: str = Depends(get_optional_org)) -> dict[str, Any]:
+def get_topology(
+    _org: str = Depends(get_optional_org),
+    _auth: None = Depends(require_command_center_auth),
+) -> dict[str, Any]:
     """Return the Command Center node-type topology.
 
     The primary payload is the node-type model (``nodes`` / ``edges`` / ``blockers``
@@ -58,7 +80,10 @@ def get_topology(_org: str = Depends(get_optional_org)) -> dict[str, Any]:
 
 
 @router.get("/scenarios")
-def list_scenarios(_org: str = Depends(get_optional_org)) -> list[dict[str, Any]]:
+def list_scenarios(
+    _org: str = Depends(get_optional_org),
+    _auth: None = Depends(require_command_center_auth),
+) -> list[dict[str, Any]]:
     """Return all demo scenarios with their node graphs."""
     result = []
     for scenario in SCENARIOS.values():
@@ -84,7 +109,10 @@ def list_scenarios(_org: str = Depends(get_optional_org)) -> list[dict[str, Any]
 
 
 @router.get("/build-info")
-def build_info(_org: str = Depends(get_optional_org)) -> dict[str, Any]:
+def build_info(
+    _org: str = Depends(get_optional_org),
+    _auth: None = Depends(require_command_center_auth),
+) -> dict[str, Any]:
     """Return extended build/commit/environment metadata for the Command Center.
 
     Unknown values are reported explicitly as ``"unknown"`` rather than invented.

@@ -10,9 +10,13 @@ from notary_platform.config import SETTINGS
 
 app = FastAPI(title="Notary Platform", version="0.0.1")
 
+# Allow a comma-separated list of viz origins so local + deployed Command Center
+# can both be permitted, and shared deployments can lock CORS to known origins.
+_viz_origins = [o.strip() for o in SETTINGS.viz_origin.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[SETTINGS.viz_origin],
+    allow_origins=_viz_origins,
     allow_credentials=True,
     allow_methods=["GET"],
     allow_headers=["*"],

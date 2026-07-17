@@ -37,8 +37,14 @@ class Settings:
     # an in-memory store is used so the demo runs with zero cloud setup.
     use_remote_storage: bool = bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", ""))
 
-    # Viz SPA origin for CORS.
+    # Viz SPA origin for CORS. May be a comma-separated list of allowed origins
+    # (local + deployed) so shared environments can lock CORS to known origins.
     viz_origin: str = os.getenv("NOTARY_VIZ_ORIGIN", "http://localhost:5173")
+
+    # Optional auth token for the Command Center status endpoints. When set, the
+    # viz endpoints require this bearer token (or X-Command-Center-Token header).
+    # Leave empty for local/demo (auth-optional). Set for any shared deployment.
+    command_center_token: str = os.getenv("NOTARY_COMMAND_CENTER_TOKEN", "")
 
     @property
     def auth_enabled(self) -> bool:
@@ -56,6 +62,7 @@ def load_settings() -> Settings:
         kms_key_arn=os.getenv("NOTARY_KMS_KEY_ARN", ""),
         use_remote_storage=bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", "")),
         viz_origin=os.getenv("NOTARY_VIZ_ORIGIN", "http://localhost:5173"),
+        command_center_token=os.getenv("NOTARY_COMMAND_CENTER_TOKEN", ""),
     )
 
 
