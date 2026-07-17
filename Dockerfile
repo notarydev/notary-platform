@@ -10,13 +10,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install build dependencies then the project (editable runtime install).
 # The "[dev]" extra is excluded in production to keep the image lean.
+# Set INSTALL_CLOUD=1 to also install the AWS cloud extras (boto3/sqlalchemy/
+# psycopg2) required when NOTARY_USE_REMOTE_STORAGE is enabled in ECS.
 WORKDIR /app
 
 COPY pyproject.toml ./
+COPY README.md ./
 COPY src ./src
 COPY packages ./packages
 
-RUN pip install --no-cache-dir -e "."
+ARG INSTALL_CLOUD=0
+RUN if [ "$INSTALL_CLOUD" = "1" ]; then \
+      pip install --no-cache-dir -e ".[cloud]"; \
+    else \
+      pip install --no-cache-dir -e "."; \
+    fi
 
 # Run as a non-root user for least privilege.
 RUN useradd --create-home --uid 10001 appuser
