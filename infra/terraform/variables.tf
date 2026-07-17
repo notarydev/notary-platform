@@ -104,9 +104,9 @@ variable "anthropic_api_key" {
 
 # API container image reference for the ECS task (from ECR).
 variable "api_image" {
-  description = "API container image reference (ECR repo:tag)"
+  description = "API container image reference (full ECR URI:tag)"
   type        = string
-  default     = "notary-api:latest"
+  default     = "447633181871.dkr.ecr.us-east-2.amazonaws.com/notary-api:latest"
 }
 
 # CIDR allowed to reach the API on port 8000.

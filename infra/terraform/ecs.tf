@@ -103,7 +103,8 @@ resource "aws_ecs_task_definition" "api" {
         }
       }
       environment = [
-        { name = "NOTARY_ENV", value = var.environment }
+        { name = "NOTARY_ENV", value = var.environment },
+        { name = "NOTARY_KMS_KEY_ARN", value = aws_kms_key.signing.arn }
       ]
       secrets = [
         { name = "NOTARY_DB_SECRET_ARN", valueFrom = aws_secretsmanager_secret.database.arn },

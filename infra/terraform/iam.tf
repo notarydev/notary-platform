@@ -25,6 +25,34 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Execution role also needs to read secret values at task startup (registry
+# auth + container secret injection). The managed execution policy alone does
+# not grant secretsmanager:GetSecretValue.
+resource "aws_iam_role_policy" "ecs_execution_secrets" {
+  name = "${local.name_prefix}-ecs-execution-secrets"
+  role = aws_iam_role.ecs_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadSecretsAtStartup"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.database.arn,
+          aws_secretsmanager_secret.sealing_keys.arn,
+          aws_secretsmanager_secret.signing.arn,
+          aws_secretsmanager_secret.openai.arn,
+          aws_secretsmanager_secret.anthropic.arn
+        ]
+      }
+    ]
+  })
+}
+
 # Task role: used by the running API container.
 resource "aws_iam_role" "api_task" {
   name = "${local.name_prefix}-api-task"
