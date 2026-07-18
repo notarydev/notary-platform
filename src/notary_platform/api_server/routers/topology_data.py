@@ -79,6 +79,9 @@ class Node:
     domain: str = "notary_platform"
     risk: Optional[str] = None
     next_action: Optional[str] = None
+    # Two-state framing (WO-29): what this part is TODAY vs. what it will become.
+    current_state: Optional[str] = None
+    target_state: Optional[str] = None
 
 
 @dataclass
@@ -623,7 +626,154 @@ def _domain_for(n: Node) -> str:
     return DOMAIN_OVERRIDES.get(n.id, _DOMAIN_BY_TYPE.get(n.node_type, "notary_platform"))
 
 
+# ---------------------------------------------------------------------------
+# Current state vs. target state (WO-29).
+#
+# Every node answers two questions in plain language:
+#   • current_state — what this part actually is TODAY (demo / prototype / etc.)
+#   • target_state  — what it is meant to become in the fully functional platform
+#
+# Per-node overrides win. Anything without an override falls back to an honest,
+# maturity-derived default so the map never claims more than it can show.
+# ---------------------------------------------------------------------------
+
+_MATURITY_CURRENT_DEFAULT = {
+    "demo": "Runs as a local demo only — proves the idea, not yet running as real infrastructure.",
+    "prototype": "Deployed as an AWS prototype — real infrastructure, not yet production-hardened.",
+    "platform": "Running as production platform infrastructure.",
+}
+
+_STATUS_CURRENT_HINT = {
+    "future": "Not built yet — planned capability only.",
+    "backlog": "Not started — sitting in the backlog.",
+    "blocked": "Blocked — cannot progress until its blocker is cleared.",
+    "unknown": "State is unknown — not yet verifiable, treated as not-ready.",
+    "in_review": "Built and in review — working but not yet signed off.",
+    "demo_only": "Works in the local demo only.",
+}
+
+# Explicit, human-authored current/target pairs for the nodes that matter most.
+STATE_OVERRIDES: dict[str, tuple[str, str]] = {
+    "repository:notary-sdk": (
+        "Complete as a demo library: it seals and captures decisions and runs end to end locally.",
+        "A hardened client SDK embedded in customer systems, auto-capturing production decisions at scale.",
+    ),
+    "service:api-server": (
+        "Deployed on AWS as a prototype (ECS behind a public IP). Auth is optional and CORS is open — demo posture.",
+        "A production API behind an ALB with enforced auth, locked CORS, autoscaling, and full observability.",
+    ),
+    "component:evidence-store": (
+        "Prototype: writes tamper-evident evidence to S3 + RDS in the AWS dev environment.",
+        "Production evidence store with lifecycle policies, retention guarantees, and multi-region durability.",
+    ),
+    "component:replay-engine": (
+        "Prototype: replays synchronously in-process against captured inputs. No live sandbox yet.",
+        "Async replay against a real isolated sandbox, proving decisions end to end at production scale.",
+    ),
+    "component:mutation-tester": (
+        "Prototype: verifies a proposed fix flips the bad decision, run inline with replay.",
+        "A production mutation-testing service running off the request path with a library of fix strategies.",
+    ),
+    "service:certificate-service": (
+        "Prototype: signs Proof of Mitigation certificates using AWS KMS in the dev environment.",
+        "A production certificate authority with key rotation, audit logging, and revocation.",
+    ),
+    "evidence_artifact:pom-certificate": (
+        "Prototype artifact: generated and signed for demo incidents.",
+        "The trusted, verifiable deliverable customers and auditors rely on in production.",
+    ),
+    "service:web-dashboard": (
+        "Demo: the Forensic Control Center renders proofs for demo incidents, no per-customer auth.",
+        "A multi-tenant, authenticated customer product surface for managing real proofs.",
+    ),
+    "service:command-center": (
+        "In review: single-page System Map deployed publicly and read-only, embedded at /cc on the API server.",
+        "The internal operating console with live status, auth, and a stable hosted URL (Cloudflare Pages).",
+    ),
+    "service:command-center-api": (
+        "In review: read-only topology/build/live-status endpoints, auth-optional (demo posture).",
+        "Hardened, authenticated read-only status APIs with redaction guarantees and per-environment CORS.",
+    ),
+    "repository:notary-platform": (
+        "Prototype backend codebase: ingest, verify, store, replay, certify, dashboard all working.",
+        "The production platform codebase with full CI/CD, test coverage gates, and release management.",
+    ),
+    "repository:notary-viz": (
+        "In review: Command Center frontend built and building cleanly; no CI/deploy pipeline yet.",
+        "A CI-tested frontend auto-deployed to Cloudflare Pages on every merge.",
+    ),
+    "repository:notary-site": (
+        "Backlog: marketing site repo exists but the site is not built out.",
+        "A live marketing site that explains Notary and converts prospects.",
+    ),
+    "aws:s3-evidence": (
+        "Prototype: S3 evidence bucket provisioned in the AWS dev account.",
+        "Production evidence storage with object-lock, versioning, and compliance retention.",
+    ),
+    "aws:rds": (
+        "Prototype: single Postgres instance in the AWS dev account.",
+        "Production Postgres with Multi-AZ, automated backups, and read replicas.",
+    ),
+    "aws:kms": (
+        "Prototype: KMS signing key provisioned in the AWS dev account.",
+        "Production key management with rotation, grants, and strict access policies.",
+    ),
+    "aws:secrets": (
+        "Prototype: Secrets Manager holds dev credentials.",
+        "Production secret management with rotation and least-privilege access.",
+    ),
+    "aws:ecs": (
+        "Prototype: one ECS task on a public IP, no load balancer, auth not enforced.",
+        "Production ECS behind an ALB with autoscaling, health checks, and enforced auth.",
+    ),
+    "aws:ecr": (
+        "Prototype: stores backend container images for the dev environment.",
+        "Production image registry with scanning, immutable tags, and lifecycle policies.",
+    ),
+    "external:replay-sandbox": (
+        "Not wired yet: no sandbox credentials, so live replay cannot run end to end.",
+        "A provisioned, isolated sandbox that live replay exercises for every proof.",
+    ),
+    "external:github-actions": (
+        "Prototype: CI runs tests on the platform repo.",
+        "Full CI/CD across all repos gating every deploy to production.",
+    ),
+    "external:cloudflare": (
+        "Not configured: Command Center is served from /cc on the API server instead.",
+        "Cloudflare Pages hosting the Command Center at a stable public URL.",
+    ),
+    "wo:29": (
+        "In review: this status-sync work order keeps the map and Software Factory aligned.",
+        "A continuously accurate, automated sync between build state and Software Factory.",
+    ),
+    "wo:phase-1": (
+        "Complete: the capture→replay→fix→certify→verify loop is demonstrably real on AWS.",
+        "Phase 1 remains the proven foundation the production platform builds on.",
+    ),
+}
+
+# Every future_capability shares the same honest framing.
+_FUTURE_CURRENT_DEFAULT = "Not built yet — this is a planned capability, shown so the target platform is clear."
+
+
+def _states_for(n: Node) -> tuple[Optional[str], Optional[str]]:
+    """Resolve (current_state, target_state) with overrides winning over defaults."""
+    if n.current_state or n.target_state:
+        return n.current_state, n.target_state
+    if n.id in STATE_OVERRIDES:
+        return STATE_OVERRIDES[n.id]
+    # Derived fallbacks — honest, never claim more than the status supports.
+    if n.node_type == "future_capability" or n.status == "future":
+        return (_FUTURE_CURRENT_DEFAULT, n.plain_purpose)
+    current = _STATUS_CURRENT_HINT.get(n.status) or _MATURITY_CURRENT_DEFAULT.get(
+        n.maturity, "Current state not yet documented."
+    )
+    target = "Production-grade version of: " + n.plain_purpose[0].lower() + n.plain_purpose[1:]
+    return (current, target)
+
+
 def _node_to_dict(n: Node, dependents: list[str]) -> dict:
+    current_state, target_state = _states_for(n)
     return {
         "id": n.id,
         "node_type": n.node_type,
@@ -640,6 +790,8 @@ def _node_to_dict(n: Node, dependents: list[str]) -> dict:
         "maturity": n.maturity,
         "risk": n.risk,
         "next_action": n.next_action,
+        "current_state": current_state,
+        "target_state": target_state,
     }
 
 
