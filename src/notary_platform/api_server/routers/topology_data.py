@@ -82,6 +82,22 @@ class Node:
     # Two-state framing (WO-29): what this part is TODAY vs. what it will become.
     current_state: Optional[str] = None
     target_state: Optional[str] = None
+    # System Atlas v2 lens metadata (WO-56 / WO-57).
+    build_state: str = "unknown"  # built | in_build | backlog | roadmap | unknown
+    demo_state: str = "unknown"  # live_demo | seeded_demo | preview_only | not_demoable | unknown
+    customer_readiness: str = "unknown"  # demo_prototype | beta | production_ready | internal_only | planned | unknown
+    product_area: Optional[str] = None  # "capture" | "replay" | "certificates" | "scenarios" | etc.
+    system_layer: Optional[str] = None  # "customer_runtime" | "notary_api" | "aws_infra" | etc.
+    audience: Optional[str] = None  # "customer_facing" | "internal_only" | "external"
+    source_of_truth: Optional[str] = None
+    implementation_source: Optional[str] = None
+    runtime_owner: Optional[str] = None
+    data_handled: list[str] = field(default_factory=list)
+    trust_boundary: Optional[str] = None
+    security_posture: Optional[str] = None
+    verification_evidence: Optional[str] = None
+    confidence: Optional[str] = None
+    open_questions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -772,8 +788,106 @@ def _states_for(n: Node) -> tuple[Optional[str], Optional[str]]:
     return (current, target)
 
 
+def _lens_for(n: Node) -> dict:
+    """Resolve v2 lens metadata with per-node overrides winning over defaults."""
+    if n.product_area:
+        return {
+            "build_state": n.build_state,
+            "demo_state": n.demo_state,
+            "customer_readiness": n.customer_readiness,
+            "product_area": n.product_area,
+            "system_layer": n.system_layer,
+            "audience": n.audience,
+            "source_of_truth": n.source_of_truth,
+            "implementation_source": n.implementation_source,
+            "runtime_owner": n.runtime_owner,
+            "data_handled": n.data_handled,
+            "trust_boundary": n.trust_boundary,
+            "security_posture": n.security_posture,
+            "verification_evidence": n.verification_evidence,
+            "confidence": n.confidence,
+            "open_questions": n.open_questions,
+        }
+    if n.id in LENS_OVERRIDES:
+        return LENS_OVERRIDES[n.id]
+    # Derived defaults based on node_type and status.
+    base = _derive_lens_defaults(n)
+    return base
+
+
+def _derive_lens_defaults(n: Node) -> dict:
+    """Derive lens metadata from existing fields for nodes without explicit metadata."""
+    is_future = n.node_type == "future_capability" or n.status == "future"
+    is_internal = n.node_type in ("work_order",) or n.domain == "internal_ops"
+    is_customer = n.domain == "customer_side"
+    is_infra = n.domain == "aws_infra"
+    is_built = n.status in ("complete", "in_review", "aws_backed", "demo_only")
+
+    build_state = "built" if is_built else "backlog" if n.status == "backlog" else "unknown" if n.status == "unknown" else "in_build" if is_future else "roadmap"
+    demo_state = "live_demo" if is_built and n.maturity == "demo" else "seeded_demo" if is_built else "preview_only" if is_future else "unknown"
+    customer_readiness = "demo_prototype" if n.maturity == "demo" else "internal_only" if is_internal else "planned" if is_future else "unknown"
+    audience = "internal_only" if is_internal else "customer_facing" if is_customer else "external" if n.node_type == "external_dependency" else "internal_only"
+    system_layer = "customer_runtime" if is_customer else "aws_infra" if is_infra else "notary_api" if n.node_type == "service" else "sdk" if n.node_type == "repository" and "sdk" in n.id else "infrastructure" if n.node_type in ("component", "aws_resource") else "unknown"
+    trust_boundary = "customer_side" if is_customer else "notary_cloud" if not is_infra and not is_customer else "aws_cloud" if is_infra else "external" if n.node_type == "external_dependency" else "notary_cloud"
+    data_handled = ["decision_data", "captured_evidence"] if n.node_type in ("repository", "service", "component") else ["infrastructure_config"] if is_infra else ["public_content"] if n.node_type == "external_dependency" else []
+    product_area = _product_area_for(n)
+    return {
+        "build_state": build_state,
+        "demo_state": demo_state,
+        "customer_readiness": customer_readiness,
+        "product_area": product_area,
+        "system_layer": system_layer,
+        "audience": audience,
+        "source_of_truth": n.owner_repo if n.owner_repo else None,
+        "implementation_source": n.owner_repo if n.owner_repo else None,
+        "runtime_owner": None,
+        "data_handled": data_handled,
+        "trust_boundary": trust_boundary,
+        "security_posture": None,
+        "verification_evidence": None,
+        "confidence": None,
+        "open_questions": [],
+    }
+
+
+def _product_area_for(n: Node) -> Optional[str]:
+    mapping = {
+        "repository:notary-sdk": "capture",
+        "service:api-server": "ingestion_replay",
+        "component:evidence-store": "storage",
+        "component:replay-engine": "replay",
+        "component:mutation-tester": "verification",
+        "service:certificate-service": "certificates",
+        "evidence_artifact:pom-certificate": "certificates",
+        "service:web-dashboard": "investigation",
+        "service:command-center": "internal_ops",
+        "service:command-center-api": "internal_ops",
+        "repository:notary-platform": "platform_foundation",
+        "repository:notary-viz": "internal_ops",
+        "repository:notary-site": "go_to_market",
+        "external:replay-sandbox": "replay",
+        "external:github-actions": "ci_cd",
+        "external:cloudflare": "deployment",
+        "wo:29": "internal_ops",
+        "wo:phase-1": "milestones",
+        "future:testing-playground": "scenarios",
+        "future:async-workers": "replay",
+        "future:customer-portal": "investigation",
+        "future:capture-rules": "capture",
+        "future:proof-of-readiness": "certificates",
+        "future:evidence-export": "certificates",
+        "future:grc-integrations": "governance",
+    }
+    return mapping.get(n.id, None)
+
+
+# Per-node v2 lens metadata overrides for nodes that need explicit values.
+LENS_OVERRIDES: dict[str, dict] = {}
+
+
 def _node_to_dict(n: Node, dependents: list[str]) -> dict:
     current_state, target_state = _states_for(n)
+    lens = _lens_for(n)
     return {
         "id": n.id,
         "node_type": n.node_type,
@@ -792,7 +906,7 @@ def _node_to_dict(n: Node, dependents: list[str]) -> dict:
         "next_action": n.next_action,
         "current_state": current_state,
         "target_state": target_state,
-    }
+    } | lens
 
 
 def _legacy_stages() -> list[dict]:
