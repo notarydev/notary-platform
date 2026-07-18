@@ -19,6 +19,7 @@ COPY README.md ./
 COPY src ./src
 COPY packages ./packages
 COPY static/cc ./static/cc
+COPY static/app ./static/app
 
 ARG INSTALL_CLOUD=0
 RUN if [ "$INSTALL_CLOUD" = "1" ]; then \
