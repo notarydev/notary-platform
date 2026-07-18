@@ -18,6 +18,7 @@ COPY pyproject.toml ./
 COPY README.md ./
 COPY src ./src
 COPY packages ./packages
+COPY static/cc ./static/cc
 
 ARG INSTALL_CLOUD=0
 RUN if [ "$INSTALL_CLOUD" = "1" ]; then \

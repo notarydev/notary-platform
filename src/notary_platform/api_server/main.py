@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from notary_platform.api_server.routers import certificates, dashboard, incidents, ingestion, viz
 from notary_platform.config import SETTINGS
@@ -27,6 +31,12 @@ app.include_router(incidents.router, prefix="/v1")
 app.include_router(certificates.router, prefix="/v1")
 app.include_router(viz.router, prefix="/v1")
 app.include_router(dashboard.router)
+
+# Serve the internal Command Center SPA (static build from notary-viz) at /cc.
+# The build is included in the container image at /app/static/cc.
+_static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "cc"
+if _static_root.exists() and (_static_root / "index.html").exists():
+    app.mount("/cc", StaticFiles(directory=str(_static_root), html=True), name="command_center")
 
 
 @app.get("/health")
