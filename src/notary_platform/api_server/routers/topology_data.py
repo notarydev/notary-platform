@@ -822,14 +822,79 @@ def _derive_lens_defaults(n: Node) -> dict:
     is_customer = n.domain == "customer_side"
     is_infra = n.domain == "aws_infra"
     is_built = n.status in ("complete", "in_review", "aws_backed", "demo_only")
+    is_sdk_repo = n.node_type == "repository" and "sdk" in n.id
 
-    build_state = "built" if is_built else "backlog" if n.status == "backlog" else "unknown" if n.status == "unknown" else "in_build" if is_future else "roadmap"
-    demo_state = "live_demo" if is_built and n.maturity == "demo" else "seeded_demo" if is_built else "preview_only" if is_future else "unknown"
-    customer_readiness = "demo_prototype" if n.maturity == "demo" else "internal_only" if is_internal else "planned" if is_future else "unknown"
-    audience = "internal_only" if is_internal else "customer_facing" if is_customer else "external" if n.node_type == "external_dependency" else "internal_only"
-    system_layer = "customer_runtime" if is_customer else "aws_infra" if is_infra else "notary_api" if n.node_type == "service" else "sdk" if n.node_type == "repository" and "sdk" in n.id else "infrastructure" if n.node_type in ("component", "aws_resource") else "unknown"
-    trust_boundary = "customer_side" if is_customer else "notary_cloud" if not is_infra and not is_customer else "aws_cloud" if is_infra else "external" if n.node_type == "external_dependency" else "notary_cloud"
-    data_handled = ["decision_data", "captured_evidence"] if n.node_type in ("repository", "service", "component") else ["infrastructure_config"] if is_infra else ["public_content"] if n.node_type == "external_dependency" else []
+    if is_built:
+        build_state = "built"
+    elif n.status == "backlog":
+        build_state = "backlog"
+    elif n.status == "unknown":
+        build_state = "unknown"
+    elif is_future:
+        build_state = "in_build"
+    else:
+        build_state = "roadmap"
+
+    if is_built and n.maturity == "demo":
+        demo_state = "live_demo"
+    elif is_built:
+        demo_state = "seeded_demo"
+    elif is_future:
+        demo_state = "preview_only"
+    else:
+        demo_state = "unknown"
+
+    if n.maturity == "demo":
+        customer_readiness = "demo_prototype"
+    elif is_internal:
+        customer_readiness = "internal_only"
+    elif is_future:
+        customer_readiness = "planned"
+    else:
+        customer_readiness = "unknown"
+
+    if is_internal:
+        audience = "internal_only"
+    elif is_customer:
+        audience = "customer_facing"
+    elif n.node_type == "external_dependency":
+        audience = "external"
+    else:
+        audience = "internal_only"
+
+    if is_customer:
+        system_layer = "customer_runtime"
+    elif is_infra:
+        system_layer = "aws_infra"
+    elif n.node_type == "service":
+        system_layer = "notary_api"
+    elif is_sdk_repo:
+        system_layer = "sdk"
+    elif n.node_type in ("component", "aws_resource"):
+        system_layer = "infrastructure"
+    else:
+        system_layer = "unknown"
+
+    if is_customer:
+        trust_boundary = "customer_side"
+    elif is_infra:
+        trust_boundary = "aws_cloud"
+    elif n.node_type == "external_dependency":
+        trust_boundary = "external"
+    elif not is_infra and not is_customer:
+        trust_boundary = "notary_cloud"
+    else:
+        trust_boundary = "notary_cloud"
+
+    if n.node_type in ("repository", "service", "component"):
+        data_handled = ["decision_data", "captured_evidence"]
+    elif is_infra:
+        data_handled = ["infrastructure_config"]
+    elif n.node_type == "external_dependency":
+        data_handled = ["public_content"]
+    else:
+        data_handled = []
+
     product_area = _product_area_for(n)
     return {
         "build_state": build_state,
