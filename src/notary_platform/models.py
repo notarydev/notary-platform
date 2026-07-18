@@ -5,7 +5,8 @@ from __future__ import annotations
 import enum
 import time
 import uuid
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, List
 
 
 class IncidentStatus(str, enum.Enum):
@@ -89,3 +90,143 @@ class IntegrityValidationResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {"valid": self.valid, "reason": self.reason}
+
+
+# ---------------------------------------------------------------------------
+# Notary Platform customer-facing domain models (WO-48+)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Organization:
+    id: str
+    name: str
+    environments: List[str] = field(default_factory=lambda: ["demo", "staging", "production"])
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "environments": self.environments, "created_at": self.created_at}
+
+
+@dataclass
+class Environment:
+    id: str
+    name: str
+    org_id: str
+    kind: str = "demo"  # demo | staging | production
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "org_id": self.org_id, "kind": self.kind, "created_at": self.created_at}
+
+
+@dataclass
+class Agent:
+    id: str
+    name: str
+    org_id: str
+    environment_id: str
+    risk_tier: str = "standard"
+    sdk_status: str = "unknown"  # unknown | connected | stale | not_installed
+    sdk_version: str = ""
+    last_seen: str = ""
+    scenario_count: int = 0
+    capture_policy_count: int = 0
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "risk_tier": self.risk_tier,
+            "sdk_status": self.sdk_status,
+            "sdk_version": self.sdk_version,
+            "last_seen": self.last_seen,
+            "scenario_count": self.scenario_count,
+            "capture_policy_count": self.capture_policy_count,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class SystemConnection:
+    id: str
+    name: str
+    org_id: str
+    environment_id: str
+    kind: str = "api"  # api | sdk | webhook | sandbox | grc
+    status: str = "unknown"  # connected | disconnected | stale | planned
+    last_checked: str = ""
+    capability: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "kind": self.kind,
+            "status": self.status,
+            "last_checked": self.last_checked,
+            "capability": self.capability,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class CapturePolicy:
+    id: str
+    name: str
+    org_id: str
+    environment_id: str
+    agent_id: str = ""
+    status: str = "active"  # active | inactive | inherited
+    coverage: str = "all"  # all | redacted | omitted
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "agent_id": self.agent_id,
+            "status": self.status,
+            "coverage": self.coverage,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class HomeStats:
+    org_id: str
+    environment_id: str
+    agent_count: int = 0
+    system_count: int = 0
+    incident_count: int = 0
+    replay_ready: int = 0
+    fixes_verified: int = 0
+    proofs_issued: int = 0
+    scenario_count: int = 0
+    pending_replay: int = 0
+    pending_verification: int = 0
+    pending_proof: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "agent_count": self.agent_count,
+            "system_count": self.system_count,
+            "incident_count": self.incident_count,
+            "replay_ready": self.replay_ready,
+            "fixes_verified": self.fixes_verified,
+            "proofs_issued": self.proofs_issued,
+            "scenario_count": self.scenario_count,
+            "pending_replay": self.pending_replay,
+            "pending_verification": self.pending_verification,
+            "pending_proof": self.pending_proof,
+        }
