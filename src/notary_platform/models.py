@@ -230,3 +230,176 @@ class HomeStats:
             "pending_verification": self.pending_verification,
             "pending_proof": self.pending_proof,
         }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Verification Record and AI Execution Event model (WO-69/70)
+# ---------------------------------------------------------------------------
+
+
+class DataSourceType(str, enum.Enum):
+    sdk_snapshot = "sdk_snapshot"
+    api_submission = "api_submission"
+    manual_submission = "manual_submission"
+    webhook = "webhook"
+    batch_import = "batch_import"
+    trace_import = "trace_import"
+    provider_adapter = "provider_adapter"
+    framework_adapter = "framework_adapter"
+    source_system_adapter = "source_system_adapter"
+    eval_adapter = "eval_adapter"
+
+
+class ReplayabilityStatus(str, enum.Enum):
+    replayable = "replayable"
+    partially_replayable = "partially_replayable"
+    evidence_only = "evidence_only"
+    missing_context = "missing_context"
+    requires_sandbox = "requires_sandbox"
+    requires_human_label = "requires_human_label"
+    blocked = "blocked"
+    unknown = "unknown"
+
+
+class EventKind(str, enum.Enum):
+    model_call = "model_call"
+    tool_call = "tool_call"
+    api_response = "api_response"
+    retrieval = "retrieval"
+    policy_check = "policy_check"
+    guardrail_check = "guardrail_check"
+    human_action = "human_action"
+    decision = "decision"
+    side_effect = "side_effect"
+    evaluation_result = "evaluation_result"
+    timestamp = "timestamp"
+    rng_seed = "rng_seed"
+
+
+class DataScope(str, enum.Enum):
+    raw = "raw"
+    redacted = "redacted"
+    hashed = "hashed"
+    reference_only = "reference_only"
+    omitted = "omitted"
+
+
+@dataclass
+class AIExecutionEvent:
+    id: str
+    kind: EventKind
+    payload: dict
+    scope: DataScope = DataScope.raw
+    source_system: str = ""
+    order: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "kind": self.kind.value,
+            "payload": {k: str(v)[:200] if isinstance(v, (dict, list)) and len(str(v)) > 200 else v for k, v in self.payload.items()},
+            "scope": self.scope.value,
+            "source_system": self.source_system,
+            "order": self.order,
+        }
+
+
+@dataclass
+class VerificationRecord:
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    source_type: DataSourceType = DataSourceType.api_submission
+    external_ref: str = ""
+    agent_id: str = ""
+    business_function: str = ""
+    events: List[AIExecutionEvent] = field(default_factory=list)
+    root_hash: str = ""
+    replayability: ReplayabilityStatus = ReplayabilityStatus.unknown
+    replayability_reason: str = ""
+    missing_prerequisites: List[str] = field(default_factory=list)
+    promoted_to_incident: str = ""
+    current_label_id: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    is_demo: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "source_type": self.source_type.value,
+            "external_ref": self.external_ref,
+            "agent_id": self.agent_id,
+            "business_function": self.business_function,
+            "events": [e.to_dict() for e in self.events],
+            "root_hash": self.root_hash,
+            "replayability": self.replayability.value,
+            "replayability_reason": self.replayability_reason,
+            "missing_prerequisites": self.missing_prerequisites,
+            "promoted_to_incident": self.promoted_to_incident,
+            "current_label_id": self.current_label_id,
+            "created_at": self.created_at,
+            "is_demo": self.is_demo,
+        }
+
+
+# SDK element kind → AIExecutionEvent kind mapping
+_SDK_TO_EVENT_MAP = {
+    "llm": EventKind.model_call,
+    "http": EventKind.api_response,
+    "decision": EventKind.decision,
+    "rng_seed": EventKind.rng_seed,
+    "timestamp": EventKind.timestamp,
+    "tool": EventKind.tool_call,
+    "retrieval": EventKind.retrieval,
+    "guardrail": EventKind.guardrail_check,
+    "human": EventKind.human_action,
+}
+
+
+def sdk_element_to_event(element: dict, order: int = 0) -> AIExecutionEvent:
+    kind_str = element.get("kind", "unknown")
+    kind = _SDK_TO_EVENT_MAP.get(kind_str, EventKind.model_call)
+    payload = element.get("payload", {})
+    if kind_str == "http" and isinstance(payload, dict) and "request" in payload:
+        kind = EventKind.tool_call
+    return AIExecutionEvent(
+        id=uuid.uuid4().hex,
+        kind=kind,
+        payload=payload,
+        order=order,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Human Label (WO-62)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HumanLabel:
+    id: str
+    verification_record_id: str = ""
+    expected_outcome: str = ""
+    reviewer: str = ""
+    role: str = ""
+    reason: str = ""
+    timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    status: str = "active"  # active | superseded | revoked
+    version: int = 1
+    superseded_by: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "verification_record_id": self.verification_record_id,
+            "expected_outcome": self.expected_outcome,
+            "reviewer": self.reviewer,
+            "role": self.role,
+            "reason": self.reason,
+            "timestamp": self.timestamp,
+            "status": self.status,
+            "version": self.version,
+            "superseded_by": self.superseded_by,
+        }
