@@ -38,10 +38,8 @@ _static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" /
 if _static_root.exists() and (_static_root / "index.html").exists():
     app.mount("/cc", StaticFiles(directory=str(_static_root), html=True), name="command_center")
 
-# Serve the Notary Platform SPA at /app.
-_platform_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "app"
-if _platform_root.exists() and (_platform_root / "index.html").exists():
-    app.mount("/app", StaticFiles(directory=str(_platform_root), html=True), name="platform")
+# Notary Platform SPA is hidden per active command (Path A). Backend platform
+# APIs and seed data are preserved for development use.
 
 
 @app.get("/health")
