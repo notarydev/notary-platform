@@ -21,7 +21,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_viz_origins,
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -32,7 +32,6 @@ app.include_router(platform.router, prefix="/v1")
 app.include_router(viz.router, prefix="/v1")
 
 # Serve the internal Command Center SPA (static build from notary-viz) at /cc.
-# The build is included in the container image at /app/static/cc.
 _static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "cc"
 if _static_root.exists() and (_static_root / "index.html").exists():
     app.mount("/cc", StaticFiles(directory=str(_static_root), html=True), name="command_center")
@@ -41,6 +40,16 @@ if _static_root.exists() and (_static_root / "index.html").exists():
 _platform_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "app"
 if _platform_root.exists() and (_platform_root / "index.html").exists():
     app.mount("/app", StaticFiles(directory=str(_platform_root), html=True), name="platform")
+
+
+@app.on_event("startup")
+def _register_demo_agent() -> None:
+    """Register the demo agent function so seed-demo works."""
+    from notary_platform.api_server.routers.dashboard import _scenario_agent_factory
+    from notary_platform.api_server.routers.incidents import set_demo_agent
+
+    agent = _scenario_agent_factory("lending-denial")
+    set_demo_agent(agent)
 
 
 @app.get("/health")

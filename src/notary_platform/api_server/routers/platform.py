@@ -200,50 +200,52 @@ def seed_demo(_org: str = Depends(require_auth)) -> dict:
         return {"created": 0, "error": "no agent function registered"}
 
     created = []
+    # Only lending-denial uses the full proof-loop. Others are ingested-only.
     scenarios = {
-        "inc-001-lending": ("lending-denial", "APPROVE", {"threshold": 620}, True),
-        "inc-002-support": ("customer-service-handoff", "ROUTE_TO_HUMAN", {"timeout": 60}, True),
-        "inc-003-prior-auth": ("prior-authorization", "APPROVE", {"days": 14}, False),
-        "inc-004-hiring": ("hiring-screen", "APPROVE", {}, False),
-        "inc-005-complaint": ("complaint-escalation", "", {}, False),
+        "inc-001-lending": ("lending-denial", True),
+        "inc-002-support": (None, False),
+        "inc-003-prior-auth": (None, False),
     }
 
-    fn = agent_fn  # local ref to avoid mypy boolean confusion on Callables
-    for iid, (scenario_id, expected, fix_config, certify) in scenarios.items():
-        scenario = SCENARIOS.get(scenario_id)
-        if not scenario:
-            continue
-        snap = build_snapshot(scenario)
-        inc = storage.create_incident(snap, org_id=_org)
-        inc._record_custody("ingested", actor="system", detail=f"demo seed: {scenario_id}")
-        storage.update_incident(inc)
-        storage.persist_evidence(inc.incident_id, "snapshot", snap)
-
-        run_replay(inc, snap, fn)
-        storage.update_incident(inc)
-
-        if expected:
-            result = run_mutation(snap, fn, fix_config, expected_correct_behavior=expected)
-            inc.mutation_result = result
-            if result.get("mitigated"):
-                inc.status = IncidentStatus("mitigated")
+    fn = agent_fn
+    for iid, (scenario_id, do_full) in scenarios.items():
+        if scenario_id:
+            scenario = SCENARIOS.get(scenario_id)
+            if not scenario:
+                continue
+            snap = build_snapshot(scenario)
+            inc = storage.create_incident(snap, org_id=_org)
+            inc._record_custody("ingested", actor=f"demo seed: {scenario_id}", detail="Incidents page")
             storage.update_incident(inc)
+            storage.persist_evidence(inc.incident_id, "snapshot", snap)
 
-        if certify and inc.mutation_result:
-            cert = generate_certificate(
-                incident_id=inc.incident_id,
-                root_hash=inc.snapshot_summary.get("root_hash", ""),
-                integrity_status="verified",
-                replay_result=inc.replay_result,
-                original_decision=inc.mutation_result.get("original_decision"),
-                mutated_decision=inc.mutation_result.get("mutated_decision"),
-                fix_config=inc.mutation_result.get("fix_config", {}),
-                expected_correct_behavior=inc.mutation_result.get("expected_correct_behavior", ""),
-                timestamp=inc.snapshot_summary.get("timestamp", ""),
-            )
-            inc.certificate = cert
-            inc.status = IncidentStatus("certified")
-            storage.store_certificate(inc.incident_id, cert)
+            if do_full:
+                run_replay(inc, snap, fn)
+                storage.update_incident(inc)
+                result = run_mutation(snap, fn, {"threshold": 620}, expected_correct_behavior="APPROVE")
+                inc.mutation_result = result
+                if result.get("mitigated"):
+                    inc.status = IncidentStatus("mitigated")
+                storage.update_incident(inc)
+                cert = generate_certificate(
+                    incident_id=inc.incident_id,
+                    root_hash=inc.snapshot_summary.get("root_hash", ""),
+                    integrity_status="verified",
+                    replay_result=inc.replay_result,
+                    original_decision=result.get("original_decision"),
+                    mutated_decision=result.get("mutated_decision"),
+                    fix_config=result.get("fix_config", {}),
+                    expected_correct_behavior="APPROVE",
+                    timestamp=inc.snapshot_summary.get("timestamp", ""),
+                )
+                inc.certificate = cert
+                inc.status = IncidentStatus("certified")
+                storage.store_certificate(inc.incident_id, cert)
+                storage.update_incident(inc)
+        else:
+            # Create a lightweight incident with no snapshot/replay for demo
+            inc = storage.create_incident({}, org_id=_org)
+            inc._record_custody("ingested", actor=f"demo seed: {iid}", detail="Incidents page")
             storage.update_incident(inc)
 
         created.append(inc.incident_id)
