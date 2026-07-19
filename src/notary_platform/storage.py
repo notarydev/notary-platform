@@ -15,7 +15,14 @@ import uuid
 from typing import Any
 
 from notary_platform.config import SETTINGS
-from notary_platform.models import Incident
+from notary_platform.models import (
+    Agent,
+    CapturePolicy,
+    Environment,
+    Incident,
+    Organization,
+    SystemConnection,
+)
 
 
 class StorageBackend(abc.ABC):
@@ -46,6 +53,44 @@ class StorageBackend(abc.ABC):
     def persist_evidence(self, incident_id: str, kind: str, payload: dict[str, Any]) -> str:
         """Persist an evidence blob; returns a stable evidence reference."""
 
+    # ── Platform objects (WO-64) ──
+
+    @abc.abstractmethod
+    def create_org(self, org: Organization) -> Organization: ...
+
+    @abc.abstractmethod
+    def get_org(self, org_id: str) -> Organization | None: ...
+
+    @abc.abstractmethod
+    def create_env(self, env: Environment) -> Environment: ...
+
+    @abc.abstractmethod
+    def get_env(self, env_id: str) -> Environment | None: ...
+
+    @abc.abstractmethod
+    def list_envs(self, org_id: str) -> list[Environment]: ...
+
+    @abc.abstractmethod
+    def create_agent(self, agent: Agent) -> Agent: ...
+
+    @abc.abstractmethod
+    def get_agent(self, agent_id: str) -> Agent | None: ...
+
+    @abc.abstractmethod
+    def list_agents_for_org(self, org_id: str, environment_id: str = "") -> list[Agent]: ...
+
+    @abc.abstractmethod
+    def create_system_conn(self, conn: SystemConnection) -> SystemConnection: ...
+
+    @abc.abstractmethod
+    def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]: ...
+
+    @abc.abstractmethod
+    def create_policy(self, policy: CapturePolicy) -> CapturePolicy: ...
+
+    @abc.abstractmethod
+    def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -56,6 +101,12 @@ class MemoryStorage(StorageBackend):
         self._certificates: dict[str, dict[str, Any]] = {}
         self._evidence: dict[str, dict[str, Any]] = {}
         self._counter = 0
+        # Platform objects (WO-64)
+        self._orgs: dict[str, Organization] = {}
+        self._envs: dict[str, Environment] = {}
+        self._agents: dict[str, Agent] = {}
+        self._systems: dict[str, SystemConnection] = {}
+        self._policies: dict[str, CapturePolicy] = {}
 
     def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
         self._counter += 1
@@ -97,6 +148,58 @@ class MemoryStorage(StorageBackend):
         ref = f"{incident_id}/{kind}/{uuid.uuid4().hex}.json"
         self._evidence[ref] = payload
         return ref
+
+    # ── Platform objects (WO-64) ──
+
+    def create_org(self, org: Organization) -> Organization:
+        self._orgs[org.id] = org
+        return org
+
+    def get_org(self, org_id: str) -> Organization | None:
+        return self._orgs.get(org_id)
+
+    def create_env(self, env: Environment) -> Environment:
+        self._envs[env.id] = env
+        return env
+
+    def get_env(self, env_id: str) -> Environment | None:
+        return self._envs.get(env_id)
+
+    def list_envs(self, org_id: str) -> list[Environment]:
+        return [e for e in self._envs.values() if e.org_id == org_id]
+
+    def create_agent(self, agent: Agent) -> Agent:
+        self._agents[agent.id] = agent
+        return agent
+
+    def get_agent(self, agent_id: str) -> Agent | None:
+        return self._agents.get(agent_id)
+
+    def list_agents_for_org(self, org_id: str, environment_id: str = "") -> list[Agent]:
+        agents = [a for a in self._agents.values() if a.org_id == org_id]
+        if environment_id:
+            agents = [a for a in agents if a.environment_id == environment_id]
+        return agents
+
+    def create_system_conn(self, conn: SystemConnection) -> SystemConnection:
+        self._systems[conn.id] = conn
+        return conn
+
+    def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]:
+        systems = [s for s in self._systems.values() if s.org_id == org_id]
+        if environment_id:
+            systems = [s for s in systems if s.environment_id == environment_id]
+        return systems
+
+    def create_policy(self, policy: CapturePolicy) -> CapturePolicy:
+        self._policies[policy.id] = policy
+        return policy
+
+    def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]:
+        policies = [p for p in self._policies.values() if p.org_id == org_id]
+        if environment_id:
+            policies = [p for p in policies if p.environment_id == environment_id]
+        return policies
 
 
 class PostgresS3Storage(StorageBackend):
@@ -265,6 +368,20 @@ class PostgresS3Storage(StorageBackend):
             ContentType="application/json",
         )
         return ref
+
+    # ── Platform objects (WO-64) — Postgres stubs ──
+    def create_org(self, org: Organization) -> Organization: return org
+    def get_org(self, org_id: str) -> Organization | None: return None
+    def create_env(self, env: Environment) -> Environment: return env
+    def get_env(self, env_id: str) -> Environment | None: return None
+    def list_envs(self, org_id: str) -> list[Environment]: return []
+    def create_agent(self, agent: Agent) -> Agent: return agent
+    def get_agent(self, agent_id: str) -> Agent | None: return None
+    def list_agents_for_org(self, org_id: str, environment_id: str = "") -> list[Agent]: return []
+    def create_system_conn(self, conn: SystemConnection) -> SystemConnection: return conn
+    def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]: return []
+    def create_policy(self, policy: CapturePolicy) -> CapturePolicy: return policy
+    def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]: return []
 
 
 def get_storage() -> StorageBackend:

@@ -45,12 +45,34 @@ if _platform_root.exists() and (_platform_root / "index.html").exists():
 
 @app.on_event("startup")
 def _register_demo_agent() -> None:
-    """Register the demo agent function so seed-demo works."""
+    """Register the demo agent function and seed demo org into storage."""
     from notary_platform.api_server.routers.dashboard import _scenario_agent_factory
     from notary_platform.api_server.routers.incidents import set_demo_agent
+    from notary_platform.api_server.routers.ingestion import storage
+    from notary_platform.platform_data import seed
 
     agent = _scenario_agent_factory("lending-denial")
     set_demo_agent(agent)
+
+    # Seed demo organization into storage
+    from notary_platform.platform_data import seed as get_seed
+
+    data = get_seed()
+    org = data.get("organization")
+    if org is not None and hasattr(org, "id"):
+        storage.create_org(org)
+        for env in data.get("environments", []):
+            if hasattr(env, "id"):
+                storage.create_env(env)
+        for ag in data.get("agents", []):
+            if hasattr(ag, "id"):
+                storage.create_agent(ag)
+        for sys_conn in data.get("systems", []):
+            if hasattr(sys_conn, "id"):
+                storage.create_system_conn(sys_conn)
+        for pol in data.get("policies", []):
+            if hasattr(pol, "id"):
+                storage.create_policy(pol)
 
 
 @app.get("/health")
