@@ -290,7 +290,7 @@ class PostgresS3Storage(StorageBackend):
                 INSERT INTO incidents
                     (incident_id, org_id, status, snapshot_summary, replay_result,
                      mutation_result, certificate, custody)
-                VALUES (:iid, :org, :status, :sum, :replay, :mut, :cert, :cust)
+                VALUES (%(iid)s, %(org)s, %(status)s, %(sum)s, %(replay)s, %(mut)s, %(cert)s, %(cust)s)
                 ON CONFLICT (incident_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     snapshot_summary = EXCLUDED.snapshot_summary,
@@ -314,7 +314,7 @@ class PostgresS3Storage(StorageBackend):
     def get_incident(self, incident_id: str) -> Incident | None:
         with self._engine.connect() as conn:
             row = conn.exec_driver_sql(
-                "SELECT * FROM incidents WHERE incident_id = :iid", {"iid": incident_id}
+                "SELECT * FROM incidents WHERE incident_id = %(iid)s", {"iid": incident_id}
             ).mappings().first()
         return self._row_to_incident(dict(row)) if row else None
 
@@ -322,7 +322,7 @@ class PostgresS3Storage(StorageBackend):
         with self._engine.connect() as conn:
             if org_id is not None:
                 rows = conn.exec_driver_sql(
-                    "SELECT * FROM incidents WHERE org_id = :org ORDER BY created_at",
+                    "SELECT * FROM incidents WHERE org_id = %(org)s ORDER BY created_at",
                     {"org": org_id},
                 ).mappings().all()
             else:
