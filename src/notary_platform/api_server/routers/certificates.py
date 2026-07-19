@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 import notary_platform.api_server.routers.incidents as incidents_mod
@@ -144,3 +144,59 @@ def verify_certificate(incident_id: str, certificate_id: str, org_id: str = Depe
         raise HTTPException(status_code=404, detail="certificate not found")
     valid = verify_certificate_signature(cert)
     return {"incident_id": incident_id, "certificate_id": certificate_id, "signature_valid": valid}
+
+
+@router.get("/incidents/{incident_id}/certificates/{certificate_id}/export-pdf")
+def export_proof_pdf(incident_id: str, certificate_id: str, org_id: str = Depends(require_auth)) -> Response:
+    inc = incidents_mod._get_incident(incident_id, org_id)
+    cert = inc.certificate
+    if cert is None or cert.get("certificate_id") != certificate_id:
+        raise HTTPException(status_code=404, detail="certificate not found")
+    valid = verify_certificate_signature(cert)
+    try:
+        import io
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, title="Proof of Mitigation")
+        styles = getSampleStyleSheet()
+        story = []
+
+        story.append(Paragraph("Proof of Mitigation", styles["h1"]))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Certificate: {cert.get('certificate_id', '')}", styles["h2"]))
+        story.append(Paragraph(f"Incident: {incident_id}", styles["normal"]))
+        story.append(Paragraph(f"Signing Algorithm: {cert.get('signing_algorithm', '')}", styles["normal"]))
+        story.append(Paragraph(f"Signature Valid: {'Yes' if valid else 'No'}", styles["normal"]))
+        story.append(Spacer(1, 12))
+
+        if cert.get("original_decision"):
+            story.append(Paragraph(f"Original Decision: {cert['original_decision']}", styles["normal"]))
+        if cert.get("mutated_decision"):
+            story.append(Paragraph(f"Mutated Decision: {cert['mutated_decision']}", styles["normal"]))
+        if cert.get("verified_outcome") is not None:
+            story.append(Paragraph(f"Verified: {'Yes' if cert['verified_outcome'] else 'No'}", styles["normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph("Claim Scope", styles["h2"]))
+        story.append(Paragraph("This proof verifies the fix for this tested scenario under recorded conditions.", styles["normal"]))
+        story.append(Paragraph("It does not certify general AI safety.", styles["normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph("Limitations", styles["h2"]))
+        story.append(Paragraph(cert.get("known_limitations", "None documented"), styles["normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph(f"Generated: {cert.get('timestamp', '')}", styles["normal"]))
+
+        doc.build(story)
+        buf.seek(0)
+        return Response(content=buf.read(), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="proof_{incident_id}.pdf"'})
+    except ImportError:
+        raise HTTPException(status_code=501, detail="PDF export requires reportlab")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

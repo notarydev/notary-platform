@@ -403,3 +403,52 @@ class HumanLabel:
             "version": self.version,
             "superseded_by": self.superseded_by,
         }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — API Keys, Audit Log (WO-66)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class APIKey:
+    id: str
+    org_id: str = "demo-org"
+    key_type: str = "api"  # api | sdk
+    key_hash: str = ""
+    label: str = ""
+    scopes: List[str] = field(default_factory=lambda: ["read"])
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    last_used: str = ""
+    revoked: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "key_type": self.key_type,
+            "label": self.label,
+            "scopes": self.scopes,
+            "created_at": self.created_at,
+            "last_used": self.last_used,
+            "revoked": self.revoked,
+        }
+
+
+@dataclass
+class AuditEvent:
+    id: str
+    org_id: str = "demo-org"
+    action: str = ""
+    actor: str = "system"
+    detail: str = ""
+    timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "action": self.action,
+            "actor": self.actor,
+            "detail": self.detail,
+            "timestamp": self.timestamp,
+        }

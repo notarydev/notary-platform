@@ -49,7 +49,6 @@ def _register_demo_agent() -> None:
     from notary_platform.api_server.routers.dashboard import _scenario_agent_factory
     from notary_platform.api_server.routers.incidents import set_demo_agent
     from notary_platform.api_server.routers.ingestion import storage
-    from notary_platform.platform_data import seed
 
     agent = _scenario_agent_factory("lending-denial")
     set_demo_agent(agent)
