@@ -381,7 +381,29 @@ def suggest_labels(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
                 suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "default_v1", "reasoning": desc})
             elif cat == "severity":
                 suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "default_v1", "reasoning": desc})
+    vr.suggested_labels = suggestions
+    _vr_store[vr_id] = vr
     return {"vr_id": vr_id, "suggested_labels": suggestions}
+
+
+@router.post("/verification-records/{vr_id}/label-reject")
+def reject_suggested_label(vr_id: str, body: dict, org_id: str = Depends(require_auth)) -> dict:
+    vr = _vr_store.get(vr_id)
+    if vr is None or vr.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Verification Record not found")
+    reject_value = body.get("value", "")
+    vr.suggested_labels = [s for s in vr.suggested_labels if s.get("value") != reject_value]
+    _vr_store[vr_id] = vr
+    return {"vr_id": vr_id, "rejected": reject_value, "remaining": len(vr.suggested_labels)}
+
+
+@router.get("/verification-records/{vr_id}/label-history")
+def label_history(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
+    vr = _vr_store.get(vr_id)
+    if vr is None or vr.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Verification Record not found")
+    labels = [lbl.to_dict() for lbl in _label_store.values() if lbl.verification_record_id == vr_id]
+    return {"vr_id": vr_id, "labels": labels}
 
 
 @router.post("/verification-records/bulk-label-approve")

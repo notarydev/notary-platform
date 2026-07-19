@@ -26,7 +26,7 @@ from notary_platform.certificates import (
 from notary_platform.models import IncidentStatus
 from notary_platform.replay_engine.mutation import run_mutation
 
-router = APIRouter(tags=["mutation", "certificates"])
+router = APIRouter(tags=["mutation", "certificates", "proofs"])
 
 
 class MutationRequest(BaseModel):
@@ -134,6 +134,63 @@ def download_certificate(incident_id: str, certificate_id: str, org_id: str = De
     resp = JSONResponse(content=cert)
     resp.headers["Content-Disposition"] = f'attachment; filename="proof_of_mitigation_{incident_id}.json"'
     return resp
+
+
+@router.get("/proofs")
+def list_proofs(org_id: str = Depends(require_auth)) -> list[dict[str, Any]]:
+    """List issued proofs across incidents."""
+    from notary_platform.api_server.routers.verification import _vr_store
+    proofs = []
+    for inc in incidents_mod.storage.list_incidents(org_id=org_id):
+        if not inc.certificate:
+            continue
+        source_vr = next((v for v in _vr_store.values() if v.promoted_to_incident == inc.incident_id), None)
+        cert = inc.certificate
+        proofs.append({
+            "proof_id": cert.get("certificate_id", "pom-cert-v1"),
+            "incident_id": inc.incident_id,
+            "verification_record_id": source_vr.id if source_vr else "",
+            "source_system_id": source_vr.source_system_id if source_vr else "",
+            "label_id": source_vr.current_label_id if source_vr else "",
+            "replayability_score": source_vr.replayability_score if source_vr else 0.0,
+            "non_deterministic_flags": source_vr.non_deterministic_flags if source_vr else [],
+            "original_decision": cert.get("original_decision"),
+            "mutated_decision": cert.get("mutated_decision"),
+            "claim_scope": "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.",
+            "known_limitations": cert.get("known_limitations", ""),
+            "timestamp": cert.get("timestamp", ""),
+            "certificate": cert,
+        })
+    return proofs
+
+
+@router.get("/proofs/{proof_id}")
+def get_proof(proof_id: str, org_id: str = Depends(require_auth)) -> dict[str, Any]:
+    """Return a single proof as an evidence package."""
+    from notary_platform.api_server.routers.verification import _vr_store
+    for inc in incidents_mod.storage.list_incidents(org_id=org_id):
+        cert = inc.certificate
+        if not cert or cert.get("certificate_id") != proof_id:
+            continue
+        source_vr = next((v for v in _vr_store.values() if v.promoted_to_incident == inc.incident_id), None)
+        return {
+            "proof_id": proof_id,
+            "incident_id": inc.incident_id,
+            "verification_record_id": source_vr.id if source_vr else "",
+            "source_system_id": source_vr.source_system_id if source_vr else "",
+            "label_id": source_vr.current_label_id if source_vr else "",
+            "replayability_score": source_vr.replayability_score if source_vr else 0.0,
+            "non_deterministic_flags": source_vr.non_deterministic_flags if source_vr else [],
+            "original_decision": cert.get("original_decision"),
+            "mutated_decision": cert.get("mutated_decision"),
+            "claim_scope": "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.",
+            "known_limitations": cert.get("known_limitations", ""),
+            "timestamp": cert.get("timestamp", ""),
+            "certificate": cert,
+            "replay_result": inc.replay_result,
+            "mutation_result": inc.mutation_result,
+        }
+    raise HTTPException(status_code=404, detail="proof not found")
 
 
 @router.get("/incidents/{incident_id}/certificates/{certificate_id}/verify")

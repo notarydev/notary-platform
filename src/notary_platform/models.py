@@ -169,6 +169,17 @@ class SystemConnection:
     fallback: str = ""
     supported_agents: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    # Product surface registry fields (WO-80)
+    type: str = "source_system"  # agent_runtime, capture_source, source_system, model_provider, tool_api, sandbox_provider, grc_system, cicd_system
+    model_provider: str = ""
+    source_system: str = ""
+    capture_policies: List[str] = field(default_factory=list)
+    linked_vrs: List[str] = field(default_factory=list)
+    linked_incidents: List[str] = field(default_factory=list)
+    linked_proofs: List[str] = field(default_factory=list)
+    linked_scenarios: List[str] = field(default_factory=list)
+    limitations: List[str] = field(default_factory=list)
+    next_action: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -187,6 +198,16 @@ class SystemConnection:
             "fallback": self.fallback,
             "supported_agents": self.supported_agents,
             "created_at": self.created_at,
+            "type": self.type,
+            "model_provider": self.model_provider,
+            "source_system": self.source_system,
+            "capture_policies": self.capture_policies,
+            "linked_vrs": self.linked_vrs,
+            "linked_incidents": self.linked_incidents,
+            "linked_proofs": self.linked_proofs,
+            "linked_scenarios": self.linked_scenarios,
+            "limitations": self.limitations,
+            "next_action": self.next_action,
         }
 
 
@@ -228,6 +249,17 @@ class HomeStats:
     pending_replay: int = 0
     pending_verification: int = 0
     pending_proof: int = 0
+    # Product surface queues (WO-80)
+    vrs_total: int = 0
+    vrs_replayable: int = 0
+    vrs_requires_label: int = 0
+    vrs_requires_sandbox: int = 0
+    vrs_evidence_only: int = 0
+    labels_needing_review: int = 0
+    systems_disconnected: int = 0
+    systems_sandbox_ready: int = 0
+    scenario_candidates: int = 0
+    blocked_items: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -243,6 +275,16 @@ class HomeStats:
             "pending_replay": self.pending_replay,
             "pending_verification": self.pending_verification,
             "pending_proof": self.pending_proof,
+            "vrs_total": self.vrs_total,
+            "vrs_replayable": self.vrs_replayable,
+            "vrs_requires_label": self.vrs_requires_label,
+            "vrs_requires_sandbox": self.vrs_requires_sandbox,
+            "vrs_evidence_only": self.vrs_evidence_only,
+            "labels_needing_review": self.labels_needing_review,
+            "systems_disconnected": self.systems_disconnected,
+            "systems_sandbox_ready": self.systems_sandbox_ready,
+            "scenario_candidates": self.scenario_candidates,
+            "blocked_items": self.blocked_items,
         }
 
 
@@ -340,6 +382,19 @@ class VerificationRecord:
     replayability_score: float = 0.0
     non_deterministic_flags: list[dict] = field(default_factory=list)
     defensibility_summary: str = ""
+    # WO-80: Product surface registry
+    source_system_id: str = ""
+    source_record_ref: str = ""
+    agent_version: str = ""
+    model_provider: str = ""
+    model_name: str = ""
+    policy_version: str = ""
+    capture_policy_id: str = ""
+    expected_outcome: str = ""
+    label_source: str = ""
+    sandbox_readiness: dict = field(default_factory=dict)
+    next_action: str = ""
+    suggested_labels: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -362,7 +417,20 @@ class VerificationRecord:
             "replayability_score": self.replayability_score,
             "non_deterministic_flags": self.non_deterministic_flags,
             "defensibility_summary": self.defensibility_summary,
+            "source_system_id": self.source_system_id,
+            "source_record_ref": self.source_record_ref,
+            "agent_version": self.agent_version,
+            "model_provider": self.model_provider,
+            "model_name": self.model_name,
+            "policy_version": self.policy_version,
+            "capture_policy_id": self.capture_policy_id,
+            "expected_outcome": self.expected_outcome,
+            "label_source": self.label_source,
+            "sandbox_readiness": self.sandbox_readiness,
+            "next_action": self.next_action,
+            "suggested_labels": self.suggested_labels,
         }
+
 
 
 # SDK element kind → AIExecutionEvent kind mapping
@@ -462,6 +530,46 @@ class APIKey:
             "created_at": self.created_at,
             "last_used": self.last_used,
             "revoked": self.revoked,
+        }
+
+
+@dataclass
+class ScenarioCandidate:
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    source_vr_id: str = ""
+    source_incident_id: str = ""
+    business_title: str = ""
+    source_system_id: str = ""
+    approved_label_id: str = ""
+    replayability: str = "unknown"
+    replayability_score: float = 0.0
+    required_sandbox_id: str = ""
+    last_run_status: str = "not_started"
+    release_gate_ids: List[str] = field(default_factory=list)
+    next_action: str = ""
+    state: str = "candidate"  # candidate | ready | blocked
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "source_vr_id": self.source_vr_id,
+            "source_incident_id": self.source_incident_id,
+            "business_title": self.business_title,
+            "source_system_id": self.source_system_id,
+            "approved_label_id": self.approved_label_id,
+            "replayability": self.replayability,
+            "replayability_score": self.replayability_score,
+            "required_sandbox_id": self.required_sandbox_id,
+            "last_run_status": self.last_run_status,
+            "release_gate_ids": self.release_gate_ids,
+            "next_action": self.next_action,
+            "state": self.state,
+            "created_at": self.created_at,
         }
 
 
