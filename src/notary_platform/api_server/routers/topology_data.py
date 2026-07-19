@@ -983,7 +983,6 @@ def _legacy_stages() -> list[dict]:
         {"id": "replay", "label": "Replay", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/replay"},
         {"id": "mutation", "label": "Mutation Test", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/mutation-tests"},
         {"id": "certificate", "label": "Certificate", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/certificates"},
-        {"id": "dashboard", "label": "Dashboard", "status": "implemented", "endpoint": "GET /dashboard"},
     ]
 
 

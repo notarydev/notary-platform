@@ -69,7 +69,6 @@ _FALLBACK_STAGES = [
     {"id": "replay", "label": "Replay", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/replay"},
     {"id": "mutation", "label": "Mutation Test", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/mutation-tests"},
     {"id": "certificate", "label": "Certificate", "status": "implemented", "endpoint": "POST /v1/incidents/{id}/certificates"},
-    {"id": "dashboard", "label": "Dashboard", "status": "implemented", "endpoint": "GET /dashboard"},
 ]
 _FALLBACK_EDGES = [
     ["sdk", "ingest"],
@@ -77,7 +76,6 @@ _FALLBACK_EDGES = [
     ["evidence-store", "replay"],
     ["replay", "mutation"],
     ["mutation", "certificate"],
-    ["certificate", "dashboard"],
 ]
 
 
