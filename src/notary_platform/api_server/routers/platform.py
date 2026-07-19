@@ -7,9 +7,12 @@ is added when the backend supports multi-org storage.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
+import time as _time_module
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from notary_platform.api_server.auth import require_auth
 from notary_platform.api_server.routers.ingestion import storage
@@ -251,3 +254,35 @@ def seed_demo(_org: str = Depends(require_auth)) -> dict:
         created.append(inc.incident_id)
 
     return {"created": len(created), "incident_ids": created}
+
+
+# ── API Key management (WO-66) ──
+_key_store: dict[str, dict] = {}
+
+
+@router.post("/platform/keys")
+def create_api_key(label: str = Query(""), key_type: str = Query("api"), org_id: str = Depends(require_auth)) -> dict:
+    raw = "sk-" + secrets.token_urlsafe(32)
+    key_id = "key-" + secrets.token_hex(6)
+    hashed = hashlib.sha256(raw.encode()).hexdigest()
+    _key_store[key_id] = {
+        "id": key_id, "org_id": org_id, "key_type": key_type, "label": label,
+        "key_hash": hashed, "scopes": ["read", "write"],
+        "created_at": _time_module.strftime("%Y-%m-%dT%H:%M:%SZ", _time_module.gmtime()),
+        "last_used": "", "revoked": False,
+    }
+    return {"id": key_id, "key": raw, "label": label, "key_type": key_type, "message": "Store this key — it will only be shown once"}
+
+
+@router.get("/platform/keys")
+def list_api_keys(org_id: str = Depends(require_auth)) -> list[dict]:
+    return [{k: v for k, v in d.items() if k != "key_hash"} for d in _key_store.values() if d["org_id"] == org_id]
+
+
+@router.post("/platform/keys/{key_id}/revoke")
+def revoke_api_key(key_id: str, org_id: str = Depends(require_auth)) -> dict:
+    key = _key_store.get(key_id)
+    if not key or key["org_id"] != org_id:
+        raise HTTPException(status_code=404, detail="Key not found")
+    key["revoked"] = True
+    return {"id": key_id, "revoked": True}

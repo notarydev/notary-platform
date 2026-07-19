@@ -157,10 +157,17 @@ class SystemConnection:
     name: str
     org_id: str
     environment_id: str
-    kind: str = "api"  # api | sdk | webhook | sandbox | grc
-    status: str = "unknown"  # connected | disconnected | stale | planned
+    kind: str = "api"
+    status: str = "unknown"
     last_checked: str = ""
     capability: str = ""
+    # Sandbox readiness (WO-77)
+    sandbox_supported: bool = False
+    sandbox_replay_modes: List[str] = field(default_factory=list)
+    auth_status: str = "unknown"
+    safety_boundary: str = ""
+    fallback: str = ""
+    supported_agents: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
     def to_dict(self) -> dict[str, Any]:
@@ -173,6 +180,12 @@ class SystemConnection:
             "status": self.status,
             "last_checked": self.last_checked,
             "capability": self.capability,
+            "sandbox_supported": self.sandbox_supported,
+            "sandbox_replay_modes": self.sandbox_replay_modes,
+            "auth_status": self.auth_status,
+            "safety_boundary": self.safety_boundary,
+            "fallback": self.fallback,
+            "supported_agents": self.supported_agents,
             "created_at": self.created_at,
         }
 
