@@ -25,8 +25,9 @@ class CustodyEvent:
         actor: str = "system",
         detail: str = "",
         timestamp: str | None = None,
+        event_id: str | None = None,
     ) -> None:
-        self.event_id = uuid.uuid4().hex
+        self.event_id = event_id or uuid.uuid4().hex
         self.action = action
         self.actor = actor
         self.detail = detail
