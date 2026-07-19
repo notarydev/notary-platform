@@ -165,32 +165,32 @@ def export_proof_pdf(incident_id: str, certificate_id: str, org_id: str = Depend
         styles = getSampleStyleSheet()
         story = []
 
-        story.append(Paragraph("Proof of Mitigation", styles["h1"]))
+        story.append(Paragraph("Proof of Mitigation", styles["Heading1"]))
         story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Certificate: {cert.get('certificate_id', '')}", styles["h2"]))
-        story.append(Paragraph(f"Incident: {incident_id}", styles["normal"]))
-        story.append(Paragraph(f"Signing Algorithm: {cert.get('signing_algorithm', '')}", styles["normal"]))
-        story.append(Paragraph(f"Signature Valid: {'Yes' if valid else 'No'}", styles["normal"]))
+        story.append(Paragraph(f"Certificate: {cert.get('certificate_id', '')}", styles["Heading2"]))
+        story.append(Paragraph(f"Incident: {incident_id}", styles["Normal"]))
+        story.append(Paragraph(f"Signing Algorithm: {cert.get('signing_algorithm', '')}", styles["Normal"]))
+        story.append(Paragraph(f"Signature Valid: {'Yes' if valid else 'No'}", styles["Normal"]))
         story.append(Spacer(1, 12))
 
         if cert.get("original_decision"):
-            story.append(Paragraph(f"Original Decision: {cert['original_decision']}", styles["normal"]))
+            story.append(Paragraph(f"Original Decision: {cert['original_decision']}", styles["Normal"]))
         if cert.get("mutated_decision"):
-            story.append(Paragraph(f"Mutated Decision: {cert['mutated_decision']}", styles["normal"]))
+            story.append(Paragraph(f"Mutated Decision: {cert['mutated_decision']}", styles["Normal"]))
         if cert.get("verified_outcome") is not None:
-            story.append(Paragraph(f"Verified: {'Yes' if cert['verified_outcome'] else 'No'}", styles["normal"]))
+            story.append(Paragraph(f"Verified: {'Yes' if cert['verified_outcome'] else 'No'}", styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        story.append(Paragraph("Claim Scope", styles["h2"]))
-        story.append(Paragraph("This proof verifies the fix for this tested scenario under recorded conditions.", styles["normal"]))
-        story.append(Paragraph("It does not certify general AI safety.", styles["normal"]))
+        story.append(Paragraph("Claim Scope", styles["Heading2"]))
+        story.append(Paragraph("This proof verifies the fix for this tested scenario under recorded conditions.", styles["Normal"]))
+        story.append(Paragraph("It does not certify general AI safety.", styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        story.append(Paragraph("Limitations", styles["h2"]))
-        story.append(Paragraph(cert.get("known_limitations", "None documented"), styles["normal"]))
+        story.append(Paragraph("Limitations", styles["Heading2"]))
+        story.append(Paragraph(cert.get("known_limitations", "None documented"), styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        story.append(Paragraph(f"Generated: {cert.get('timestamp', '')}", styles["normal"]))
+        story.append(Paragraph(f"Generated: {cert.get('timestamp', '')}", styles["Normal"]))
 
         doc.build(story)
         buf.seek(0)
