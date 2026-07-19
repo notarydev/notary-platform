@@ -185,7 +185,7 @@ function renderSetup(c){
       </div>
       ${p.code?`<pre style="margin-top:8px">${p.code}</pre>`:""}
       ${p.status==="built"&&p.id==="python_sdk"?`<div style="margin-top:12px" class="action-row">
-        <button class="btn btn-sm" onclick="alert('Tests pass: 54 passed. pip install notary-sdk from github.com/notarydev/notary-sdk')">Install Instructions</button>
+        <button class="btn btn-sm" onclick="showSDKInstructions()">Install Instructions</button>
         <button class="btn btn-sm btn-outline" onclick="submitManual()">Submit Manual Record</button>
       </div>`:""}
       ${p.status==="built"&&p.id==="api_submission"?`<div style="margin-top:12px"><button class="btn btn-sm" onclick="createVR()">Create Test Record</button></div>`:""}
@@ -203,6 +203,22 @@ function renderSetup(c){
 async function createVR(){ try{const r=await ap("/v1/verification-records?source_type=api_submission&external_ref=test-1");alert("Created: "+r.id);nav("verification-records")}catch(e){alert("Failed: "+e.message)}}
 async function submitManual(){ try{const r=await ap("/v1/verification-records/manual",{ticket_id:"TKT-"+Date.now(),transcript:"Customer complained about loan denial",decision:"DENY"});alert("Submitted: "+r.id);nav("verification-records")}catch(e){alert("Failed: "+e.message)}}
 
+function showSDKInstructions(){
+  document.getElementById('drawer-container').innerHTML=`
+    <div class="drawer-overlay" onclick="this.innerHTML=''"><div class="drawer" onclick="event.stopPropagation()">
+      <div class="drawer-header"><span style="font-weight:800;font-size:13px">Python SDK — Install Instructions</span><button class="btn btn-sm btn-outline" onclick="this.closest('.drawer-overlay').remove()">✕</button></div>
+      <div class="drawer-body">
+        <div class="section-title">1. Install</div>
+        <pre>pip install git+https://github.com/notarydev/notary-sdk.git</pre>
+        <div style="font-size:11px;color:var(--muted);margin:4px 0 12px">54 tests passing — SDK is stable for design partners</div>
+        <div class="section-title">2. Capture a Decision</div>
+        <pre>from notary import RunCapture\n\ncapture = RunCapture(secret_key=b\"your-secret-key\")\ncapture.capture_llm(prompt=\"loan app #1234\", response=\"score: 620\")\ncapture.capture_decision(decision=\"DENY\")\nsnapshot = capture.finalize()</pre>
+        <div class="section-title">3. Send to Notary</div>
+        <pre>import requests\nrequests.post(\n  \"https://api.getnotary.ai/v1/incidents/ingest\",\n  headers={\"Authorization\": \"Bearer YOUR_TOKEN\"},\n  json={\"snapshot\": snapshot.to_dict()}\n)</pre>
+        <div class="section-title">4. View in Platform</div>
+        <p style="font-size:12px;color:var(--muted)">The captured decision appears as a Verification Record → promote to Incident → replay → verify fix → issue proof.</p>
+      </div></div></div>`;
+}
 // ── VERIFICATION RECORDS ──
 function renderVRs(c,vrs){
   q("#view-title").textContent="Verification Records";
