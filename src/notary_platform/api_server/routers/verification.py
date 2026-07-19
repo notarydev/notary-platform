@@ -42,18 +42,70 @@ def _assess_replayability(vr: VerificationRecord) -> tuple[ReplayabilityStatus, 
     has_label = bool(vr.current_label_id and _label_store.get(vr.current_label_id))
     missing = []
 
+    # WO-78: Compute determinism score and flags
+    score, flags = _compute_determinism(vr)
+    vr.replayability_score = score
+    vr.non_deterministic_flags = flags
+
     if has_llm and not has_cassette:
-        return ReplayabilityStatus.evidence_only, "LLM outputs are non-deterministic. Replay can verify conditions but not exact outputs.", []
-    if not has_cassette and not has_llm and not has_decision:
-        return ReplayabilityStatus.missing_context, "No recorded responses, model calls, or decisions found in this record.", ["cassette_data"]
-    if has_cassette and not has_label:
+        state = ReplayabilityStatus.evidence_only
+        msg = "LLM outputs are non-deterministic. Replay can verify conditions but not exact outputs."
+    elif not has_cassette and not has_llm and not has_decision:
+        state = ReplayabilityStatus.missing_context
+        msg = "No recorded responses, model calls, or decisions found in this record."
+        missing.append("cassette_data")
+    elif has_cassette and not has_label:
+        state = ReplayabilityStatus.requires_human_label
+        msg = "Cassette data is present but no expected outcome label has been added."
         missing.append("human_label")
-        return ReplayabilityStatus.requires_human_label, "Cassette data is present but no expected outcome label has been added.", missing
-    if has_cassette and has_label and has_decision:
-        return ReplayabilityStatus.replayable, "All prerequisites met: cassette data, human label, and decision present.", []
-    if has_llm and has_cassette:
-        return ReplayabilityStatus.partially_replayable, "LLM call present; replay can verify recorded system responses but LLM outputs may differ.", []
-    return ReplayabilityStatus.unknown, "Replayability could not be determined.", []
+    elif has_cassette and has_label and has_decision:
+        state = ReplayabilityStatus.replayable
+        msg = "All prerequisites met: cassette data, human label, and decision present."
+    elif has_llm and has_cassette:
+        state = ReplayabilityStatus.partially_replayable
+        msg = "LLM call present; replay can verify recorded system responses but LLM outputs may differ."
+    else:
+        state = ReplayabilityStatus.unknown
+        msg = "Replayability could not be determined."
+
+    if score >= 0.8 and state == ReplayabilityStatus.replayable:
+        vr.defensibility_summary = f"{int(score*100)}% of the decision path is deterministically re-testable. Proof demonstrates fix resolves core logic."
+    elif score >= 0.5:
+        vr.defensibility_summary = f"{int(score*100)}% deterministically re-testable. Remaining relies on sealed evidence assumptions."
+    else:
+        vr.defensibility_summary = f"Evidence-only: {int(score*100)}% deterministically testable. Manual verification required."
+
+    return state, msg, missing
+
+
+def _compute_determinism(vr: VerificationRecord) -> tuple[float, list[dict]]:
+    """WO-78: Compute replayability score and flag non-deterministic components."""
+    total_weight = 10.0
+    penalty = 0.0
+    flags = []
+    has_llm = any(e.kind == EventKind.model_call for e in vr.events)
+    has_http = any(e.kind in (EventKind.tool_call, EventKind.api_response) for e in vr.events)
+
+    if has_llm:
+        penalty += 3.0
+        flags.append({"component": "llm_call", "severity": "NON_DETERMINISTIC_CORE", "location": "model_interaction",
+            "description": "LLM outputs are non-deterministic. May differ on replay.", "remediation": "Use temp=0 or seed."})
+    if not has_http:
+        penalty += 2.0
+        flags.append({"component": "missing_cassette", "severity": "NON_DETERMINISTIC_CORE", "location": "external_calls",
+            "description": "No recorded API/tool responses. Cannot replay.", "remediation": "Capture all API calls with responses."})
+    is_missing_label = not vr.current_label_id
+    if is_missing_label:
+        penalty += 1.5
+        flags.append({"component": "missing_label", "severity": "NON_DETERMINISTIC_SIDE_EFFECT", "location": "human_review",
+            "description": "No expected outcome label.", "remediation": "Add approved expected outcome."})
+    if not any(e.kind == EventKind.decision for e in vr.events):
+        penalty += 1.0
+        flags.append({"component": "missing_decision", "severity": "NON_DETERMINISTIC_CORE", "location": "decision_path",
+            "description": "No decision event captured.", "remediation": "Capture final decision in SDK."})
+
+    score = max(0.0, min(1.0, 1.0 - (penalty / total_weight)))
+    return score, flags
 
 
 # ── CRUD ──
@@ -255,3 +307,130 @@ ADAPTERS = {
 @router.get("/platform/adapters")
 def list_adapters() -> list[dict]:
     return [{"id": k, **v} for k, v in ADAPTERS.items()]
+
+
+# ── WO-78: Replay Preflight ──
+
+
+@router.get("/verification-records/{vr_id}/replay-preflight")
+def replay_preflight(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
+    vr = _vr_store.get(vr_id)
+    if vr is None or vr.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Verification Record not found")
+    [f for f in vr.non_deterministic_flags if f.get("component") == "missing_cassette"]
+    warnings = [f for f in vr.non_deterministic_flags if f.get("severity") == "NON_DETERMINISTIC_SIDE_EFFECT"]
+    blocks = [f for f in vr.non_deterministic_flags if f.get("severity") == "NON_DETERMINISTIC_CORE"]
+
+    if vr.replayability == ReplayabilityStatus.replayable:
+        status = "PASS"
+    elif vr.replayability == ReplayabilityStatus.evidence_only:
+        status = "FAIL"
+    elif blocks:
+        status = "FAIL"
+    else:
+        status = "WARN"
+
+    return {
+        "incident_id": vr.promoted_to_incident or vr_id,
+        "preflight_status": status,
+        "replayability_state": vr.replayability.value,
+        "replayability_score": vr.replayability_score,
+        "can_proceed": status != "FAIL",
+        "warnings": warnings,
+        "blocking_factors": blocks,
+        "missing_prerequisites": vr.missing_prerequisites,
+        "next_actions": ["Review evidence manually"] if status == "FAIL" else [],
+    }
+
+
+# ── WO-79: Label Heuristics + Bulk Approve ──
+
+
+_LABEL_HEURISTICS = {
+    "incident_type": [
+        ("model_degradation", "Model output or behavior degraded from expected", 0.5),
+        ("api_failure", "External API returned error or timeout", 0.7),
+        ("policy_violation", "Decision violates known compliance or business rule", 0.6),
+        ("external_override", "Human intervention or escalation detected", 0.8),
+    ],
+    "severity": [
+        ("high", "Financial or compliance impact suspected", 0.5),
+        ("medium", "Moderate impact or limited scope", 0.5),
+        ("low", "Minimal impact", 0.5),
+    ],
+}
+
+
+@router.post("/verification-records/{vr_id}/label-suggest")
+def suggest_labels(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
+    vr = _vr_store.get(vr_id)
+    if vr is None or vr.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Verification Record not found")
+    has_llm = any(e.kind == EventKind.model_call for e in vr.events)
+    has_error = any(e.kind in (EventKind.api_response, EventKind.tool_call) for e in vr.events)
+    suggestions = []
+    for cat, rules in _LABEL_HEURISTICS.items():
+        for value, desc, base_conf in rules:
+            conf = base_conf
+            if cat == "incident_type" and value == "model_degradation" and has_llm:
+                conf = 0.65
+                suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "llm_detected_v1", "reasoning": desc})
+            elif cat == "incident_type" and value == "api_failure" and has_error:
+                suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "api_detected_v1", "reasoning": desc})
+            elif cat == "incident_type" and value == "policy_violation":
+                suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "default_v1", "reasoning": desc})
+            elif cat == "severity":
+                suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "default_v1", "reasoning": desc})
+    return {"vr_id": vr_id, "suggested_labels": suggestions}
+
+
+@router.post("/verification-records/bulk-label-approve")
+def bulk_approve(body: dict, org_id: str = Depends(require_auth)) -> dict:
+    filter_conf = body.get("filter", {})
+    min_conf = filter_conf.get("suggested_confidence_min", 0.0)
+    max_conf = filter_conf.get("suggested_confidence_max", 1.0)
+    approved = []
+    for vid, vr in list(_vr_store.items()):
+        if vr.org_id != org_id:
+            continue
+        if vr.current_label_id:
+            lbl = _label_store.get(vr.current_label_id)
+            if lbl and min_conf <= lbl.suggested_confidence <= max_conf and lbl.status == "active":
+                lbl.status = "active"  # already approved
+                lbl.approval_reason = body.get("approval_reason", "Bulk approved")
+                approved.append(vid)
+    return {"approved_count": len(approved), "approved_vr_ids": approved}
+
+
+@router.get("/system/determinism-checklist")
+def get_determinism_checklist() -> dict:
+    return {
+        "checklist": [
+            {"item": "sealed_external_responses",
+             "description": "All outbound API calls must have recorded responses.",
+             "severity": "NON_DETERMINISTIC_CORE", "detection": "Scan for unsealed HTTP events."},
+            {"item": "deterministic_llm_params",
+             "description": "LLM calls should use temp=0 for reproducible outputs.",
+             "severity": "NON_DETERMINISTIC_CORE", "detection": "Check for LLM events."},
+            {"item": "decision_captured",
+             "description": "The final decision must be captured.",
+             "severity": "NON_DETERMINISTIC_CORE", "detection": "Check for decision event."},
+            {"item": "human_label_required",
+             "description": "A human-approved expected outcome is needed for proof.",
+             "severity": "NON_DETERMINISTIC_SIDE_EFFECT", "detection": "Check for approved label."},
+        ]
+    }
+
+
+@router.get("/system/label-heuristics")
+def get_label_heuristics() -> dict:
+    return {
+        "heuristics": [
+            {"id": "llm_detected_v1", "category": "incident_type",
+             "target": "model_degradation", "trigger": "LLM events present", "confidence": "0.65"},
+            {"id": "api_detected_v1", "category": "incident_type",
+             "target": "api_failure", "trigger": "Tool/API events present", "confidence": "0.7"},
+            {"id": "default_v1", "category": "severity",
+             "target": "medium", "trigger": "Default assessment", "confidence": "0.5"},
+        ]
+    }

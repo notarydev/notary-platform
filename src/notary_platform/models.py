@@ -336,6 +336,10 @@ class VerificationRecord:
     current_label_id: str = ""
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     is_demo: bool = False
+    # WO-78: Determinism contract
+    replayability_score: float = 0.0
+    non_deterministic_flags: list[dict] = field(default_factory=list)
+    defensibility_summary: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -355,6 +359,9 @@ class VerificationRecord:
             "current_label_id": self.current_label_id,
             "created_at": self.created_at,
             "is_demo": self.is_demo,
+            "replayability_score": self.replayability_score,
+            "non_deterministic_flags": self.non_deterministic_flags,
+            "defensibility_summary": self.defensibility_summary,
         }
 
 
@@ -403,6 +410,11 @@ class HumanLabel:
     status: str = "active"  # active | superseded | revoked
     version: int = 1
     superseded_by: str = ""
+    # WO-79: Label provenance
+    category: str = "incident_type"
+    suggested_by: str = ""
+    suggested_confidence: float = 0.0
+    approval_reason: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -416,6 +428,10 @@ class HumanLabel:
             "status": self.status,
             "version": self.version,
             "superseded_by": self.superseded_by,
+            "category": self.category,
+            "suggested_by": self.suggested_by,
+            "suggested_confidence": self.suggested_confidence,
+            "approval_reason": self.approval_reason,
         }
 
 

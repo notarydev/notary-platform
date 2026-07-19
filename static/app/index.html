@@ -222,22 +222,22 @@ function showSDKInstructions(){
 // ── VERIFICATION RECORDS ──
 function renderVRs(c,vrs){
   q("#view-title").textContent="Verification Records";
-  const st=["all","replayable","requires_human_label","evidence_only","missing_context"];
   if(!vrs.length){c.innerHTML=em("No Verification Records","Submit a record from Setup or via the API.","Go to Setup","nav('setup')");return;}
   c.innerHTML=`
-    <div class="filter-pills">${st.map(s=>`<button class="filter-pill${s==="all"?" active":""}" onclick="fVR('${s}',this)">${s.replace(/_/g," ").replace(/\b\w/g,x=>x.toUpperCase())} (${s==="all"?vrs.length:vrs.filter(v=>v.replayability===s).length})</button>`).join("")}</div>
-    <table><thead><tr><th>ID</th><th>Source</th><th>Replayability</th><th>Label</th><th>Agent</th><th>Actions</th></tr></thead>
+    <div class="filter-pills">${["all","replayable","requires_human_label","evidence_only"].map(s=>`<button class="filter-pill${s==="all"?" active":""}" onclick="fVR('${s}',this)">${s.replace(/_/g," ").replace(/\b\w/g,x=>x.toUpperCase())} (${s==="all"?vrs.length:vrs.filter(v=>v.replayability===s).length})</button>`).join("")}</div>
+    <table><thead><tr><th>ID</th><th>Source</th><th>Score</th><th>Replayability</th><th>Label</th><th>Actions</th></tr></thead>
     <tbody>${vrs.map(v=>`<tr class="vr-row" data-rp="${v.replayability}">
       <td>${v.is_demo?db():""} ${v.id}</td>
       <td><span class="badge badge-${v.source_type==="sdk_snapshot"?"built":"ingested"}">${v.source_type.replace(/_/g," ")}</span></td>
+      <td><span style="font-weight:800;color:${(v.replayability_score||0)>=0.8?'var(--green)':(v.replayability_score||0)>=0.5?'var(--amber)':'var(--red)'}">${Math.round((v.replayability_score||0)*100)}%</span></td>
       <td><span class="badge badge-${v.replayability}">${v.replayability.replace(/_/g," ")}</span></td>
       <td>${v.current_label_id?"✓":""} ${v.missing_prerequisites.includes("human_label")?"<span class='badge badge-planned'>needs label</span>":""}</td>
-      <td>${v.agent_id||"—"}</td>
       <td class="action-row">
         ${v.replayability==="requires_human_label"?`<button class="btn btn-sm btn-amber" onclick="addLabel('${v.id}')">Add Label</button>`:""}
-        ${v.replayability==="replayable"||v.replayability==="partially_replayable"?`<button class="btn btn-sm" onclick="promoteVR('${v.id}')">Promote to Incident</button>`:""}
-        ${v.replayability==="evidence_only"?`<button class="btn btn-sm btn-outline" disabled>LLM — evidence only</button>`:""}
+        ${v.replayability==="replayable"||v.replayability==="partially_replayable"?`<button class="btn btn-sm" onclick="promoteVR('${v.id}')">Promote</button>`:""}
+        ${v.replayability==="evidence_only"?`<button class="btn btn-sm btn-outline" disabled>Evidence only</button>`:""}
         <button class="btn btn-sm btn-outline" onclick="vrDetail('${v.id}')">Detail</button>
+        <button class="btn btn-sm btn-outline" onclick="suggestLabels('${v.id}')">Suggest</button>
       </td></tr>`).join("")}</tbody></table>`;
 }
 
