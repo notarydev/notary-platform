@@ -46,7 +46,10 @@ REGION="${AWS_REGION:-us-east-2}"
 PROJECT_NAME="${PROJECT_NAME:-notary}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 NAME_PREFIX="${PROJECT_NAME}-${ENVIRONMENT}"          # -> notary-dev
-ECR_REPO="${NAME_PREFIX}-api"                          # -> notary-dev-api
+# NOTE: the ECR repo is named "${project_name}-api" in infra/terraform/ecr.tf
+# (NO environment prefix), i.e. "notary-api" — not "notary-dev-api". The ECS
+# service/cluster DO carry the environment prefix (notary-dev-api / notary-dev).
+ECR_REPO="${PROJECT_NAME}-api"                         # -> notary-api
 ECS_CLUSTER="${NAME_PREFIX}"                           # -> notary-dev
 ECS_SERVICE="${NAME_PREFIX}-api"                       # -> notary-dev-api
 IMAGE_TAG="${IMAGE_TAG:-main-$(git rev-parse --short HEAD)-$(date +%Y%m%d-%H%M%S)}"
