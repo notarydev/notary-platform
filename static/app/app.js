@@ -401,12 +401,10 @@ function openSDKSetup() {
     <div class="section-title">1. Install (local / Git path)</div>
     ${renderCodeBlock("git clone https://github.com/notarydev/notary-platform.git\ncd notary-platform\npip install -e packages/notary-sdk-py")}
     <div style="font-size:11px;color:var(--amber);margin:4px 0 12px">Notary Python SDK is not published to PyPI yet. Install from the repo directly.</div>
-    <div class="section-title">2. Configure environment</div>
-    ${renderCodeBlock(`NOTARY_API_URL=http://localhost:8000\nNOTARY_API_TOKEN=your-token-here`)}
-    <div class="section-title">3. Capture a decision</div>
+    <div class="section-title">2. Capture a decision (Python)</div>
     ${renderCodeBlock(`from notary_sdk import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_tool(method="POST", url="/score", response={"score": 620})\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
-    <div class="section-title">4. Submit to Notary</div>
-    ${renderCodeBlock(`import requests\nrequests.post(\n  "http://localhost:8000/v1/incidents/ingest",\n  headers={"Authorization": "Bearer your-token-here"},\n  json={"snapshot": snapshot.to_dict()}\n)`)}
+    <div class="section-title">3. Submit to Notary API</div>
+    ${renderCodeBlock(`import requests\n\n# NOTARY_API_AUTH_TOKEN is the env var the platform reads (set in Settings)\n# The ingestion endpoint is /v1/verification-records (incidents is legacy)\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json={"snapshot": snapshot.to_dict(), "org_id": "demo-org"}\n)`)}
   `;
   renderDrawer("Python SDK Setup", body);
 }

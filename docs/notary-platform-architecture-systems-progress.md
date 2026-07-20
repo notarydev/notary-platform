@@ -156,11 +156,11 @@ mypy src           # Success (26 files)
 ## Smoke test URLs
 
 ```
-http://api.getnotary.ai/health
-http://api.getnotary.ai/app/
-http://api.getnotary.ai/cc/
-http://api.getnotary.ai/v1/verification-records
-http://api.getnotary.ai/v1/incidents
-http://api.getnotary.ai/v1/topology
-http://api.getnotary.ai/v1/live-status
+https://api.getnotary.ai/health
+https://api.getnotary.ai/app/
+https://api.getnotary.ai/cc/
+https://api.getnotary.ai/v1/verification-records
+https://api.getnotary.ai/v1/incidents
+https://api.getnotary.ai/v1/topology
+https://api.getnotary.ai/v1/live-status
 ```
