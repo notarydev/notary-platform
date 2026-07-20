@@ -93,6 +93,10 @@ def issue_certificate(incident_id: str, org_id: str = Depends(require_auth)) -> 
         )
 
     mutation = inc.mutation_result
+    if not mutation:
+        raise HTTPException(status_code=409, detail="proof requires a successful fix verification; run mutation-tests after replay")
+    if not mutation.get("mitigated"):
+        raise HTTPException(status_code=409, detail="proof requires a mitigated fix verification; the latest fix did not produce the expected outcome")
     cert = generate_certificate(
         incident_id=incident_id,
         root_hash=inc.snapshot_summary.get("root_hash", ""),
