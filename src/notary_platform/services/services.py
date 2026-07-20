@@ -1357,10 +1357,11 @@ class ReleaseGateService:
 
     def _ci_cd_command(self, policy_id: str, agent_version: str) -> str:
         return (
-            f"curl -X POST https://api.getnotary.ai/v1/release-gate/checks "
+            f"curl -fsS -X POST https://api.getnotary.ai/v1/release-gate/checks "
             f'-H "Authorization: Bearer <token>" '
             f'-H "Content-Type: application/json" '
-            f'-d \'{{"policy_id": "{policy_id}", "agent_version": "{agent_version}"}}\''
+            f'-d \'{{"policy_id": "{policy_id}", "agent_version": "{agent_version}"}}\' '
+            f"-o notary-release-gate.json && python -m notary_platform.release_gate_cli notary-release-gate.json"
         )
 
 
