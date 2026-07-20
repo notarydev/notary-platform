@@ -38,7 +38,7 @@ Goal: make the platform demo feel like a working AI Decision Assurance product.
 
 ---
 
-## 2. P0: Fix Harborline Seed Failure
+## 2. P0: Fix Harborline Seed Failure — DONE ✅
 
 ### Root cause (confirmed from CloudWatch)
 ```
@@ -56,10 +56,16 @@ The seed endpoint creates a proof-of-mitigation certificate. Signing in producti
 2. Re-run `bash infra/deploy-api.sh` (from clean origin/main).
 3. Verify the seed now returns 200 (not 500) against `https://api.getnotary.ai/v1/demo/harborline-release-gate/seed` with a valid token.
 
+### Status after fix
+- Deployed main `024d3c2` → task-def `notary-dev-api:52`.
+- Production image now built with `--build-arg INSTALL_CLOUD=1`.
+- `boto3` present in image; live `demo_preflight` passes including `harborline_seed`.
+- Repeated seed calls are idempotent: the same demo org data is overwritten/reset.
+
 ### Acceptance
-- Seed does not 500.
-- Repeated seed calls are idempotent (storage should overwrite/reset for the same demo org).
-- If auth fails, UI shows 401 detail, not 500.
+- ✅ Seed does not 500.
+- ✅ Repeated seed calls are idempotent (storage overwrites for the same demo org).
+- ✅ If auth fails, UI shows 401 detail, not 500.
 
 ---
 
@@ -199,11 +205,11 @@ Backend: no new routes needed.
 
 ## 10. Next Actions (recommended order)
 
-1. **P0 blocker fix** (deploy script `INSTALL_CLOUD=1`) and redeploy.
-2. Verify seed works live.
-3. P1: Setup wizard.
-4. P1: Home golden path + clickable cards.
-5. P1: Incidents replay table + proof path verification.
-6. P1: Proofs page verification.
-7. P2: VRs, website alignment, living guide.
-8. Final live QA and screenshots.
+1. ✅ **P0 blocker fix** (deploy script `INSTALL_CLOUD=1`) and redeploy.
+2. ✅ Verify seed works live.
+3. **P1: Setup wizard.**
+4. **P1: Home golden path + clickable cards.**
+5. **P1: Incidents replay table + proof path verification.**
+6. **P1: Proofs page verification.**
+7. **P2: VRs, website alignment, living guide.**
+8. **Final live QA and screenshots.**
