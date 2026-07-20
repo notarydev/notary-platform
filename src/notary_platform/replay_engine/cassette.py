@@ -22,8 +22,12 @@ class ResponseCassette:
     method / url / body.
     """
 
-    def __init__(self, elements: list[dict[str, Any]]) -> None:
+    def __init__(self, elements: list[dict[str, Any]], *, strict_order: bool = False) -> None:
         self._entries: dict[str, dict[str, Any]] = {}
+        self._ordered_entries: list[dict[str, Any]] = []
+        self._cursor = 0
+        self._strict_order = strict_order
+        self._misses: list[dict[str, Any]] = []
         for elem in elements:
             if elem.get("kind") not in {"http", "tool_call", "api_response"}:
                 continue
@@ -38,13 +42,15 @@ class ResponseCassette:
                 url = str(req)
                 body = None
             sig = _call_signature(method, url, body)
-            self._entries[sig] = {
+            entry = {
                 "method": method,
                 "url": url,
                 "body": body,
                 "response": payload.get("response"),
                 "status": payload.get("status"),
             }
+            self._entries[sig] = entry
+            self._ordered_entries.append(entry)
 
     def lookup(self, method: str, url: str, body: Optional[str] = None) -> Optional[dict[str, Any]]:
         """Look up a recorded response by call signature.
@@ -53,6 +59,14 @@ class ResponseCassette:
         does not resolve, so agents may call ``lookup(method, url)`` without
         passing the recorded request body.
         """
+        if self._strict_order:
+            entry = self._ordered_entries[self._cursor] if self._cursor < len(self._ordered_entries) else None
+            if entry is not None and self._matches(entry, method, url, body):
+                self._cursor += 1
+                return {"response": entry["response"], "status": entry["status"]}
+            self._misses.append({"method": method.upper(), "url": url, "body": body})
+            return None
+
         sig = _call_signature(method, url, body)
         entry = self._entries.get(sig)
         if entry is not None:
@@ -65,11 +79,29 @@ class ResponseCassette:
                     and entry.get("body") is not None
                 ):
                     return {"response": entry["response"], "status": entry["status"]}
+        self._misses.append({"method": method.upper(), "url": url, "body": body})
         return None
 
     def has_entry(self, method: str, url: str, body: Optional[str] = None) -> bool:
         return self.lookup(method, url, body) is not None
 
+    def _matches(self, entry: dict[str, Any], method: str, url: str, body: Optional[str]) -> bool:
+        if entry.get("method", "").upper() != method.upper() or entry.get("url") != url:
+            return False
+        return body == entry.get("body") or (body is None and entry.get("body") is not None)
+
     @property
     def entry_count(self) -> int:
         return len(self._entries)
+
+    @property
+    def consumed_count(self) -> int:
+        return self._cursor
+
+    @property
+    def misses(self) -> list[dict[str, Any]]:
+        return list(self._misses)
+
+    @property
+    def unconsumed_count(self) -> int:
+        return max(0, len(self._ordered_entries) - self._cursor)
