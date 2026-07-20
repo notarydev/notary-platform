@@ -36,6 +36,8 @@ class Settings:
     # When true, persistence uses S3 + Postgres. When false (default locally),
     # an in-memory store is used so the demo runs with zero cloud setup.
     use_remote_storage: bool = bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", ""))
+    storage_profile: str = os.getenv("NOTARY_STORAGE_PROFILE", "memory")
+    shared_demo_storage_path: str = os.getenv("NOTARY_SHARED_DEMO_STORAGE_PATH", ".notary/shared-demo-store.json")
 
     # Viz SPA origin for CORS. May be a comma-separated list of allowed origins
     # (local + deployed) so shared environments can lock CORS to known origins.
@@ -61,6 +63,8 @@ def load_settings() -> Settings:
         signing_key_id=os.getenv("NOTARY_SIGNING_KEY_ID", ""),
         kms_key_arn=os.getenv("NOTARY_KMS_KEY_ARN", ""),
         use_remote_storage=bool(os.getenv("NOTARY_USE_REMOTE_STORAGE", "")),
+        storage_profile=os.getenv("NOTARY_STORAGE_PROFILE", "memory"),
+        shared_demo_storage_path=os.getenv("NOTARY_SHARED_DEMO_STORAGE_PATH", ".notary/shared-demo-store.json"),
         viz_origin=os.getenv("NOTARY_VIZ_ORIGIN", "http://localhost:5173"),
         command_center_token=os.getenv("NOTARY_COMMAND_CENTER_TOKEN", ""),
     )
