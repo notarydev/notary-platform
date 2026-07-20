@@ -97,8 +97,30 @@ npx wrangler deploy --dry-run
 
 | Surface | Live? | Notes |
 |---------|-------|-------|
-| `getnotary.ai` reflects current website copy | YES (after deploy) | site.html == Worker HTML at `a01bd5c`; deploy is gated by sync check |
-| `api.getnotary.ai` | SEPARATE CHECKLIST | NOT solved by code reconciliation. This is deploy/DNS/cloud (ECS + ALB + ACM + Route53). Tracked outside this manifest. |
+| `getnotary.ai` | **DEPLOYED** ✅ | `wrangler deploy` of main `385d452`. Verified live: contains `Harborline` (×7), `Design-partner pilot`, `Apply for design-partner pilot`, `Stop repeating AI failures`. |
+| `www.getnotary.ai` | **DEPLOYED** ✅ | Same Worker, same content as above. |
+| `api.getnotary.ai` | **STALE — deploy blocked** ⛔ | Live `/health` → `{"status":"ok"}` but `app.js` has 0 matches for `Harborline` / `Blocked Gate` / `Passing Gate`. Current main `cf9aa3a` code contains all three markers. This is a **cross-account deploy gap**, not a code/CI issue. |
+
+### Platform API deploy blocker (the "separate cloud checklist")
+
+- Live `api.getnotary.ai` is an ALB → ECS/Fargate service in **AWS `us-east-2`**
+  (`notary-dev-alb-...us-east-2.elb.amazonaws.com`), account **other than**
+  `447633181871` (`Opencode_Notary`, `us-east-1`) which has **no ECR/ECS**.
+- The local `Opencode_Notary` creds therefore cannot push the image or update
+  the ECS service. Deploy requires credentials for the `us-east-2` account that
+  owns the infrastructure.
+- **Runbook ready:** `infra/deploy-api.sh` rebuilds the image from current main,
+  pushes to ECR repo `notary-dev-api`, and force-redeploys ECS service
+  `notary-dev-api` on cluster `notary-dev` (no Terraform apply, no DNS/secrets/KMS
+  changes). Run it from the `us-east-2` account owner's environment.
+- **Verification after deploy:**
+  ```
+  curl -s https://api.getnotary.ai/health
+  curl -s https://api.getnotary.ai/app/app.js | grep Harborline
+  curl -s https://api.getnotary.ai/app/app.js | grep "Blocked Gate"
+  curl -s https://api.getnotary.ai/app/app.js | grep "Passing Gate"
+  ```
+  Expected: `/health` → `{"status":"ok"}` and all three greps return ≥1 match.
 
 ## Stale branches / PRs to close or label `superseded`
 
