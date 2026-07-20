@@ -27,7 +27,7 @@ docker-build:
 	docker build -t notary-platform .
 
 run:
-	$(VENV)/bin/uvicorn notary_platform.api_server.main:app --reload --port 8001
+	$(VENV)/bin/uvicorn notary_platform.api_server.main:app --reload --port 8000
 
 # Phase 1 end-to-end demo.
 #
@@ -43,7 +43,7 @@ run:
 # target stays readable. Pass SCENARIO_ID to override the default scenario.
 demo:
 	@test -d $(VENV) || $(MAKE) install
-	@$(VENV)/bin/uvicorn notary_platform.api_server.main:app --port 8001 > /tmp/notary-demo.log 2>&1 &
+	@$(VENV)/bin/uvicorn notary_platform.api_server.main:app --port 8000 > /tmp/notary-demo.log 2>&1 &
 	@echo "Starting Notary API server (pid $$!)..."
 	@sleep 4
 	@./scripts/demo.sh "$(SCENARIO_ID)"
