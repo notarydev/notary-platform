@@ -284,22 +284,22 @@ function renderHome(c, h) {
   const blockers = h.blockers || [];
 
   const stats = [
-    ["var(--green)", "✓", sh.sdk_installed ? "Yes" : "No", "SDK Installed"],
-    ["var(--accent)", "◆", sh.agents_instrumented || 0, "Agents"],
-    ["var(--purple)", "◎", `${sh.systems_connected || 0}/${sh.systems_total || 0}`, "Systems"],
-    ["var(--blue)", "◈", sh.capture_policies || 0, "Policies"],
-    ["var(--amber)", "⚠", h.vrs_requires_label || 0, "Need Label"],
-    ["var(--green)", "✓", h.proofs_issued || 0, "Proofs"],
+    { color: "var(--green)", icon: "✓", value: sh.sdk_installed ? "Yes" : "No", label: "SDK Installed", action: "nav('setup')" },
+    { color: "var(--accent)", icon: "◆", value: sh.agents_instrumented || 0, label: "Agents", action: "nav('setup')" },
+    { color: "var(--purple)", icon: "◎", value: `${sh.systems_connected || 0}/${sh.systems_total || 0}`, label: "Systems", action: "nav('setup')" },
+    { color: "var(--blue)", icon: "◈", value: sh.capture_policies || 0, label: "Policies", action: "nav('readiness')" },
+    { color: "var(--amber)", icon: "⚠", value: h.vrs_requires_label || 0, label: "Need Label", action: "nav('verification-records?filter=needs_label')" },
+    { color: "var(--green)", icon: "✓", value: h.proofs_issued || 0, label: "Proofs", action: "nav('proofs')" },
   ];
 
   c.innerHTML = `
     ${renderHarborlineJourney()}
     ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Demo data — design partner preview</div>` : ""}
     <div class="stat-grid">${stats.map(s => `
-      <div class="stat">
-        <div style="color:${s[0]};font-size:12px;font-weight:700;margin-bottom:4px">${s[1]}</div>
-        <div class="stat-val" style="color:${s[0]}">${s[2]}</div>
-        <div class="stat-label">${s[3]}</div>
+      <div class="stat stat-clickable" onclick="${s.action}">
+        <div style="color:${s.color};font-size:12px;font-weight:700;margin-bottom:4px">${s.icon}</div>
+        <div class="stat-val" style="color:${s.color}">${s.value}</div>
+        <div class="stat-label">${s.label}</div>
       </div>`).join("")}
     </div>
     <div class="section-title">Active Queues</div>
@@ -333,13 +333,45 @@ function renderHome(c, h) {
 
 function renderHarborlineJourney() {
   const seeded = S.harborlineSeed;
-  const steps = [
-    ["Capture", seeded?.verification_record_id, "Sealed Harborline loan decision"],
-    ["Replay", seeded?.replay_run_id, "Original DENY reproduced"],
-    ["Fix", seeded?.mutation_test_id, "Corrected path routes to underwriting review"],
-    ["Proof", seeded?.proof_of_mitigation_certificate_id, "Scenario-scoped mitigation proof"],
-    ["Scenario", seeded?.scenario_id, "Regression scenario promoted"],
-    ["Gate", seeded?.release_gate_after_fix_id, "Fail before fix, pass after fix"],
+  const steps = seeded ? [
+    { name: "Capture", detail: "Sealed Harborline loan decision", data: [
+      ["Applicant", "HLCU-PL-0427"],
+      ["Original decision", "DENY"],
+      ["Expected outcome", "UNDERWRITING_REVIEW"],
+      ["Root hash", (seeded.proof_of_mitigation_certificate_id || "n/a").slice(0, 16) + "..."],
+    ], action: ["openVRDetail", seeded.verification_record_id] },
+    { name: "Replay", detail: "Original DENY reproduced", data: [
+      ["Original", "DENY"],
+      ["Replayed", "DENY"],
+      ["Verdict", "Failure reproduced from cassette"],
+    ], action: ["openVRDetail", seeded.verification_record_id] },
+    { name: "Fix", detail: "Corrected path routes to underwriting review", data: [
+      ["Before fix", "DENY"],
+      ["After fix", "UNDERWRITING_REVIEW"],
+      ["Change", "Missing bureau evidence routes to underwriting review"],
+    ], action: ["openIncidentDetail", seeded.incident_id] },
+    { name: "Proof", detail: "Scenario-scoped mitigation proof", data: [
+      ["Proof ID", seeded.proof_of_mitigation_certificate_id],
+      ["Signature", "Verified"],
+      ["Scope", "Verified for this scenario only"],
+    ], action: ["openProofDetail", seeded.proof_of_mitigation_certificate_id] },
+    { name: "Scenario", detail: "Regression scenario promoted", data: [
+      ["Scenario ID", seeded.scenario_id],
+      ["Library", "Release gate regression library"],
+      ["Expected outcome", "UNDERWRITING_REVIEW"],
+    ], action: ["openScenarioDetail", seeded.scenario_id] },
+    { name: "Gate", detail: "Fail before fix, pass after fix", data: [
+      ["Before fix", "FAIL"],
+      ["After fix", "PASS"],
+      ["Result", "Known failure covered by release gate"],
+    ], action: ["openReleaseGateDetail", seeded.release_gate_after_fix_id] },
+  ] : [
+    { name: "Capture", detail: "Seal the AI decision evidence" },
+    { name: "Replay", detail: "Reproduce the original decision from cassette" },
+    { name: "Fix", detail: "Run the scenario-scoped fix" },
+    { name: "Proof", detail: "Issue a tamper-evident mitigation proof" },
+    { name: "Scenario", detail: "Promote to release gate regression library" },
+    { name: "Gate", detail: "Block before fix, pass after fix" },
   ];
   return `
     <section class="golden-path">
@@ -351,7 +383,7 @@ function renderHarborlineJourney() {
           <button class="btn btn-green" onclick="seedHarborlineGoldenPath()">Seed Harborline Path</button>
           ${seeded ? `<button class="btn btn-outline" onclick="openVRDetail('${seeded.verification_record_id}')">Open Record</button>
           <button class="btn btn-outline" onclick="openReleaseGateDetail('${seeded.release_gate_before_fix_id}')">Blocked Gate</button>
-          <button class="btn" onclick="openReleaseGateDetail('${seeded.release_gate_after_fix_id}')">Passing Gate</button>` : `<button class="btn btn-outline" onclick="nav('readiness')">Open Readiness</button>`}
+          <button class="btn" onclick="openReleaseGateDetail('${seeded.release_gate_after_fix_id}')">Passing Gate</button>` : `<button class="btn btn-outline" onclick="nav('setup')">Open Setup</button>`}
         </div>
       </div>
       <div class="golden-panel">
@@ -361,12 +393,12 @@ function renderHarborlineJourney() {
         </div>
         <div class="golden-steps">
           ${steps.map((step, idx) => `
-            <div class="golden-step ${step[1] ? "done" : ""}">
+            <div class="golden-step ${seeded ? "done" : ""}" ${step.action ? `onclick="${step.action[0]}('${step.action[1]}')"` : ""}>
               <div class="golden-index">${idx + 1}</div>
               <div>
-                <strong>${esc(step[0])}</strong>
-                <p>${esc(step[2])}</p>
-                ${step[1] ? `<code>${esc(step[1])}</code>` : ""}
+                <strong>${esc(step.name)}</strong>
+                <p>${esc(step.detail)}</p>
+                ${step.data ? `<div class="golden-step-data">${step.data.map(([k, v]) => `<span><strong>${esc(k)}:</strong> ${esc(v)}</span>`).join("")}</div>` : ""}
               </div>
             </div>
           `).join("")}
