@@ -207,9 +207,9 @@ Backend: no new routes needed.
 
 1. ✅ **P0 blocker fix** (deploy script `INSTALL_CLOUD=1`) and redeploy.
 2. ✅ Verify seed works live.
-3. **P1: Setup wizard.**
-4. **P1: Home golden path + clickable cards.**
-5. **P1: Incidents replay table + proof path verification.**
-6. **P1: Proofs page verification.**
-7. **P2: VRs, website alignment, living guide.**
-8. **Final live QA and screenshots.**
+3. ✅ **P1: Setup wizard.**
+4. ✅ **P1: Home golden path + clickable cards.**
+5. ✅ **P1: Incidents replay table + proof path verification.**
+6. ✅ **P1: Proofs page verification.**
+7. ✅ **P2: VRs + living guide.** (Website intentionally excluded per scope.)
+8. ✅ **Final live QA:** `/health` ok, all UI markers present, `demo_preflight` passes against `api.getnotary.ai`.
