@@ -409,16 +409,19 @@ function renderHarborlineJourney() {
           ${seeded ? `${statusBadge(seeded.release_gate_before_fix_status)} ${statusBadge(seeded.release_gate_after_fix_status)}` : badgeDemo()}
         </div>
         <div class="golden-steps">
-          ${steps.map((step, idx) => `
-            <div class="golden-step ${seeded ? "done" : ""}" ${step.action ? `onclick="${step.action[0]}('${step.action[1]}')"` : ""}>
+          ${steps.map((step, idx) => {
+            const stateClasses = ["state-capture", "state-replay", "state-fix", "state-proof", "state-scenario", idx === 5 && seeded ? "state-gate-pass" : idx === 5 ? "state-gate-fail" : "state-gate-fail"];
+            const cls = (seeded ? "done " + (stateClasses[idx] || "done") : "");
+            return `
+            <div class="golden-step ${cls}" ${step.action ? `onclick="${step.action[0]}('${step.action[1]}')"` : ""}>
               <div class="golden-index">${idx + 1}</div>
               <div>
                 <strong>${esc(step.name)}</strong>
                 <p>${esc(step.detail)}</p>
                 ${step.data ? `<div class="golden-step-data">${step.data.map(([k, v]) => `<span><strong>${esc(k)}:</strong> ${esc(v)}</span>`).join("")}</div>` : ""}
               </div>
-            </div>
-          `).join("")}
+            </div>`;
+          }).join("")}
         </div>
       </div>
     </section>`;

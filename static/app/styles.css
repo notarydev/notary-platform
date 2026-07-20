@@ -152,6 +152,20 @@ section{margin-bottom:20px}
 .golden-steps{display:grid;gap:8px}
 .golden-step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;align-items:start;padding:8px;border:1px solid rgba(31,42,61,.72);border-radius:8px;background:rgba(17,26,43,.55)}
 .golden-step.done{border-color:rgba(34,197,94,.42)}
+.golden-step.state-capture{border-color:rgba(59,130,212,.42)}
+.golden-step.state-replay{border-color:rgba(239,68,68,.42)}
+.golden-step.state-fix{border-color:rgba(245,158,11,.42)}
+.golden-step.state-proof{border-color:rgba(34,197,94,.42)}
+.golden-step.state-scenario{border-color:rgba(59,130,212,.42)}
+.golden-step.state-gate-pass{border-color:rgba(34,197,94,.42)}
+.golden-step.state-gate-fail{border-color:rgba(239,68,68,.42)}
+.golden-step.state-capture .golden-index{color:var(--blue);border-color:var(--blue)}
+.golden-step.state-replay .golden-index{color:var(--red);border-color:var(--red)}
+.golden-step.state-fix .golden-index{color:var(--amber);border-color:var(--amber)}
+.golden-step.state-proof .golden-index{color:var(--green);border-color:var(--green)}
+.golden-step.state-scenario .golden-index{color:var(--blue);border-color:var(--blue)}
+.golden-step.state-gate-pass .golden-index{color:var(--green);border-color:var(--green)}
+.golden-step.state-gate-fail .golden-index{color:var(--red);border-color:var(--red)}
 .golden-index{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface-2);border:1px solid var(--border);font-size:11px;font-weight:800;color:var(--muted)}
 .golden-step.done .golden-index{color:var(--green);border-color:var(--green)}
 .golden-step strong{font-size:12px}
