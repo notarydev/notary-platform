@@ -394,7 +394,8 @@ class ReplayabilityService:
         if has_llm:
             # Deterministic LLM params reduce the severity of the limitation.
             def _deterministic_llm_payload(payload: dict[str, Any]) -> bool:
-                metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                raw_metadata = payload.get("metadata")
+                metadata: dict[Any, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
                 temperature = payload.get("temperature", metadata.get("temperature"))
                 seed = payload.get("seed", metadata.get("seed"))
                 return temperature == 0.0 and seed is not None
