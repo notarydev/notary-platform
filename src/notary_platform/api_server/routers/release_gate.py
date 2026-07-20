@@ -265,8 +265,6 @@ def update_scenario(scenario_id: str, body: dict, org_id: str = Depends(require_
         scenario.state = body["state"]
     if "business_title" in body:
         scenario.business_title = body["business_title"]
-    if "expected_outcome" in body:
-        scenario.expected_outcome = body["expected_outcome"]
     storage.update_scenario(scenario)
     return scenario.to_dict()
 
@@ -279,13 +277,14 @@ def update_scenario(scenario_id: str, body: dict, org_id: str = Depends(require_
 class ScenarioRunRequest(BaseModel):
     scenario_ids: list[str] = []
     agent_version: str
+    fix_config: Optional[dict] = None
 
 
 @router.post("/scenario-runs")
 def create_scenario_run(body: ScenarioRunRequest, org_id: str = Depends(require_auth), environment_id: str = Query("env:demo")) -> dict:
     service = ScenarioRunService(_registry())
     try:
-        run = service.run(body.scenario_ids, body.agent_version, org_id, environment_id)
+        run = service.run(body.scenario_ids, body.agent_version, org_id, environment_id, fix_config=body.fix_config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return run.to_dict()
@@ -369,6 +368,7 @@ def update_readiness_policy(policy_id: str, body: dict, org_id: str = Depends(re
 class ReadinessCheckRequest(BaseModel):
     policy_id: str
     agent_version: str
+    fix_config: Optional[dict] = None
 
 
 @router.post("/readiness-checks")
@@ -379,7 +379,7 @@ def create_readiness_check(
 ) -> dict:
     service = ReadinessService(_registry())
     try:
-        check = service.run_check(body.policy_id, body.agent_version, org_id, environment_id)
+        check = service.run_check(body.policy_id, body.agent_version, org_id, environment_id, fix_config=body.fix_config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return check.to_dict()
@@ -414,7 +414,7 @@ def create_release_gate_check(
 ) -> dict:
     service = ReleaseGateService(_registry())
     try:
-        result = service.check(body.policy_id, body.agent_version, org_id, environment_id)
+        result = service.check(body.policy_id, body.agent_version, org_id, environment_id, fix_config=body.fix_config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result.to_dict()

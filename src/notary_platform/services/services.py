@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from notary_platform.certificates import generate_certificate, verify_certificate_signature
 from notary_platform.demo_scenarios import SCENARIOS, get_scenario
@@ -491,6 +491,29 @@ class ReplayService:
         vr = self.storage.get_vr(vr_id)
         if vr is None or vr.org_id != org_id:
             raise ValueError("Verification Record not found")
+
+        # Check replayability: missing_context and evidence_only cannot produce a meaningful replay.
+        if vr.replayability in (ReplayabilityStatus.missing_context, ReplayabilityStatus.evidence_only):
+            run = ReplayRun(
+                id=f"rr-{uuid.uuid4().hex[:8]}",
+                org_id=vr.org_id,
+                verification_record_id=vr.id,
+                incident_id=vr.promoted_to_incident,
+                original_decision=self._find_decision(vr),
+                replay_method="none",
+                status="incomplete",
+            )
+            run.known_limitations.append(
+                KnownLimitation(
+                    code="missing_cassette_context",
+                    severity="NON_DETERMINISTIC_CORE",
+                    message=f"Record is {vr.replayability.value}: no cassette data available for replay.",
+                    subject="replay",
+                    certificate_blocking=True,
+                )
+            )
+            self.storage.create_replay_run(run)
+            return run
 
         scenario_id = self._find_scenario(vr)
         agent_fn = self.registry.get_agent(scenario_id)
@@ -1064,7 +1087,7 @@ class ScenarioRunService:
         self.registry = registry
         self.storage = registry.storage
 
-    def _run_single_scenario(self, scenario: Scenario, agent_version: str) -> ScenarioRunResult:
+    def _run_single_scenario(self, scenario: Scenario, agent_version: str, agent_kwargs: Optional[dict] = None) -> ScenarioRunResult:
         vr = self.storage.get_vr(scenario.source_vr_id)
         if vr is None:
             return ScenarioRunResult(
@@ -1086,7 +1109,7 @@ class ScenarioRunService:
 
         agent_fn = self.registry.get_agent(scenario_id)
         try:
-            result = replay_snapshot(snapshot, agent_fn)
+            result = replay_snapshot(snapshot, agent_fn, agent_kwargs=agent_kwargs)
             actual = result.get("decision") or ""
             status = "passed" if actual == scenario.expected_outcome else "failed"
             return ScenarioRunResult(
@@ -1104,7 +1127,7 @@ class ScenarioRunService:
                 reason=str(exc),
             )
 
-    def run(self, scenario_ids: list[str], agent_version: str, org_id: str, environment_id: str = "env:demo") -> ScenarioRun:
+    def run(self, scenario_ids: list[str], agent_version: str, org_id: str, environment_id: str = "env:demo", fix_config: Optional[dict] = None) -> ScenarioRun:
         if not scenario_ids:
             scenario_ids = [s.id for s in self.storage.list_scenarios(org_id, environment_id) if s.state == "active"]
         if not scenario_ids:
@@ -1133,7 +1156,8 @@ class ScenarioRunService:
                     )
                 )
                 continue
-            results.append(self._run_single_scenario(scenario, agent_version))
+            agent_kw = dict(fix_config or {})
+            results.append(self._run_single_scenario(scenario, agent_version, agent_kwargs=agent_kw))
 
         run.results = results
         run.status = "completed"
@@ -1188,7 +1212,7 @@ class ReadinessService:
         )
         return self.storage.create_readiness_policy(policy)
 
-    def run_check(self, policy_id: str, agent_version: str, org_id: str, environment_id: str = "env:demo") -> ReadinessCheck:
+    def run_check(self, policy_id: str, agent_version: str, org_id: str, environment_id: str = "env:demo", fix_config: Optional[dict] = None) -> ReadinessCheck:
         policy = self.storage.get_readiness_policy(policy_id)
         if policy is None or policy.org_id != org_id:
             raise ValueError("Readiness policy not found")
@@ -1196,7 +1220,7 @@ class ReadinessService:
             raise ValueError("Readiness policy is disabled")
 
         run_service = ScenarioRunService(self.registry)
-        scenario_run = run_service.run(policy.required_scenario_ids, agent_version, org_id, environment_id)
+        scenario_run = run_service.run(policy.required_scenario_ids, agent_version, org_id, environment_id, fix_config=fix_config)
 
         failing = [r.scenario_id for r in scenario_run.results if r.status == "failed"]
         errored = [r.scenario_id for r in scenario_run.results if r.status == "errored"]
@@ -1239,10 +1263,11 @@ class ReleaseGateService:
         agent_version: str,
         org_id: str,
         environment_id: str = "env:demo",
+        fix_config: Optional[dict] = None,
     ) -> ReleaseGateResult:
         try:
             readiness = ReadinessService(self.registry)
-            check = readiness.run_check(policy_id, agent_version, org_id, environment_id)
+            check = readiness.run_check(policy_id, agent_version, org_id, environment_id, fix_config=fix_config)
         except Exception:
             result = ReleaseGateResult(
                 id=f"rg-{uuid.uuid4().hex[:8]}",
