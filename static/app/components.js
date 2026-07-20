@@ -91,11 +91,27 @@ function renderWorkflowStep(label, state, detail, actionHtml) {
 
 function renderCodeBlock(code, opts = {}) {
   const id = "code-" + Math.random().toString(36).slice(2, 9);
+  const display = opts.mask ? code.slice(0, 8) + "••••••••" + code.slice(-4) : code;
   return `
     <div class="code-block">
-      <pre id="${id}">${esc(code)}</pre>
+      <pre id="${id}">${esc(display)}</pre>
+      ${opts.mask ? `<button class="btn btn-sm btn-outline" onclick="toggleCodeReveal('${id}', '${esc(code)}', this)">Reveal</button>` : ""}
       ${opts.copy !== false ? `<button class="btn btn-sm btn-outline" onclick="copyToClipboard('${id}', this)">Copy</button>` : ""}
     </div>`;
+}
+
+function toggleCodeReveal(id, full, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.dataset.revealed === "true") {
+    el.textContent = full.slice(0, 8) + "••••••••" + full.slice(-4);
+    el.dataset.revealed = "false";
+    btn.textContent = "Reveal";
+  } else {
+    el.textContent = full;
+    el.dataset.revealed = "true";
+    btn.textContent = "Hide";
+  }
 }
 
 function renderEmptyState(title, detail, actionHtml) {

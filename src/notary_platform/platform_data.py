@@ -15,16 +15,16 @@ from notary_platform.models import (
 )
 
 DEMO_ORG = Organization(
-    id="org:acme-demo",
-    name="Acme Assurance Demo",
+    id="org:harborline-demo",
+    name="Harborline Credit Union Demo",
     environments=["env:demo", "env:staging", "env:production"],
 )
 
 DEMO_ENVIRONMENTS = {
-    "env:demo": Environment(id="env:demo", name="Demo", org_id="org:acme-demo", kind="demo"),
-    "env:staging": Environment(id="env:staging", name="Staging", org_id="org:acme-demo", kind="staging"),
+    "env:demo": Environment(id="env:demo", name="Demo", org_id="org:harborline-demo", kind="demo"),
+    "env:staging": Environment(id="env:staging", name="Staging", org_id="org:harborline-demo", kind="staging"),
     "env:production": Environment(
-        id="env:production", name="Production", org_id="org:acme-demo", kind="production"
+        id="env:production", name="Production", org_id="org:harborline-demo", kind="production"
     ),
 }
 
@@ -32,7 +32,7 @@ DEMO_AGENTS = [
     Agent(
         id="agent:lending",
         name="Lending Decision Agent",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         risk_tier="high",
         sdk_status="connected",
@@ -44,7 +44,7 @@ DEMO_AGENTS = [
     Agent(
         id="agent:support-handoff",
         name="Support Handoff Agent",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         risk_tier="medium",
         sdk_status="connected",
@@ -56,7 +56,7 @@ DEMO_AGENTS = [
     Agent(
         id="agent:prior-auth",
         name="Prior Authorization Agent",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         risk_tier="high",
         sdk_status="stale",
@@ -68,7 +68,7 @@ DEMO_AGENTS = [
     Agent(
         id="agent:hiring-screen",
         name="Hiring Screen Agent",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         risk_tier="medium",
         sdk_status="not_installed",
@@ -81,7 +81,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:notary-sdk",
         name="Notary Python SDK",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="sdk",
         type="capture_source",
@@ -95,7 +95,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:notary-api",
         name="Notary API",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="api",
@@ -107,7 +107,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:lending",
         name="Lending Decision System",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="source_system",
@@ -120,7 +120,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:credit-bureau",
         name="Credit Bureau API",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="tool_api",
@@ -134,7 +134,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:support-ticketing",
         name="Support Ticketing",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="webhook",
         type="source_system",
@@ -147,7 +147,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:prior-auth",
         name="Prior Authorization System",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="source_system",
@@ -160,7 +160,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:hiring-ats",
         name="Hiring ATS",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="source_system",
@@ -174,7 +174,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:payment-api",
         name="Payment / Refund API",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="tool_api",
@@ -188,7 +188,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:claims-db",
         name="Claims Database",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="source_system",
@@ -202,7 +202,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:knowledge-base",
         name="Knowledge Base",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="tool_api",
@@ -216,7 +216,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:model-provider",
         name="Model Provider",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="model_provider",
@@ -231,7 +231,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:grc",
         name="GRC System",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="grc",
         type="grc_system",
@@ -244,7 +244,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:kms",
         name="AWS KMS",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="api",
@@ -256,7 +256,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:evidence-store",
         name="S3 Evidence Store",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="api",
@@ -268,7 +268,7 @@ DEMO_SYSTEMS = [
     SystemConnection(
         id="sys:cicd",
         name="CI/CD Release Gate",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         kind="api",
         type="cicd_system",
@@ -284,7 +284,7 @@ DEMO_POLICIES = [
     CapturePolicy(
         id="policy:default-capture",
         name="Default Capture Policy",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         status="active",
         coverage="all",
@@ -292,7 +292,7 @@ DEMO_POLICIES = [
     CapturePolicy(
         id="policy:lending-capture",
         name="Lending Agent Policy",
-        org_id="org:acme-demo",
+        org_id="org:harborline-demo",
         environment_id="env:demo",
         agent_id="agent:lending",
         status="active",

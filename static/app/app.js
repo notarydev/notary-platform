@@ -311,7 +311,7 @@ function renderHome(c, h) {
 
   c.innerHTML = `
     ${renderHarborlineJourney()}
-    ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Demo data — design partner preview</div>` : ""}
+    ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Fictional demo data — no production or customer data.</div>` : ""}
     <div class="stat-grid">${stats.map(s => `
       <div class="stat stat-clickable" onclick="${s.action}">
         <div style="color:${s.color};font-size:12px;font-weight:700;margin-bottom:4px">${s.icon}</div>
@@ -855,7 +855,7 @@ async function renderSetup(c) {
         <div><h4>API Token</h4><p style="font-size:12px;color:var(--muted)">Sent automatically in headers. Copy for CLI/curl use.</p></div>
         <span class="badge badge-built">ACTIVE</span>
       </div>
-      ${renderCodeBlock(S.token || "ntry-demo-...")}
+      ${renderCodeBlock(S.token || "ntry-demo-...", {mask: true})}
       <div style="font-size:11px;color:var(--muted);margin-top:4px">Change or view in <span class="link" onclick="nav('settings')">Settings</span></div>
     </div>
     <div id="setup-container" class="setup-wizard">
@@ -1646,7 +1646,7 @@ async function renderProofDetail(c, p) {
     </div>
     <div class="proof-bundle">
       <h3>${p.proof_id}</h3>
-      ${renderKV("Decision Workflow", "Harborline Credit Union personal-loan adverse-action")}
+      ${renderKV("Decision Workflow", p.workflow_title || cert.workflow_title || "Recorded AI decision workflow")}
       ${renderKV("Source Incident", `<span class="link" onclick="openIncidentDetail('${p.incident_id}')">${p.incident_id}</span>`)}
       ${renderKV("Source Verification Record", p.verification_record_id ? `<span class="link" onclick="openVRDetail('${p.verification_record_id}')">${p.verification_record_id}</span>` : "—")}
       ${renderKV("Source System", p.source_system_id || "—")}
@@ -1658,7 +1658,7 @@ async function renderProofDetail(c, p) {
       ${renderKV("Signature Status", sig === true ? "✓ Valid" : sig === false ? "✗ Invalid" : "Unknown")}
       ${renderKV("Signing Algorithm", cert.signing_algorithm || "—")}
       ${renderKV("Claim Scope", p.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
-      ${renderKV("Limitations", p.known_limitations || cert.known_limitations || "None documented")}
+      ${renderKV("Limitations", p.known_limitations || cert.known_limitations || "Not documented")}
       <div class="action-row" style="margin-top:12px">
         <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a>
         <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a>
@@ -2177,7 +2177,7 @@ async function renderSettings(c) {
     ${renderSection("Integrations", `
       <div class="action-row">
         ${renderDisabledAction("GRC Connector", "Planned")}
-        ${renderDisabledAction("Release Gate (CI/CD delivery)", "Planned")}
+        ${renderDisabledAction("CI/CD release pipeline integration", "Planned")}
       </div>
     `)}
     ${renderSection("Users & Roles", `
@@ -2316,7 +2316,7 @@ async function createApiKey() {
     const r = await apiPostForm("/v1/platform/keys", {label: "Platform key " + new Date().toLocaleTimeString(), key_type: "api"});
     renderDrawer("API Key Created", `
       <p style="font-size:12px;color:var(--muted)">Store this key — it will only be shown once.</p>
-      ${renderCodeBlock(r.key)}
+      ${renderCodeBlock(r.key, {mask: true})}
     `);
     loadApiKeys();
   } catch (e) {
