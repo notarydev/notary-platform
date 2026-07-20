@@ -78,6 +78,35 @@ class TestIngestion:
         assert resp.status_code == 200
         assert resp.json()["integrity"] == "verified"
 
+    def test_verified_ingest_records_custody_and_persists_evidence(self) -> None:
+        snap_dict = _make_snapshot_dict()
+        key_b64 = base64.b64encode(SECRET).decode()
+        resp = client.post(
+            "/v1/incidents/ingest",
+            json={"snapshot": snap_dict, "secret_key_b64": key_b64},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+
+        incident = client.get(f"/v1/incidents/{data['incident_id']}").json()
+        assert incident["snapshot_summary"]["integrity"] == "verified"
+        assert incident["org_id"] == "demo-org"
+        assert storage.get_snapshot(data["incident_id"]) == snap_dict
+        assert storage._evidence[data["evidence_ref"]] == snap_dict
+
+        custody = incident["custody"]
+        assert custody[0]["action"] == "created"
+        assert any(
+            c["action"] == "ingested" and c["actor"] == "demo-org" and "integrity=verified" in c["detail"]
+            for c in custody
+        )
+        assert any(
+            c["action"] == "evidence_stored"
+            and c["actor"] == "system"
+            and c["detail"] == data["evidence_ref"]
+            for c in custody
+        )
+
     def test_ingest_tampered_snapshot_with_key(self) -> None:
         _clear_storage()
         snap_dict = _make_snapshot_dict()
@@ -91,6 +120,8 @@ class TestIngestion:
 
         # Verify empty incidents list
         assert client.get("/v1/incidents").json() == []
+        assert storage._snapshots == {}
+        assert storage._evidence == {}
 
     def test_ingest_missing_fields(self) -> None:
         resp = client.post("/v1/incidents/ingest", json={"snapshot": {"schema_version": 1}})

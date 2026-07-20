@@ -27,6 +27,7 @@ _registry = ServiceRegistry(storage)
 class SnapshotIngestRequest(BaseModel):
     snapshot: dict[str, Any]
     secret_key_b64: Optional[str] = None
+    # Deprecated compatibility field. The authenticated/header org is authoritative.
     org_id: Optional[str] = None
 
 
@@ -52,7 +53,7 @@ def ingest_snapshot(body: SnapshotIngestRequest, org_id: str = Depends(require_a
     else:
         integrity_status = "not_verified_missing_key"
 
-    acting_org = body.org_id or org_id
+    acting_org = org_id
     incident = storage.create_incident(snapshot_dict, org_id=acting_org)
     incident._record_custody(
         "ingested",
