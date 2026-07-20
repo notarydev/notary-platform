@@ -1,0 +1,41 @@
+{
+  "work_order": "PRG-009",
+  "repo": "notarydev/notary-platform",
+  "branch": "codex/prg-009-scenario-gate-provenance",
+  "status": "in_review",
+  "usage_visibility": "not_available",
+  "scope": "Preserve scenario provenance and expose machine-readable release-gate reasons/evidence refs.",
+  "changes": [
+    "ReleaseGateResult now includes scenario_run_id.",
+    "ReleaseGateResult now includes per-scenario result details.",
+    "ReleaseGateResult now includes evidence_refs for readiness check, scenario run, certificate, and failing/errored scenarios.",
+    "Harborline vertical test asserts source VR, incident, label, scenario evidence refs, gate reason, and pass/fail evidence."
+  ],
+  "checks": [
+    {
+      "command": "PYTHONPATH=src python3 -m pytest tests/test_release_gate_vertical.py::TestReleaseGateVertical::test_harborline_release_gate_fails_before_fix_and_passes_after_fix tests/test_release_gate_vertical.py::TestReleaseGateVertical::test_release_gate_pass_fail_error",
+      "result": "passed",
+      "notes": "2 focused lineage/gate tests passed"
+    },
+    {
+      "command": "python3 -m ruff check src tests",
+      "result": "passed"
+    },
+    {
+      "command": "python3 -m mypy src",
+      "result": "passed"
+    },
+    {
+      "command": "PYTHONPATH=src python3 -m pytest tests/test_auth.py tests/test_certificates.py tests/test_ingestion.py tests/test_live_status.py tests/test_release_gate_vertical.py tests/test_replay.py tests/test_verification.py tests/test_viz.py",
+      "result": "passed",
+      "notes": "106 backend tests passed"
+    }
+  ],
+  "acceptance_criteria": [
+    "Promoted scenarios preserve source Verification Record, source incident, approved label, and evidence refs.",
+    "Release Gate fail/pass output includes stable scenario_run_id and per-scenario reasons.",
+    "Release Gate output includes machine-readable evidence refs.",
+    "Passing Release Gate output references the Proof of Readiness certificate."
+  ],
+  "blockers": []
+}

@@ -1329,6 +1329,16 @@ class ReleaseGateService:
             return result
 
         status = "pass" if check.verdict == "passed" else "fail"
+        scenario_run = self.storage.get_scenario_run(check.scenario_run_id)
+        scenario_results = [r.to_dict() for r in scenario_run.results] if scenario_run else []
+        evidence_refs = [
+            f"readiness_check:{check.id}",
+            f"scenario_run:{check.scenario_run_id}",
+        ]
+        if check.certificate_id:
+            evidence_refs.append(f"certificate:{check.certificate_id}")
+        evidence_refs.extend(f"scenario:{sid}" for sid in check.failing_scenarios)
+        evidence_refs.extend(f"scenario:{sid}" for sid in check.errored_scenarios)
         result = ReleaseGateResult(
             id=f"rg-{uuid.uuid4().hex[:8]}",
             org_id=org_id,
@@ -1337,6 +1347,9 @@ class ReleaseGateService:
             failing_scenarios=check.failing_scenarios,
             errored_scenarios=check.errored_scenarios,
             certificate_id=check.certificate_id,
+            scenario_run_id=check.scenario_run_id,
+            scenario_results=scenario_results,
+            evidence_refs=evidence_refs,
         )
         result.ci_cd_command = self._ci_cd_command(policy_id, agent_version)
         self.storage.create_release_gate_result(result)
