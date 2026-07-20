@@ -1116,13 +1116,28 @@ async function renderVRDetail(c, v) {
         ${preflight.can_proceed ? `<button class="btn btn-sm" onclick="promoteVR('${v.id}')">Promote to Incident</button>` : `<div class="badge badge-red">Cannot promote until blockers resolved</div>`}
       `) : ""}
     `)}
-    ${renderSection("Event Timeline", (v.events || []).length ? `
-      ${v.events.map((e, idx) => `
-        <div class="kv">
-          <span class="kv-label">${idx + 1}. ${e.kind}</span>
-          <span class="kv-value" style="font-size:11px;font-family:monospace">${JSON.stringify(e.payload).substring(0, 120)}</span>
-        </div>
-      `).join("")}
+    ${renderSection("Decision Evidence Graph", (v.events || []).length ? `
+      <div class="evidence-graph">
+        ${(function() {
+          var groups = {};
+          (v.events || []).forEach(function(e) {
+            var key = e.source_system || e.kind;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(e);
+          });
+          return Object.keys(groups).map(function(system) {
+            var evts = groups[system];
+            return '<div class="evidence-node-group">' +
+              '<div class="evidence-group-header">' + esc(system) + '</div>' +
+              evts.sort(function(a, b) { return (a.order || 0) - (b.order || 0); }).map(function(ev) {
+                var icon = ev.kind === "input" ? "📥" : ev.kind === "tool_call" ? "🔧" : ev.kind === "api_response" ? "📡" : ev.kind === "decision" ? "⚖" : ev.kind === "policy" ? "📋" : "●";
+                var summary = ev.payload && (ev.payload.decision || ev.payload.response && ev.payload.response.status || ev.payload.version || ev.kind);
+                return '<div class="evidence-node"><span class="evidence-icon">' + icon + '</span><span class="evidence-kind">' + esc(ev.kind) + '</span><span class="evidence-summary">' + esc(typeof summary === "string" ? summary : JSON.stringify(summary).substring(0, 60)) + '</span></div>';
+              }).join('<div class="evidence-edge">↓</div>') +
+            '</div>';
+          }).join('<div class="evidence-edge-h">→</div>');
+        })()}
+      </div>
     ` : "No events")}
     ${renderSection("Label", `
       ${renderKV("Current Label", label ? `${label.expected_outcome} <span class="badge badge-built">${label.status}</span>` : "—")}
@@ -1429,7 +1444,7 @@ async function renderIncidentDetail(c, i, wf) {
   const cassetteEntries = elements.filter(e => ["http", "tool_call", "api_response"].includes(e.kind));
   const decision = i.replay_result?.decision || i.mutation_result?.original_decision || sourceVr?.original_decision || "—";
   const fixedDecision = i.mutation_result?.mutated_decision || sourceVr?.expected_correct_behavior || "—";
-  const proofError = i.mutation_result ? "" : "Issue Proof requires a successful Fix Verification. Run Verify Fix after a successful replay.";
+  const proofError = wf.issue_proof_reason || (i.mutation_result ? "" : "Issue Proof requires a successful Fix Verification. Run Verify Fix after a successful replay.");
   const inputEl = elements.find(e => e.kind === "input") || {};
   const httpEl = elements.find(e => e.kind === "http") || {};
   const policyEl = elements.find(e => e.kind === "policy") || {};

@@ -195,7 +195,13 @@ def incident_workflow(incident_id: str, org_id: str = Depends(require_auth)) -> 
             step_state("Scenario candidate", has_proof, False),
         ],
         "missing_prerequisites": source_vr.missing_prerequisites if source_vr else [],
-        "can_replay": has_cassette and has_label,
-        "can_verify": has_replay,
-        "can_issue_proof": has_fix,
-    }
+    "can_replay": has_cassette and has_label,
+    "can_verify": has_replay,
+    "can_issue_proof": has_fix and has_proof is False,
+    "issue_proof_reason": (
+        "Issue Proof requires a successful Fix Verification."
+        if has_fix is False
+        else ("Proof already issued" if has_proof else "")
+    ),
+    "issue_proof_next_action": "Run Verify Fix on the incident" if has_fix is False else "",
+}
