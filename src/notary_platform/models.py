@@ -729,6 +729,30 @@ class ReplayRun:
 
 
 @dataclass
+class ReplayExecutionEvent:
+    """One step in a replay execution trace."""
+
+    step: str
+    source: str
+    expected: str
+    actual: str
+    status: str
+    sequence: int = 0
+    timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "source": self.source,
+            "expected": self.expected,
+            "actual": self.actual,
+            "status": self.status,
+            "sequence": self.sequence,
+            "timestamp": self.timestamp,
+        }
+
+
+@dataclass
 class FixReference:
     """Reference to a fix applied to an agent for mutation testing."""
 

@@ -166,6 +166,12 @@ class StorageBackend(abc.ABC):
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]: ...
 
     @abc.abstractmethod
+    def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None: ...
+
+    @abc.abstractmethod
+    def list_replay_execution_events(self, run_id: str) -> list[ReplayExecutionEvent]: ...
+
+    @abc.abstractmethod
     def create_mutation_test(self, test: MutationTest) -> MutationTest: ...
 
     @abc.abstractmethod
@@ -275,6 +281,7 @@ class MemoryStorage(StorageBackend):
         self._readiness_policies: dict[str, ReadinessPolicy] = {}
         self._readiness_checks: dict[str, ReadinessCheck] = {}
         self._release_gate_results: dict[str, ReleaseGateResult] = {}
+        self._replay_execution_events: dict[str, list[ReplayExecutionEvent]] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -421,6 +428,12 @@ class MemoryStorage(StorageBackend):
 
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
         return [r for r in self._replay_runs.values() if r.verification_record_id == vr_id]
+
+    def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None:
+        self._replay_execution_events[run_id] = events
+
+    def list_replay_execution_events(self, run_id: str) -> list[ReplayExecutionEvent]:
+        return self._replay_execution_events.get(run_id, [])
 
     def create_mutation_test(self, test: MutationTest) -> MutationTest:
         self._mutation_tests[test.id] = test

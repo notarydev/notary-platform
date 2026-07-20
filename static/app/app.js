@@ -1402,9 +1402,12 @@ function openIncidentDetail(id) {
 }
 
 async function renderIncidentDetail(c, i, wf) {
-  const [sourceVr, snapshot] = await Promise.all([
+  const [sourceVr, snapshot, replayEvents] = await Promise.all([
     apiGet("/v1/verification-records").then(vrs => vrs.find(v => v.promoted_to_incident === i.incident_id) || null).catch(() => null),
     apiGet(`/v1/incidents/${i.incident_id}/snapshot`).catch(() => null),
+    (i.replay_result && i.replay_result.replay_run_id
+      ? apiGet("/v1/replay-runs/" + encodeURIComponent(i.replay_result.replay_run_id) + "/events").catch(() => null)
+      : Promise.resolve(null)),
   ]);
   const cert = i.certificate || {};
   let sigValid = null;
@@ -1427,13 +1430,21 @@ async function renderIncidentDetail(c, i, wf) {
   const originalDecision = decisionEl.payload?.decision || decision;
   const replayedDecision = i.replay_result?.decision || "—";
   const replayStatus = i.replay_result?.replay_status === "replayed" ? "pass" : "pending";
-  const replayRows = [
-    { step: "Applicant facts", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending" },
-    { step: "Bureau response", source: "cassette", expected: bureauStatus, actual: bureauStatus, status: i.replay_result ? "pass" : "pending" },
-    { step: "Policy version", source: "sealed metadata", expected: policyVersion, actual: policyVersion, status: i.replay_result ? "pass" : "pending" },
-    { step: "AI decision", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending" },
-    { step: "Replay verdict", source: "comparison", expected: "reproduce failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus },
-  ];
+  const replayRows = Array.isArray(replayEvents) && replayEvents.length > 0
+    ? replayEvents.sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map(ev => ({
+        step: ev.step,
+        source: ev.source,
+        expected: ev.expected,
+        actual: ev.actual,
+        status: ev.status,
+      }))
+    : [
+        { step: "Applicant facts", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending" },
+        { step: "Bureau response", source: "cassette", expected: bureauStatus, actual: bureauStatus, status: i.replay_result ? "pass" : "pending" },
+        { step: "Policy version", source: "sealed metadata", expected: policyVersion, actual: policyVersion, status: i.replay_result ? "pass" : "pending" },
+        { step: "AI decision", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending" },
+        { step: "Replay verdict", source: "comparison", expected: "reproduce failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus },
+      ];
   const replayTableHtml = `
     <table class="replay-table">
       <thead><tr><th>Step</th><th>Source</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead>
@@ -1513,8 +1524,20 @@ function wfAction(incidentId, label) {
 
 async function runIncidentReplay(id) {
   try {
-    await apiPost("/v1/incidents/" + id + "/replay");
+    const result = await apiPost("/v1/incidents/" + id + "/replay");
     notify("Replay completed", "success");
+    const runId = result.replay_run_id;
+    if (runId) {
+      const evSource = new EventSource("/v1/incidents/" + encodeURIComponent(id) + "/replay/stream");
+      evSource.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.step) notify("Replay step: " + data.step + " → " + data.status, "info");
+        } catch (_) {}
+      };
+      evSource.addEventListener("done", () => { evSource.close(); });
+      setTimeout(() => evSource.close(), 15000);
+    }
     openIncidentDetail(id);
   } catch (e) {
     notify("Replay failed: " + e.message, "error");
