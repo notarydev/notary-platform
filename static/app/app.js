@@ -632,12 +632,12 @@ async function renderVRDetail(c, v) {
       <div class="action-row" id="vr-actions-${v.id}">
         ${v.replayability === "requires_human_label" ? `<button class="btn btn-sm btn-amber" onclick="openAddLabelForm('${v.id}')">Add Label</button>` : ""}
         ${v.replayability === "requires_sandbox" ? `<button class="btn btn-sm btn-amber" onclick="nav('systems')">Configure Sandbox</button>` : ""}
-        ${v.replayability === "replayable" ? `<button class="btn btn-sm" onclick="runVRReplay('${v.id}')">Replay</button>` : ""}
+        ${v.replayability === "replayable" ? `<button class="btn btn-sm" data-action="replay" onclick="runVRReplay('${v.id}')">Replay</button>` : ""}
         ${v.replayability === "evidence_only" ? `<button class="btn btn-sm btn-outline" disabled title="Evidence-only: cannot replay">Evidence only</button>` : ""}
         ${v.replayability === "missing_context" ? `<button class="btn btn-sm btn-outline" onclick="openMissingContextHelp('${v.id}')">Resolve Missing Context</button>` : ""}
-        <button class="btn btn-sm btn-green" onclick="runVRMutation('${v.id}')">Verify Fix</button>
-        <button class="btn btn-sm btn-purple" onclick="issueVRProof('${v.id}')">Issue Proof</button>
-        <button class="btn btn-sm btn-outline" onclick="promoteVRToScenario('${v.id}')">Promote to Scenario</button>
+        <button class="btn btn-sm btn-green" data-action="mutation" onclick="runVRMutation('${v.id}')">Verify Fix</button>
+        <button class="btn btn-sm btn-purple" data-action="issue_proof" onclick="issueVRProof('${v.id}')">Issue Proof</button>
+        <button class="btn btn-sm btn-outline" data-action="promote_to_scenario" onclick="promoteVRToScenario('${v.id}')">Promote to Scenario</button>
       </div>
       <div id="vr-eligibility-${v.id}" style="margin-top:8px;font-size:11px;color:var(--muted)"></div>
     `)}
@@ -653,7 +653,19 @@ async function loadVREligibility(vrId) {
     const box = q(`#vr-eligibility-${vrId}`);
     if (!box) return;
     const reasons = results.filter(r => !r.eligible && r.reason).map(r => `<span class="badge badge-planned">${r.action}</span> ${esc(r.reason)}`).join(" ");
-    box.innerHTML = reasons ? `<div class="section-sub">Blocked actions</div>${reasons}` : "All actions eligible";
+    box.innerHTML = reasons ? `<div class="section-sub">Blocked actions.</div>${reasons}` : "All actions eligible";
+    // Disable ineligible buttons and show reason in title.
+    for (const r of results) {
+      const btn = q(`#vr-actions-${vrId} [data-action="${r.action}"]`);
+      if (btn) {
+        if (r.eligible) {
+          btn.disabled = false;
+        } else {
+          btn.disabled = true;
+          btn.title = r.reason + (r.next_action ? " — Next: " + r.next_action : "");
+        }
+      }
+    }
   } catch (e) {
     // ignore
   }

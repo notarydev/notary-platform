@@ -265,6 +265,8 @@ def update_scenario(scenario_id: str, body: dict, org_id: str = Depends(require_
         scenario.state = body["state"]
     if "business_title" in body:
         scenario.business_title = body["business_title"]
+    if "expected_outcome" in body:
+        scenario.expected_outcome = body["expected_outcome"]
     storage.update_scenario(scenario)
     return scenario.to_dict()
 
