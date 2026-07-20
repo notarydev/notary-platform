@@ -106,3 +106,39 @@ class TestOrgScoping:
             headers={"Authorization": "Bearer secret-token", "X-Notary-Org": "acme"},
         )
         assert r3.status_code == 200
+
+    def test_body_org_id_cannot_override_authenticated_org(self) -> None:
+        from notary_platform.snapshot import (
+            CapturedElement,
+            _compute_root_hash,
+            _seal_element,
+        )
+
+        prev = b"\x00" * 32
+        ce = CapturedElement(kind="decision", payload={"decision": "x"})
+        h = _seal_element(prev, ce.canonical_bytes(), b"k" * 32)
+        snap = {
+            "schema_version": 1,
+            "timestamp": "t",
+            "elements": [{"kind": ce.kind, "payload": ce.payload, "element_hash": h.hex()}],
+            "merkle_chain": [h.hex()],
+            "root_hash": _compute_root_hash([h]),
+        }
+
+        r = client.post(
+            "/v1/incidents/ingest",
+            headers={"Authorization": "Bearer secret-token", "X-Notary-Org": "acme"},
+            json={"snapshot": snap, "org_id": "other"},
+        )
+        assert r.status_code == 200
+        assert r.json()["org_id"] == "acme"
+        inc_id = r.json()["incident_id"]
+
+        assert client.get(
+            f"/v1/incidents/{inc_id}",
+            headers={"Authorization": "Bearer secret-token", "X-Notary-Org": "other"},
+        ).status_code == 404
+        assert client.get(
+            f"/v1/incidents/{inc_id}",
+            headers={"Authorization": "Bearer secret-token", "X-Notary-Org": "acme"},
+        ).status_code == 200
