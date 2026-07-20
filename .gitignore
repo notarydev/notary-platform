@@ -36,3 +36,4 @@ terraform.tfstate.*
 .terraform.lock.hcl
 tfplan
 *.tfplan
+*.lock.info
