@@ -25,34 +25,50 @@ NAME_PREFIX="${PROJECT_NAME}-${ENVIRONMENT}"          # -> notary-dev
 ECR_REPO="${NAME_PREFIX}-api"                          # -> notary-dev-api
 ECS_CLUSTER="${NAME_PREFIX}"                           # -> notary-dev
 ECS_SERVICE="${NAME_PREFIX}-api"                       # -> notary-dev-api
-IMAGE_TAG="${IMAGE_TAG:-main-$(git rev-parse --short HEAD)}"
+IMAGE_TAG="${IMAGE_TAG:-main-$(git rev-parse --short HEAD)-$(date +%Y%m%d-%H%M%S)}"
+# ECR tags are immutable, so always use a unique tag (don't reuse SHAs).
+# ECS Fargate runs linux/amd64 — build for that arch even on Apple-Silicon hosts,
+# otherwise tasks fail with: CannotPullContainerError: ... does not contain
+# descriptor matching platform 'linux/amd64'.
+BUILD_PLATFORM="${BUILD_PLATFORM:-linux/amd64}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ECR_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
 
 echo "==> Deploying notary-platform"
-echo "    region:     ${REGION}"
-echo "    ecr repo:   ${ECR_REPO}"
-echo "    ecs:        ${ECS_SERVICE} @ ${ECS_CLUSTER}"
-echo "    image tag:  ${IMAGE_TAG}"
+echo "    region:       ${REGION}"
+echo "    ecr repo:     ${ECR_REPO}"
+echo "    ecs:          ${ECS_SERVICE} @ ${ECS_CLUSTER}"
+echo "    image tag:    ${IMAGE_TAG}"
+echo "    build plat:   ${BUILD_PLATFORM}"
 
 # 1. Authenticate Docker to ECR
 aws ecr get-login-password --region "${REGION}" \
   | docker login --username AWS --password-stdin \
     "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-# 2. Build (production image, no [dev] extra)
-docker build -t "${ECR_REPO}:${IMAGE_TAG}" -t "${ECR_REPO}:latest" .
+# 2. Build + push for the target platform (no :latest — tags are immutable)
+docker buildx build --platform "${BUILD_PLATFORM}" -t "${ECR_URI}" --push .
 
-# 3. Push
-docker tag "${ECR_REPO}:${IMAGE_TAG}" "${ECR_URI}"
-docker push "${ECR_URI}"
-docker push "${ECR_REPO}:latest"
+# 3. Register a new task-definition revision that points at the new image, then
+#    force a redeploy. (A bare --force-new-deployment does NOT change the image;
+#    the task def pins a specific tag, so we must register a new revision.)
+TD_JSON="$(aws ecs describe-task-definition --task-definition "${ECS_SERVICE}" --region "${REGION}" --query 'taskDefinition')"
+echo "${TD_JSON}" | python3 -c '
+import json, sys
+td = json.load(sys.stdin)
+for k in ["taskDefinitionArn","status","requiresAttributes","compatibilities","registeredAt","registeredBy","revision"]:
+    td.pop(k, None)
+td["containerDefinitions"][0]["image"] = "'"${ECR_URI}"'"
+print(json.dumps(td))' > /tmp/td-new.json
+NEW_TD="$(aws ecs register-task-definition --region "${REGION}" --cli-input-json file:///tmp/td-new.json --query 'taskDefinition.taskDefinitionArn' --output text)"
+echo "    new task def: ${NEW_TD}"
 
-# 4. Force ECS redeploy (picks up the new :latest image)
+# 4. Update service to the new task def and force a new deployment
 aws ecs update-service \
   --region "${REGION}" \
   --cluster "${ECS_CLUSTER}" \
   --service "${ECS_SERVICE}" \
+  --task-definition "${NEW_TD}" \
   --force-new-deployment \
   --query 'service.serviceName' \
   --output text

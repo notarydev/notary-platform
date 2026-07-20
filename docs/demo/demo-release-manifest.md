@@ -99,28 +99,32 @@ npx wrangler deploy --dry-run
 |---------|-------|-------|
 | `getnotary.ai` | **DEPLOYED** ✅ | `wrangler deploy` of main `385d452`. Verified live: contains `Harborline` (×7), `Design-partner pilot`, `Apply for design-partner pilot`, `Stop repeating AI failures`. |
 | `www.getnotary.ai` | **DEPLOYED** ✅ | Same Worker, same content as above. |
-| `api.getnotary.ai` | **STALE — deploy blocked** ⛔ | Live `/health` → `{"status":"ok"}` but `app.js` has 0 matches for `Harborline` / `Blocked Gate` / `Passing Gate`. Current main `cf9aa3a` code contains all three markers. This is a **cross-account deploy gap**, not a code/CI issue. |
+| `api.getnotary.ai` | **DEPLOYED** ✅ | `app.js` live now contains `Harborline` (×8), `Blocked Gate`, `Passing Gate`. `demo_preflight` against the live API passes end-to-end (health, seed, replay, mutation, blocked+passing gates, readiness cert, presenter UI). |
 
-### Platform API deploy blocker (the "separate cloud checklist")
+### Platform API deploy (DONE)
 
 - Live `api.getnotary.ai` is an ALB → ECS/Fargate service in **AWS `us-east-2`**
-  (`notary-dev-alb-...us-east-2.elb.amazonaws.com`), account **other than**
-  `447633181871` (`Opencode_Notary`, `us-east-1`) which has **no ECR/ECS**.
-- The local `Opencode_Notary` creds therefore cannot push the image or update
-  the ECS service. Deploy requires credentials for the `us-east-2` account that
-  owns the infrastructure.
-- **Runbook ready:** `infra/deploy-api.sh` rebuilds the image from current main,
-  pushes to ECR repo `notary-dev-api`, and force-redeploys ECS service
-  `notary-dev-api` on cluster `notary-dev` (no Terraform apply, no DNS/secrets/KMS
-  changes). Run it from the `us-east-2` account owner's environment.
+  (account `447633181871`, `Opencode_Notary` — same account; earlier "cross-account"
+  read was wrong: the default AWS region was `us-east-1`, which has no ECR/ECS;
+  the infra is in `us-east-2`).
+- **Deploy executed:** rebuilt image for `linux/amd64` (this Mac is arm64, so the
+  first push failed with `CannotPullContainerError: ... does not contain descriptor
+  matching platform 'linux/amd64'`), pushed to ECR `notary-api`, registered a new
+  task-definition revision, and force-redeployed ECS service `notary-dev-api` on
+  cluster `notary-dev`.
+- **Image tag:** `notary-api:main-045b707-20260720-131716` (amd64). ECR tags are
+  **immutable**, so each redeploy uses a new unique tag + new task-def revision.
+- **Runbook kept in sync:** `infra/deploy-api.sh` documents the rebuild → push →
+  force-redeploy flow (no Terraform apply, no DNS/secrets/KMS changes). Note it
+  must build for `--platform linux/amd64`.
 - **Verification after deploy:**
   ```
-  curl -s https://api.getnotary.ai/health
-  curl -s https://api.getnotary.ai/app/app.js | grep Harborline
-  curl -s https://api.getnotary.ai/app/app.js | grep "Blocked Gate"
-  curl -s https://api.getnotary.ai/app/app.js | grep "Passing Gate"
+  curl -s https://api.getnotary.ai/health            # -> {"status":"ok"}
+  curl -s https://api.getnotary.ai/app/app.js | grep Harborline   # >=1
+  curl -s https://api.getnotary.ai/app/app.js | grep "Blocked Gate"   # >=1
+  curl -s https://api.getnotary.ai/app/app.js | grep "Passing Gate"   # >=1
   ```
-  Expected: `/health` → `{"status":"ok"}` and all three greps return ≥1 match.
+  All confirmed passing against live.
 
 ## Stale branches / PRs to close or label `superseded`
 
