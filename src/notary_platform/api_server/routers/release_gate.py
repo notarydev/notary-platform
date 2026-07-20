@@ -315,6 +315,16 @@ def get_scenario_run(run_id: str, org_id: str = Depends(require_auth)) -> dict:
     return run.to_dict()
 
 
+@router.post("/scenarios/{scenario_id}/execute")
+def execute_scenario(scenario_id: str, agent_version: str = Query(""), org_id: str = Depends(require_auth), environment_id: str = Query("env:demo")) -> dict:
+    service = ScenarioRunService(_registry())
+    try:
+        run = service.run([scenario_id], agent_version or org_id, org_id, environment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return run.to_dict()
+
+
 # ---------------------------------------------------------------------------
 # Readiness Policies
 # ---------------------------------------------------------------------------

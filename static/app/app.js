@@ -24,6 +24,10 @@ const S = {
   harborlineSeed: null,
   loading: false,
   error: null,
+  setupStep: 0,
+  setupWorkflowConfirmed: false,
+  setupSystems: null,
+  setupCaptureMethod: null,
 };
 
 function q(s) { return document.querySelector(s); }
@@ -431,6 +435,39 @@ function openReleaseGateDetail(id) {
 
 // --- SETUP ---
 
+function setupCanNext(step) {
+  if (step === 0) return S.setupWorkflowConfirmed;
+  if (step === 1) return true;
+  if (step === 2) {
+    const s = S.setupSystems;
+    return s ? s.some(x => x.selected) : true;
+  }
+  if (step === 3) return !!S.setupCaptureMethod;
+  if (step === 4) return !!S.setupTestCapture;
+  if (step === 5) return true;
+  return true;
+}
+
+function toggleSetupSystem(id) {
+  const s = S.setupSystems;
+  if (!s) return;
+  const sys = s.find(x => x.id === id);
+  if (sys && sys.tier !== "excluded") {
+    sys.selected = !sys.selected;
+    renderSetupStep(S.setupStep || 0);
+  }
+}
+
+function selectCaptureMethod(id) {
+  S.setupCaptureMethod = id;
+  renderSetupStep(S.setupStep || 0);
+}
+
+function confirmWorkflow() {
+  S.setupWorkflowConfirmed = true;
+  renderSetupStep(S.setupStep || 0);
+}
+
 const SETUP_STEPS = [
   { id: "workflow", label: "Decision Workflow" },
   { id: "boundary", label: "AI Decision Boundary" },
@@ -561,7 +598,8 @@ function renderSetupStepIndicator(step) {
     </div>`;
 }
 
-function renderSetupNav(step, canNext = true) {
+function renderSetupNav(step) {
+  const canNext = setupCanNext(step);
   return `
     <div class="setup-nav">
       ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})">Back</button>` : "<span></span>"}
@@ -570,6 +608,7 @@ function renderSetupNav(step, canNext = true) {
 }
 
 function renderSetupWorkflowStep() {
+  const confirmed = S.setupWorkflowConfirmed;
   return `
     <div class="setup-step-content">
       <h2>Choose the decision workflow to assure</h2>
@@ -584,7 +623,7 @@ function renderSetupWorkflowStep() {
             <span><strong>Expected outcome:</strong> UNDERWRITING_REVIEW</span>
           </div>
           <div class="workflow-risk">Risk: fair lending / adverse action / customer harm</div>
-          <span class="badge badge-built" style="margin-top:12px">SELECTED</span>
+          ${confirmed ? `<span class="badge badge-built" style="margin-top:12px">CONFIRMED</span>` : `<button class="btn btn-sm" style="margin-top:12px" onclick="confirmWorkflow()">Confirm Workflow</button>`}
         </div>
         <div class="workflow-card planned">
           <h3>Other workflows</h3>
@@ -630,13 +669,14 @@ function renderSetupBoundaryStep() {
 }
 
 function renderSetupSystemsStep() {
+  const systems = S.setupSystems || SETUP_SYSTEMS;
   return `
     <div class="setup-step-content">
       <h2>Select evidence systems</h2>
       <p class="setup-lead">Each system is included because it provides decision-relevant evidence. We do not capture operational telemetry.</p>
       <div class="systems-grid">
-        ${SETUP_SYSTEMS.map(sys => `
-          <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}">
+        ${systems.map(sys => `
+          <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}" ${sys.tier !== "excluded" ? `onclick="toggleSetupSystem('${sys.id}')" style="cursor:pointer"` : ""}>
             <div class="system-header">
               <strong>${esc(sys.name)}</strong>
               <span class="system-tier ${sys.tier}">${sys.tier}</span>
@@ -645,6 +685,7 @@ function renderSetupSystemsStep() {
             <div class="system-field"><span class="system-label">Why include it</span><span>${esc(sys.why)}</span></div>
             <div class="system-field"><span class="system-label">Proof it enables</span><span>${esc(sys.proof)}</span></div>
             <div class="system-field"><span class="system-label">Does not capture</span><span>${esc(sys.not)}</span></div>
+            ${sys.tier !== "excluded" ? `<div style="margin-top:8px"><span class="${sys.selected ? 'badge badge-built' : 'badge badge-planned'}">${sys.selected ? 'Selected' : 'Click to include'}</span></div>` : ""}
           </div>
         `).join("")}
       </div>
@@ -658,12 +699,12 @@ function renderSetupCaptureStep() {
       <p class="setup-lead">Pick the path that matches how this decision enters your environment.</p>
       <div class="capture-grid">
         ${SETUP_CAPTURE_METHODS.map(m => `
-          <div class="capture-card">
+          <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer">
             <h3>${esc(m.title)}</h3>
             <div class="capture-field"><span>Best for</span><span>${esc(m.best)}</span></div>
             <div class="capture-field"><span>Captures</span><span>${esc(m.captures)}</span></div>
             <div class="capture-field"><span>Does not capture</span><span>${esc(m.not)}</span></div>
-            <button class="btn btn-sm" onclick="${m.action}">Open ${esc(m.title)} Guide</button>
+            ${S.setupCaptureMethod === m.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
           </div>
         `).join("")}
       </div>
@@ -795,6 +836,9 @@ function renderSetupStep(step) {
 }
 
 async function renderSetup(c) {
+  if (!S.setupSystems) {
+    S.setupSystems = SETUP_SYSTEMS.map(s => ({...s}));
+  }
   c.innerHTML = sk(40);
   const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
   const step = typeof S.setupStep === "number" ? S.setupStep : 0;
@@ -1450,13 +1494,13 @@ async function renderIncidentDetail(c, i, wf) {
         </div>
       </div>
     ` : `<div class="proof-pending"><strong>No certificate issued</strong><p>${esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.")}</p></div>`)}
-    ${renderSection("Scenario Promotion", cert.certificate_id ? `<div class="promotion-panel"><div><strong>Reusable scenario candidate</strong><p>This verified failure can be promoted into the scenario library and run in future release checks.</p></div><button class="btn btn-sm btn-outline" onclick="nav('scenarios')">Open Scenario Library</button></div>` : `<div class="proof-pending"><strong>Promotion is gated</strong><p>Issue a scenario-scoped proof before promoting this incident.</p></div>`)}
+    ${renderSection("Scenario Promotion", cert.certificate_id ? `<div class="promotion-panel"><div><strong>Reusable scenario candidate</strong><p>This verified failure can be promoted into the scenario library and run in future release checks.</p></div>${sourceVr ? `<button class="btn btn-sm btn-outline" onclick="promoteToScenario('${sourceVr.id}', '${i.incident_id}')">Promote to Scenario</button>` : `<button class="btn btn-sm btn-outline" onclick="nav('scenarios')">Open Scenario Library</button>`}</div>` : `<div class="proof-pending"><strong>Promotion is gated</strong><p>Issue a scenario-scoped proof before promoting this incident.</p></div>`)}
     ${renderSection("Release Gate Impact", `<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ${i.replay_result ? "gate-fail" : "gate-muted"}">${i.replay_result ? "Blocked before fix" : "Replay pending"}</span><span class="gate-line"></span><span class="gate-node ${i.mutation_result?.mitigated ? "gate-pass" : "gate-muted"}">${i.mutation_result?.mitigated ? "Pass after fix" : "Fix pending"}</span><span class="gate-line"></span><span class="gate-node ${cert.certificate_id ? "gate-pass" : "gate-muted"}">${cert.certificate_id ? "Proof attached" : "Gate not updated"}</span></div><p class="section-sub">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>`)}
     <div class="action-row" style="margin-top:16px">
       <button class="btn${i.replay_result ? " btn-outline" : ""}" onclick="runIncidentReplay('${i.incident_id}')">${i.replay_result ? "Replay Again" : "Run Replay"}</button>
       ${i.replay_result && !i.mutation_result ? `<button class="btn btn-amber" onclick="runIncidentVerify('${i.incident_id}')">Verify Fix</button>` : ""}
       ${!cert.certificate_id ? (wf.can_issue_proof ? `<button class="btn btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : `<button class="btn btn-green" disabled title="${esc(proofError || 'Fix verification required first')}">Issue Proof</button>`) : ""}
-      ${cert.certificate_id ? `<button class="btn btn-sm btn-outline" onclick="nav('scenarios')">Promote to Scenario</button>` : ""}
+      ${sourceVr && cert.certificate_id ? `<button class="btn btn-sm btn-outline" onclick="promoteToScenario('${sourceVr.id}', '${i.incident_id}')">Promote to Scenario</button>` : ""}
     </div>
   `;
 }
@@ -1496,6 +1540,16 @@ async function runIncidentCertify(id) {
     const reason = String(e.message || "unknown error").replace(/^\d+\s+[^—]+—\s*/, "");
     notify("Proof issue failed: " + reason, "error");
     openIncidentDetail(id);
+  }
+}
+
+async function promoteToScenario(vrId, incidentId) {
+  try {
+    const r = await apiPost("/v1/scenarios?vr_id=" + encodeURIComponent(vrId));
+    notify("Promoted to scenario: " + r.id, "success");
+    openIncidentDetail(incidentId);
+  } catch (e) {
+    notify("Promotion failed: " + e.message, "error");
   }
 }
 
@@ -1808,8 +1862,13 @@ async function promoteCandidate(candidateId) {
 
 async function runScenarioSet(scenarioIds) {
   try {
-    const r = await apiPost("/v1/scenario-runs", {scenario_ids: scenarioIds, agent_version: S.agentVersion});
-    notify(`Scenario run ${r.status}: ${r.summary.passed} passed, ${r.summary.failed} failed, ${r.summary.errored} errored`, "success");
+    if (scenarioIds.length === 1) {
+      const r = await apiPost("/v1/scenarios/" + encodeURIComponent(scenarioIds[0]) + "/execute?agent_version=" + encodeURIComponent(S.agentVersion));
+      notify(`Scenario run ${r.status}: ${(r.summary || {}).passed || 0} passed, ${(r.summary || {}).failed || 0} failed, ${(r.summary || {}).errored || 0} errored`, "success");
+    } else {
+      const r = await apiPost("/v1/scenario-runs", {scenario_ids: scenarioIds, agent_version: S.agentVersion});
+      notify(`Scenario run ${r.status}: ${(r.summary || {}).passed || 0} passed, ${(r.summary || {}).failed || 0} failed, ${(r.summary || {}).errored || 0} errored`, "success");
+    }
     nav("scenarios");
   } catch (e) {
     notify("Scenario run failed: " + e.message, "error");
