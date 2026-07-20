@@ -100,6 +100,7 @@ npx wrangler deploy --dry-run
 | `getnotary.ai` | **DEPLOYED** ✅ | `wrangler deploy` of main `385d452`. Verified live: contains `Harborline` (×7), `Design-partner pilot`, `Apply for design-partner pilot`, `Stop repeating AI failures`. |
 | `www.getnotary.ai` | **DEPLOYED** ✅ | Same Worker, same content as above. |
 | `api.getnotary.ai` | **DEPLOYED** ✅ | `app.js` live now contains `Harborline` (×8), `Blocked Gate`, `Passing Gate`. `demo_preflight` against the live API passes end-to-end (health, seed, replay, mutation, blocked+passing gates, readiness cert, presenter UI). |
+| `api.getnotary.ai` (investigation console) | **DEPLOYED** ✅ | Merged `codex/incident-investigation-console` (scoped to incident UI depth only) at main `0b17329` / task-def `notary-dev-api:51`. Live `app.js` now contains `Captured AI Decision Path`, `Replay Execution Trace`, `investigation-trace`, `proof-pending`, `Release Gate Impact`, `before-after`. `certificates.py` now returns a 409 with the exact missing-prerequisite message when proof lacks a successful fix verification. |
 
 ### Platform API deploy (DONE)
 

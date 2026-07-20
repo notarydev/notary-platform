@@ -168,6 +168,8 @@ aws ecs update-service --region $REGION --cluster notary-dev --service notary-de
 # 6. Verify
 curl -s https://api.getnotary.ai/health                                   # {"status":"ok"}
 curl -s https://api.getnotary.ai/app/app.js | grep -E "Harborline|Blocked Gate|Passing Gate"
+# investigation-console depth UI (label is "Captured AI Decision Path", not "Captured decision path")
+curl -s https://api.getnotary.ai/app/app.js | grep -E "Captured AI Decision Path|Replay Execution Trace|proof-pending|Release Gate Impact"
 ```
 
 **Gotchas (learned the hard way):**
