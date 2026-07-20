@@ -30,6 +30,10 @@ The biggest mistakes last time were:
   5. Thinking `ecs update-service --force-new-deployment` swaps the image. It does
      NOT. The task def pins a tag; you must register a NEW task-def revision.
   6. ECR tags are IMMUTABLE — never reuse a tag; use a timestamped tag each deploy.
+  7. We test in LIVE. Platform's final destination is always api.getnotary.ai;
+     website's is always getnotary.ai. Local runs are a pre-check only — the real
+     gate is the live URL showing current main content. Never call a repo "ready"
+     from localhost alone.
 
 Use the canonical files as source of truth:
   - notary-platform/docs/demo/demo-release-manifest.md  (single release truth)
@@ -55,6 +59,30 @@ Then record the real SHA. Never trust a previously cached SHA — the `d15bbc8`
 vs `a01bd5c` mismatch happened because local state was not fully fresh.
 
 ---
+
+## 1b. Live is the test environment
+
+We do **all** testing against the live surfaces, not just local runs. The final
+destination of each repo IS its test target — there is no separate staging
+environment for the demo:
+
+| Repo | Live destination (the only place we verify) | What "passing" means |
+|------|----------------------------------------------|----------------------|
+| notary-platform | `https://api.getnotary.ai` | `/health` ok + `app.js` contains `Harborline` / `Blocked Gate` / `Passing Gate`; `demo_preflight` run **against the live URL** passes end-to-end |
+| notary-sdk | installed from source in consumers (no live service) | `pytest` green locally + SDK claims stay narrow |
+| GetNotary.ai | `https://getnotary.ai` (and `www.getnotary.ai`) | live page contains `Harborline`, `Design-partner pilot`, `Apply for design-partner pilot`, `Stop repeating AI failures` |
+
+Implications:
+- **Local runs are a pre-check, not proof.** A green local `demo_preflight` or
+  `wrangler deploy --dry-run` is necessary but not sufficient. The real gate is
+  the live URL returning current content.
+- After every platform deploy, verify **against `api.getnotary.ai`**, not
+  `localhost`. After every website deploy, verify **against `getnotary.ai`**.
+- If a live surface is stale, that is a deploy gap to close — not something to
+  work around by pointing tests at localhost. The demo is "done" only when the
+  live URLs show current main content.
+- Never report a repo as "ready" based on local checks alone. Report the live
+  verification result.
 
 ## 2. Repository source-of-truth map
 
@@ -165,6 +193,7 @@ branches to review: `codex/prg-008-*`, `codex/prg-014-*`, `codex/prg-015-*`,
 
 ## 7. One-line mental model
 
-> Fresh-pull → verify green → deploy with correct region/arch/tag → confirm live →
-> record in manifest. Never trust cached state. Never hand-edit generated files.
-> Never assume the image swapped without a new task-def revision.
+> Fresh-pull → verify green → deploy with correct region/arch/tag → confirm LIVE
+> (api.getnotary.ai / getnotary.ai) → record in manifest. Never trust cached state.
+> Never hand-edit generated files. Never assume the image swapped without a new
+> task-def revision. Live is the test environment — localhost is only a pre-check.
