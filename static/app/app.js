@@ -21,6 +21,7 @@ const S = {
   selectedScenario: null,
   selectedReadinessCheck: null,
   selectedReleaseGate: null,
+  harborlineSeed: null,
   loading: false,
   error: null,
 };
@@ -292,6 +293,7 @@ function renderHome(c, h) {
   ];
 
   c.innerHTML = `
+    ${renderHarborlineJourney()}
     ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Demo data — design partner preview</div>` : ""}
     <div class="stat-grid">${stats.map(s => `
       <div class="stat">
@@ -327,6 +329,66 @@ function renderHome(c, h) {
         <div class="detail">Click to open the workflow</div>
       </div>` : ""}
   `;
+}
+
+function renderHarborlineJourney() {
+  const seeded = S.harborlineSeed;
+  const steps = [
+    ["Capture", seeded?.verification_record_id, "Sealed Harborline loan decision"],
+    ["Replay", seeded?.replay_run_id, "Original DENY reproduced"],
+    ["Fix", seeded?.mutation_test_id, "Corrected path routes to underwriting review"],
+    ["Proof", seeded?.proof_of_mitigation_certificate_id, "Scenario-scoped mitigation proof"],
+    ["Scenario", seeded?.scenario_id, "Regression scenario promoted"],
+    ["Gate", seeded?.release_gate_after_fix_id, "Fail before fix, pass after fix"],
+  ];
+  return `
+    <section class="golden-path">
+      <div class="golden-copy">
+        <div class="eyebrow">Harborline Credit Union · Member Lending Decision Assurance</div>
+        <h2>Release Gate golden path</h2>
+        <p>Thin-file applicant was denied when missing bureau evidence should have routed to underwriting review. The demo uses sealed cassette evidence and shows the release blocked before the fix, then passing after the scenario-scoped fix.</p>
+        <div class="action-row">
+          <button class="btn btn-green" onclick="seedHarborlineGoldenPath()">Seed Harborline Path</button>
+          ${seeded ? `<button class="btn btn-outline" onclick="openVRDetail('${seeded.verification_record_id}')">Open Record</button>
+          <button class="btn btn-outline" onclick="openReleaseGateDetail('${seeded.release_gate_before_fix_id}')">Blocked Gate</button>
+          <button class="btn" onclick="openReleaseGateDetail('${seeded.release_gate_after_fix_id}')">Passing Gate</button>` : `<button class="btn btn-outline" onclick="nav('readiness')">Open Readiness</button>`}
+        </div>
+      </div>
+      <div class="golden-panel">
+        <div class="golden-panel-top">
+          <span>${seeded ? "Seeded" : "Ready to seed"}</span>
+          ${seeded ? `${statusBadge(seeded.release_gate_before_fix_status)} ${statusBadge(seeded.release_gate_after_fix_status)}` : badgeDemo()}
+        </div>
+        <div class="golden-steps">
+          ${steps.map((step, idx) => `
+            <div class="golden-step ${step[1] ? "done" : ""}">
+              <div class="golden-index">${idx + 1}</div>
+              <div>
+                <strong>${esc(step[0])}</strong>
+                <p>${esc(step[2])}</p>
+                ${step[1] ? `<code>${esc(step[1])}</code>` : ""}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </section>`;
+}
+
+async function seedHarborlineGoldenPath() {
+  try {
+    const r = await apiPost("/v1/demo/harborline-release-gate/seed");
+    S.harborlineSeed = r;
+    notify("Harborline path ready: gate " + r.release_gate_before_fix_status + " -> " + r.release_gate_after_fix_status, "success");
+    R();
+  } catch (e) {
+    notify("Harborline seed failed: " + e.message, "error");
+  }
+}
+
+function openReleaseGateDetail(id) {
+  S.selectedReleaseGate = id;
+  nav("release-gate-detail");
 }
 
 // --- SETUP ---
@@ -1480,10 +1542,23 @@ async function renderReleaseGateDetail(c, gate) {
     ${renderSection("Machine-Readable Result", `
       ${renderKV("Status", gate.status)}
       ${renderKV("Readiness Check", gate.readiness_check_id || "—")}
+      ${renderKV("Scenario Run", gate.scenario_run_id || "—")}
       ${renderKV("Certificate", gate.certificate_id || "—")}
       ${renderKV("Error Code", gate.error_code || "—")}
       ${renderKV("Retry Guidance", gate.retry_guidance || "—")}
     `)}
+    ${gate.scenario_results && gate.scenario_results.length ? renderSection("Scenario Results", `
+      ${renderTable(["Scenario", "Expected", "Actual", "Status", "Reason"], gate.scenario_results.map(r => [
+        esc(r.scenario_id),
+        esc(r.expected_decision || "—"),
+        esc(r.actual_decision || "—"),
+        statusBadge(r.status),
+        esc(r.reason || "—"),
+      ]))}
+    `) : ""}
+    ${gate.evidence_refs && gate.evidence_refs.length ? renderSection("Evidence References", `
+      <div class="evidence-list">${gate.evidence_refs.map(ref => `<code>${esc(ref)}</code>`).join("")}</div>
+    `) : ""}
     ${renderSection("CI/CD Command", `
       ${renderCodeBlock(gate.ci_cd_command)}
     `)}
