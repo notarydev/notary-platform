@@ -12,6 +12,7 @@ from __future__ import annotations
 import abc
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 
 from notary_platform.config import SETTINGS
@@ -35,6 +36,26 @@ from notary_platform.models import (
     SystemConnection,
     VerificationRecord,
 )
+
+_PERSISTED_COLLECTIONS: dict[str, tuple[str, type[Any]]] = {
+    "orgs": ("_orgs", Organization),
+    "envs": ("_envs", Environment),
+    "agents": ("_agents", Agent),
+    "systems": ("_systems", SystemConnection),
+    "policies": ("_policies", CapturePolicy),
+    "vrs": ("_vrs", VerificationRecord),
+    "labels": ("_labels", HumanLabel),
+    "evidence_artifacts": ("_evidence_artifacts", EvidenceArtifact),
+    "replay_runs": ("_replay_runs", ReplayRun),
+    "mutation_tests": ("_mutation_tests", MutationTest),
+    "proof_certs": ("_proof_certs", ProofCertificate),
+    "scenarios": ("_scenarios", Scenario),
+    "scenario_candidates": ("_scenario_candidates", ScenarioCandidate),
+    "scenario_runs": ("_scenario_runs", ScenarioRun),
+    "readiness_policies": ("_readiness_policies", ReadinessPolicy),
+    "readiness_checks": ("_readiness_checks", ReadinessCheck),
+    "release_gate_results": ("_release_gate_results", ReleaseGateResult),
+}
 
 
 class StorageBackend(abc.ABC):
@@ -500,6 +521,197 @@ class MemoryStorage(StorageBackend):
         return self._release_gate_results.get(result_id)
 
 
+class SharedDemoFileStorage(MemoryStorage):
+    """JSON-backed shared-demo storage that survives process restarts.
+
+    This is intentionally local file persistence, not immutable cloud evidence
+    storage. It gives presenter-safe restart behavior without requiring AWS.
+    """
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        self.path = Path(path or SETTINGS.shared_demo_storage_path)
+        self._loading = True
+        super().__init__()
+        self._load()
+        self._loading = False
+
+    def reset(self) -> None:
+        super().__init__()
+        self._save()
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        self._counter = int(data.get("counter", 0))
+        self._snapshots = dict(data.get("snapshots", {}))
+        self._certificates = dict(data.get("certificates", {}))
+        self._evidence = dict(data.get("evidence", {}))
+        self._incidents = {iid: self._incident_from_dict(raw) for iid, raw in data.get("incidents", {}).items()}
+        for public_name, (attr_name, cls) in _PERSISTED_COLLECTIONS.items():
+            raw_items = data.get(public_name, {})
+            setattr(self, attr_name, {item_id: cls.from_dict(raw) for item_id, raw in raw_items.items()})
+
+    def _save(self) -> None:
+        if self._loading:
+            return
+        data: dict[str, Any] = {
+            "schema_version": 1,
+            "counter": self._counter,
+            "incidents": {iid: inc.to_dict() for iid, inc in self._incidents.items()},
+            "snapshots": self._snapshots,
+            "certificates": self._certificates,
+            "evidence": self._evidence,
+        }
+        for public_name, (attr_name, _) in _PERSISTED_COLLECTIONS.items():
+            data[public_name] = {item_id: item.to_dict() for item_id, item in getattr(self, attr_name).items()}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        tmp_path.write_text(json.dumps(data, sort_keys=True, indent=2), encoding="utf-8")
+        tmp_path.replace(self.path)
+
+    def _incident_from_dict(self, data: dict[str, Any]) -> Incident:
+        incident = Incident(
+            incident_id=data["incident_id"],
+            org_id=data.get("org_id", "demo-org"),
+            status=__import__("notary_platform.models", fromlist=["IncidentStatus"]).IncidentStatus(data.get("status", "ingested")),
+            snapshot_summary=data.get("snapshot_summary") or {},
+            replay_result=data.get("replay_result") or {},
+            mutation_result=data.get("mutation_result") or {},
+            certificate=data.get("certificate") or {},
+        )
+        incident.custody = [__import__("notary_platform.models", fromlist=["CustodyEvent"]).CustodyEvent(**c) for c in data.get("custody", [])]
+        return incident
+
+    def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
+        incident = super().create_incident(snapshot_dict, org_id)
+        self._save()
+        return incident
+
+    def update_incident(self, incident: Incident) -> None:
+        super().update_incident(incident)
+        self._save()
+
+    def store_certificate(self, incident_id: str, cert: dict[str, Any]) -> None:
+        super().store_certificate(incident_id, cert)
+        self._save()
+
+    def persist_evidence(self, incident_id: str, kind: str, payload: dict[str, Any]) -> str:
+        ref = super().persist_evidence(incident_id, kind, payload)
+        self._save()
+        return ref
+
+    def create_org(self, org: Organization) -> Organization:
+        result = super().create_org(org)
+        self._save()
+        return result
+
+    def create_env(self, env: Environment) -> Environment:
+        result = super().create_env(env)
+        self._save()
+        return result
+
+    def create_agent(self, agent: Agent) -> Agent:
+        result = super().create_agent(agent)
+        self._save()
+        return result
+
+    def create_system_conn(self, conn: SystemConnection) -> SystemConnection:
+        result = super().create_system_conn(conn)
+        self._save()
+        return result
+
+    def create_policy(self, policy: CapturePolicy) -> CapturePolicy:
+        result = super().create_policy(policy)
+        self._save()
+        return result
+
+    def create_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        result = super().create_vr(vr)
+        self._save()
+        return result
+
+    def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        result = super().update_vr(vr)
+        self._save()
+        return result
+
+    def create_label(self, label: HumanLabel) -> HumanLabel:
+        result = super().create_label(label)
+        self._save()
+        return result
+
+    def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact:
+        result = super().create_evidence_artifact(artifact)
+        self._save()
+        return result
+
+    def create_replay_run(self, run: ReplayRun) -> ReplayRun:
+        result = super().create_replay_run(run)
+        self._save()
+        return result
+
+    def create_mutation_test(self, test: MutationTest) -> MutationTest:
+        result = super().create_mutation_test(test)
+        self._save()
+        return result
+
+    def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate:
+        result = super().create_proof_certificate(cert)
+        self._save()
+        return result
+
+    def create_scenario(self, scenario: Scenario) -> Scenario:
+        result = super().create_scenario(scenario)
+        self._save()
+        return result
+
+    def update_scenario(self, scenario: Scenario) -> Scenario:
+        result = super().update_scenario(scenario)
+        self._save()
+        return result
+
+    def create_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        result = super().create_scenario_candidate(candidate)
+        self._save()
+        return result
+
+    def update_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        result = super().update_scenario_candidate(candidate)
+        self._save()
+        return result
+
+    def create_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        result = super().create_scenario_run(run)
+        self._save()
+        return result
+
+    def update_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        result = super().update_scenario_run(run)
+        self._save()
+        return result
+
+    def create_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        result = super().create_readiness_policy(policy)
+        self._save()
+        return result
+
+    def update_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        result = super().update_readiness_policy(policy)
+        self._save()
+        return result
+
+    def create_readiness_check(self, check: ReadinessCheck) -> ReadinessCheck:
+        result = super().create_readiness_check(check)
+        self._save()
+        return result
+
+    def create_release_gate_result(self, result: ReleaseGateResult) -> ReleaseGateResult:
+        stored = super().create_release_gate_result(result)
+        self._save()
+        return stored
+
+
 class PostgresS3Storage(StorageBackend):
     """PostgreSQL metadata + S3 immutable evidence storage.
 
@@ -843,4 +1055,6 @@ def get_storage() -> StorageBackend:
     """Return the configured storage backend (singleton per process)."""
     if SETTINGS.use_remote_storage:
         return PostgresS3Storage()
+    if SETTINGS.storage_profile == "shared_demo":
+        return SharedDemoFileStorage()
     return MemoryStorage()

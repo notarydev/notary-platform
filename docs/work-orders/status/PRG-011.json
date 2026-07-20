@@ -1,0 +1,20 @@
+{
+  "id": "PRG-011",
+  "status": "implemented",
+  "title": "Durable shared-demo profile and safe reset",
+  "branch": "codex/prg-011-shared-demo-storage",
+  "scope": [
+    "Added NOTARY_STORAGE_PROFILE=shared_demo for local JSON-backed demo persistence.",
+    "Added NOTARY_SHARED_DEMO_STORAGE_PATH to control the shared-demo state file.",
+    "Preserved default in-memory behavior for local development and tests.",
+    "Added reset support that clears shared-demo state and restarts deterministic incident IDs.",
+    "Kept this profile separate from AWS Postgres/S3/Object Lock claims."
+  ],
+  "acceptance": [
+    "Demo incidents and Release Gate domain objects survive process restart when shared_demo profile is enabled.",
+    "Safe reset clears the local shared-demo profile without touching cloud resources.",
+    "Reseeding after reset starts from deterministic local IDs.",
+    "The profile can be validated without AWS or Cloudflare credentials."
+  ],
+  "usage_visibility": "not available"
+}
