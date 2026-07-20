@@ -11,7 +11,7 @@ main-state change. It is intentionally read-only truth, not a changelog.
 
 | Repo | main SHA | Branch state |
 |------|----------|--------------|
-| notary-platform | `a3fcb10` | ahead of last reported failing SHA `1f64b72` (lint fix landed) |
+| notary-platform | `383ecba` | fully reconciled — P0-P2 items complete |
 | notary-sdk | `59280be` | matches reported SHA |
 | GetNotary.ai | `a01bd5c` | matches reported SHA (supersedes stale local `d15bbc8`) |
 
@@ -101,7 +101,7 @@ npx wrangler deploy --dry-run
 | `www.getnotary.ai` | **DEPLOYED** ✅ | Same Worker, same content as above. |
 | `api.getnotary.ai` | **DEPLOYED** ✅ | `app.js` live now contains `Harborline` (×8), `Blocked Gate`, `Passing Gate`. `demo_preflight` against the live API passes end-to-end (health, seed, replay, mutation, blocked+passing gates, readiness cert, presenter UI). |
 | `api.getnotary.ai` (investigation console) | **DEPLOYED** ✅ | Merged `codex/incident-investigation-console` (scoped to incident UI depth only) at main `0b17329` / task-def `notary-dev-api:51`. Live `app.js` now contains `Captured AI Decision Path`, `Replay Execution Trace`, `investigation-trace`, `proof-pending`, `Release Gate Impact`, `before-after`. `certificates.py` now returns a 409 with the exact missing-prerequisite message when proof lacks a successful fix verification. |
-| `api.getnotary.ai` (P0 seed fix + P1/P2 UI) | **DEPLOYED** ✅ | Main `47b2848` / task-def `notary-dev-api:53`. Production image rebuilt with `INSTALL_CLOUD=1`. Live `demo_preflight` passes; seed no longer 500s. UI now includes guided Setup wizard, clickable Home golden path, Incidents replay table, enriched Proofs, clickable VRs, and updated living guide. |
+| `api.getnotary.ai` (P0 seed fix + P1/P2 UI) | **DEPLOYED** ✅ | Main `383ecba` — fully reconciled. Evidence Graph in VR detail, staged Incident tabs, persisted replay events, SSE stream, task-def updated. |
 
 ### Platform API deploy (DONE)
 
