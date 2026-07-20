@@ -89,6 +89,7 @@ class TestReleaseGateVertical:
         )
         assert resp.status_code == 200
         assert resp.json()["verdict"] == "verified"
+        assert resp.json()["decision_changed"] is True
 
         # Same record, failing fix config.
         resp = client.post(
@@ -97,6 +98,7 @@ class TestReleaseGateVertical:
         )
         assert resp.status_code == 200
         assert resp.json()["verdict"] == "not_verified"
+        assert resp.json()["decision_changed"] is False
 
     def test_proof_blocked_before_mitigation(self) -> None:
         self._seed_catalog()

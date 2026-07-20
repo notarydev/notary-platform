@@ -693,7 +693,21 @@ class MutationService:
 
             result = _run_mutation(snapshot, agent_fn, fix_config, expected_correct_behavior=expected)
             test.mutated_decision = result.get("mutated_decision") or ""
+            test.decision_changed = bool(result.get("decision_changed"))
             test.verdict = "verified" if result.get("mitigated") else "not_verified"
+            if not test.decision_changed:
+                test.known_limitations.append(
+                    KnownLimitation(
+                        code="fix_did_not_change_decision",
+                        severity="NON_DETERMINISTIC_CORE",
+                        message=(
+                            "Mutation replay produced the expected outcome but did not change "
+                            "the reproduced original decision; this is not accepted as remediation."
+                        ),
+                        subject="mutation_engine",
+                        certificate_blocking=True,
+                    )
+                )
         except Exception as exc:
             test.verdict = "error"
             test.known_limitations.append(
@@ -725,6 +739,7 @@ class MutationService:
                 incident.mutation_result = {
                     "original_decision": test.original_decision,
                     "mutated_decision": test.mutated_decision,
+                    "decision_changed": test.decision_changed,
                     "mitigated": test.verdict == "verified",
                     "fix_config": fix_config,
                     "expected_correct_behavior": expected,
