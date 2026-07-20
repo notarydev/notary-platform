@@ -1530,6 +1530,7 @@ function openProofDetail(proofId) {
 
 async function renderProofDetail(c, p) {
   const sig = await apiGet(`/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/verify`).then(r => r.signature_valid).catch(() => null);
+  const cert = p.certificate || {};
   c.innerHTML = `
     <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('proofs')">← Back to Proofs</button>
     ${badgeDemo()}
@@ -1539,23 +1540,27 @@ async function renderProofDetail(c, p) {
     </div>
     <div class="proof-bundle">
       <h3>${p.proof_id}</h3>
+      ${renderKV("Decision Workflow", "Harborline Credit Union personal-loan adverse-action")}
       ${renderKV("Source Incident", `<span class="link" onclick="openIncidentDetail('${p.incident_id}')">${p.incident_id}</span>`)}
       ${renderKV("Source Verification Record", p.verification_record_id ? `<span class="link" onclick="openVRDetail('${p.verification_record_id}')">${p.verification_record_id}</span>` : "—")}
       ${renderKV("Source System", p.source_system_id || "—")}
-      ${renderKV("Label", p.label_id ? `<span class="link" onclick="openVRDetail('${p.verification_record_id}')">View label</span>` : "—")}
-      ${renderKV("Replayability Score", `<span style="font-weight:800;color:${(p.replayability_score || 0) >= 0.8 ? 'var(--green)' : 'var(--amber)'}">${Math.round((p.replayability_score || 0) * 100)}%</span>`)}
-      ${renderKV("Deterministic Coverage", (p.replayability_score || 0) >= 0.8 ? "High" : (p.replayability_score || 0) >= 0.5 ? "Partial" : "Evidence-only")}
-      ${renderKV("Non-Deterministic Flags", (p.non_deterministic_flags || []).length ? (p.non_deterministic_flags || []).map(f => `<span class="badge badge-mitigated">${f.component}</span>`).join(" ") : "None")}
-      ${renderKV("Original Decision", p.original_decision || "—")}
-      ${renderKV("Verified Decision", p.mutated_decision || "—")}
-      ${renderKV("Claim Scope", p.claim_scope)}
-      ${renderKV("Limitations", p.known_limitations || "None documented")}
+      ${renderKV("Original AI Decision", `<span class="decision-pill decision-fail">${esc(p.original_decision || "—")}</span>`)}
+      ${renderKV("Verified Fixed Outcome", `<span class="decision-pill decision-pass">${esc(p.mutated_decision || cert.mutated_decision || "—")}</span>`)}
+      ${renderKV("Expected Outcome Provenance", cert.expected_correct_behavior || "UNDERWRITING_REVIEW")}
+      ${renderKV("Replay Method", cert.replay_method || "sealed cassette replay")}
+      ${renderKV("Root Hash / Seal", cert.root_hash || "—")}
       ${renderKV("Signature Status", sig === true ? "✓ Valid" : sig === false ? "✗ Invalid" : "Unknown")}
-      ${renderKV("Verification Instructions", "Verify the JSON signature using Notary's public key or via the API endpoint.")}
+      ${renderKV("Signing Algorithm", cert.signing_algorithm || "—")}
+      ${renderKV("Claim Scope", p.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
+      ${renderKV("Limitations", p.known_limitations || cert.known_limitations || "None documented")}
       <div class="action-row" style="margin-top:12px">
         <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a>
         <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a>
         <button class="btn btn-sm btn-outline" onclick="verifyProofSig('${p.incident_id}', '${p.proof_id}')">Verify Signature</button>
+      </div>
+      <div class="proof-pending" style="margin-top:16px">
+        <strong>Bounded claim</strong>
+        <p>This proof verifies that the fix produces the expected outcome for this recorded scenario. It does not certify that the AI system is safe in general, unbiased, free of hallucination, or compliant with all regulations.</p>
       </div>
     </div>
   `;
