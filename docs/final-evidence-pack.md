@@ -20,6 +20,20 @@ The command writes:
 - `limitations.json`
 - `rehearsal-manifest.json`
 
+For non-technical reviewers, also use:
+
+- `docs/demo/notary-demo-non-technical-guide.md`
+
+## Today's Demo Scope
+
+Usage is constrained and the demo is time-sensitive. For today's review, focus on:
+
+- Platform: Harborline proof loop and Release Gate.
+- SDK: honest explicit-capture boundary.
+- Website: Harborline design-partner / pilot story.
+
+Command Center Program Control is useful internal infrastructure, but it is deferred for today's demo and is not required for the customer/investor storyline.
+
 ## Rehearsal Script
 
 1. Run the evidence-pack command.
@@ -34,9 +48,10 @@ The command writes:
    - blocked Release Gate;
    - passing Release Gate;
    - readiness certificate verification;
-   - public website Harborline + pilot sections;
-   - Command Center Program panel.
+   - public website Harborline + pilot sections.
 
 ## Claim Boundary
 
 This pack supports a demo/pilot rehearsal for the Harborline tested scenario. It does not certify general AI safety, fairness, compliance, production deployment, or live GRC integrations.
+
+Accurate demo claim: Notary replays a recorded AI decision failure, verifies a scenario-specific fix, and turns that proof into a release gate so the same known failure cannot silently ship again.
