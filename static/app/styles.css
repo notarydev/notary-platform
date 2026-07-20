@@ -122,6 +122,7 @@ section{margin-bottom:20px}
 .toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;z-index:200;animation:toast-in .2s}
 .toast-info{background:var(--accent);color:#fff}
 .toast-success{background:var(--green);color:#fff}
+.toast-warn{background:var(--amber);color:#fff}
 .toast-error{background:var(--red);color:#fff}
 .toast-hide{opacity:0;transition:opacity .3s}
 @keyframes toast-in{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}

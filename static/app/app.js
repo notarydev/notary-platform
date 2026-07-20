@@ -2033,7 +2033,7 @@ async function togglePolicy(policyId, enabled) {
 async function runReadinessCheck(policyId, agentVersion) {
   try {
     const r = await apiPost("/v1/readiness-checks", {policy_id: policyId, agent_version: agentVersion});
-    notify("Readiness check " + r.verdict, r.verdict === "passed" ? "success" : "error");
+    notify("Readiness check " + r.verdict, r.verdict === "passed" ? "success" : r.verdict === "fail" ? "warn" : "error");
     S.selectedReadinessCheck = r.id;
     nav("readiness-detail");
   } catch (e) {
@@ -2044,7 +2044,7 @@ async function runReadinessCheck(policyId, agentVersion) {
 async function triggerReleaseGate(policyId, agentVersion) {
   try {
     const r = await apiPost("/v1/release-gate/checks", {policy_id: policyId, agent_version: agentVersion});
-    notify("Release gate " + r.status, r.status === "pass" ? "success" : "error");
+    notify("Release gate " + r.status, r.status === "pass" ? "success" : r.status === "fail" ? "warn" : "error");
     S.selectedReleaseGate = r.id;
     nav("release-gate-detail");
   } catch (e) {
