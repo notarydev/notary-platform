@@ -242,6 +242,11 @@ async function R() {
       renderGovernance(c, vrs);
     } else if (S.view === "settings") {
       renderSettings(c);
+    } else if (S.view === "about") {
+      renderAbout(c);
+    } else if (S.view === "evidence") {
+      const vrs = await apiGet("/v1/verification-records");
+      renderEvidence(c, vrs);
     } else {
       c.innerHTML = renderErrorState("Unknown view: " + S.view);
     }
@@ -268,6 +273,8 @@ async function R() {
     "readiness-detail": "Readiness Check Detail",
     "release-gate-detail": "Release Gate Detail",
     governance: "Governance",
+    evidence: "Evidence",
+    about: "About",
     settings: "Settings",
   };
   return titles[v] || v;
@@ -1364,7 +1371,7 @@ function renderIncidents(c, ix) {
     mitigated: ix.filter(i => i.status === "mitigated").length,
     certified: ix.filter(i => i.status === "certified").length,
   };
-  const pills = Object.keys(counts).map(k => ({key: k, label: k.replace(/^./, x => x.toUpperCase()) + " (" + counts[k] + ")", active: false, onClick: `filterIncidents('${k}')`}));
+  const pills = Object.keys(counts).map(k => ({key: k, label: k.replace(/^./, x => x.toUpperCase()) + " (" + counts[k] + ")", active: false, onClick: `filterIncidents('${k}')`, filter: k}));
   c.innerHTML = `
     ${renderFilterPills(pills)}
     <table>
@@ -1388,6 +1395,9 @@ function renderIncidents(c, ix) {
     </table>
   `;
   window._incFilter = "all";
+  if (S.viewParams && S.viewParams.filter) {
+    setTimeout(() => filterIncidents(S.viewParams.filter), 0);
+  }
 }
 
 function filterIncidents(s) {
@@ -1768,8 +1778,8 @@ function renderScenarios(c, scenarios, candidates) {
   c.innerHTML = `
     <div class="section-title">Scenario Library</div>
     <div class="section-sub">Promote verified incidents to reusable scenarios, run them against agent versions, and use them in readiness policies.</div>
-    ${renderSection("Active Scenarios", scenarios.length ? scenarios.map(s => scenarioCard(s)).join("") : "No scenarios in the library yet")}
-    ${renderSection("Scenario Candidates", candidates.length ? candidates.filter(sc => sc.state === "candidate").map(sc => candidateCard(sc)).join("") : "No candidates ready")}
+    ${renderSection("Active Scenarios", scenarios.length ? scenarios.map(s => scenarioCard(s)).join("") : `<div class="empty-state compact"><h3>No scenarios in the library yet</h3><p>Promote a verified incident from the incident detail view, or seed demo data.</p></div>`)}
+    ${renderSection("Scenario Candidates", candidates.length ? candidates.filter(sc => sc.state === "candidate").map(sc => candidateCard(sc)).join("") : `<div class="empty-state compact"><h3>No candidates ready</h3><p>Candidates are created when you promote an incident that meets the readiness criteria.</p></div>`)}
   `;
 }
 
@@ -1939,7 +1949,7 @@ function renderReadiness(c, policies, checks) {
           <button class="btn btn-sm btn-outline" onclick="togglePolicy('${p.id}', ${!p.enabled})">${p.enabled ? "Disable" : "Enable"}</button>
         </div>
       </div>
-    `).join("") : `<p style="font-size:12px;color:var(--muted)">No readiness policies. Create one from the Scenario detail view or below.</p>`}
+    `).join("") : `<div class="empty-state compact"><h3>No readiness policies</h3><p>Create one from the Scenario detail view or use the button below.</p></div>`}
     <div class="action-row" style="margin-top:16px">
       <button class="btn" onclick="openCreatePolicyForm()">Create Policy</button>
     </div>
@@ -1958,7 +1968,7 @@ function renderReadiness(c, policies, checks) {
           </tr>
         `).join("")}</tbody>
       </table>
-    ` : "No readiness checks yet")}
+    ` : `<div class="empty-state compact"><h3>No readiness checks yet</h3><p>Run a readiness check on a policy to see results here.</p></div>`)}
   `;
 }
 
@@ -2181,6 +2191,98 @@ async function renderSettings(c) {
   } catch (e) {
     q("#settings-org-info").innerHTML = `<p style="color:var(--red);font-size:12px">Failed to load org info.</p>`;
   }
+}
+
+// --- ABOUT ---
+
+function renderAbout(c) {
+  c.innerHTML = `
+    <div class="int-card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><h2>About Notary Platform</h2></div>
+        <span class="badge badge-built">v0.1.0</span>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-top:8px">Notary is an AI decision assurance platform. It captures, seals, replays, and verifies AI decisions to produce replayable evidence for compliance and release gates.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="int-card">
+        <h4>Capabilities</h4>
+        <ul style="font-size:12px;line-height:1.8;padding-left:16px">
+          <li><strong>Capture</strong> — Seal AI decision context as a tamper-evident snapshot</li>
+          <li><strong>Replay</strong> — Reconstruct the decision using cassette-based deterministic replay</li>
+          <li><strong>Verify Fix</strong> — Mutate agent logic and confirm the fix changes the outcome</li>
+          <li><strong>Certify</strong> — Issue scenario-scoped cryptographic proof of mitigated failure</li>
+          <li><strong>Release Gate</strong> — Block releases when known failure scenarios reappear</li>
+        </ul>
+      </div>
+      <div class="int-card">
+        <h4>Architecture</h4>
+        <ul style="font-size:12px;line-height:1.8;padding-left:16px">
+          <li><strong>Sealed Snapshots</strong> — Evidence graph with deterministic root hash</li>
+          <li><strong>Response Cassette</strong> — Recorded tool/API responses for offline replay</li>
+          <li><strong>Scenario Library</strong> — Reusable failure scenarios for release gates</li>
+          <li><strong>Proof Bundles</strong> — Signed claims with chain-of-custody events</li>
+          <li><strong>Evidence Pipeline</strong> — Capture → Label → Replay → Fix → Certify</li>
+        </ul>
+      </div>
+    </div>
+    <div class="int-card">
+      <h4>API Endpoints</h4>
+      <div style="font-size:12px;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <div><span class="mono">POST /v1/verification-records/from-snapshot</span></div>
+        <div style="color:var(--muted)">Create a VR from a captured snapshot</div>
+        <div><span class="mono">POST /v1/incidents/{id}/replay</span></div>
+        <div style="color:var(--muted)">Run deterministic replay</div>
+        <div><span class="mono">POST /v1/incidents/{id}/mutation-tests</span></div>
+        <div style="color:var(--muted)">Verify fix via mutation testing</div>
+        <div><span class="mono">POST /v1/incidents/{id}/certificates</span></div>
+        <div style="color:var(--muted)">Issue proof certificate</div>
+        <div><span class="mono">POST /v1/scenarios/{id}/execute</span></div>
+        <div style="color:var(--muted)">Execute a scenario run</div>
+        <div><span class="mono">GET /v1/platform/home</span></div>
+        <div style="color:var(--muted)">Dashboard health data</div>
+      </div>
+      <p style="font-size:11px;color:var(--dim);margin-top:12px">Full API reference: <span class="link" onclick="fetch('/v1/openapi.json').then(r=>r.json()).then(s=>renderDrawer('OpenAPI Spec',renderCodeBlock(JSON.stringify(s,null,2))))">/v1/openapi.json</span></p>
+    </div>
+  `;
+}
+
+// --- EVIDENCE ---
+
+function renderEvidence(c, vrs) {
+  const artifacts = [];
+  vrs.forEach(v => {
+    if (v.root_hash) artifacts.push({ type: "Verification Record", id: v.id, hash: v.root_hash, created: v.created_at, source: v.source_system_id || v.agent_id || "—" });
+    (v.events || []).forEach(e => {
+      if (e.kind === "input" || e.kind === "tool_call" || e.kind === "decision") {
+        artifacts.push({ type: "Event: " + e.kind, id: v.id + "/" + (e.id || e.kind), hash: "—", created: e.timestamp || v.created_at, source: e.source_system || "—" });
+      }
+    });
+  });
+  if (!artifacts.length) {
+    c.innerHTML = renderEmptyState("No Evidence", "Evidence artifacts appear when Verification Records are created.",
+      '<button class="btn" onclick="nav(\'setup\')">Go to Setup</button>');
+    return;
+  }
+  c.innerHTML = `
+    <div class="int-card" style="margin-bottom:16px">
+      <p style="font-size:12px;color:var(--muted)">Evidence artifacts from captured Verification Records. Each root hash seals a chain of custody events.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="np-table">
+        <thead><tr><th>Type</th><th>ID</th><th>Root Hash</th><th>Created</th><th>Source</th></tr></thead>
+        <tbody>${artifacts.map(a => `
+          <tr>
+            <td><span class="badge badge-built">${esc(a.type)}</span></td>
+            <td style="font-family:mono;font-size:11px">${esc(a.id)}</td>
+            <td style="font-family:mono;font-size:11px">${esc(a.hash)}</td>
+            <td style="font-size:11px;color:var(--muted)">${esc(a.created)}</td>
+            <td style="font-size:11px">${esc(a.source)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function saveSettingsToken() {
