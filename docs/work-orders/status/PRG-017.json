@@ -1,0 +1,20 @@
+{
+  "id": "PRG-017",
+  "status": "implemented",
+  "title": "Security and deployment readiness pass",
+  "branch": "codex/prg-017-security-deploy-readiness",
+  "scope": [
+    "Added a security/deployment readiness gate for shared and pilot environments.",
+    "Readiness checks cover API auth, Command Center auth, CORS, remote storage, KMS signing, and shared-demo storage boundaries.",
+    "Added text and JSON readiness output modes.",
+    "Added readiness documentation with stop rules and verification evidence.",
+    "Added regression tests for blocked local defaults, shared-demo boundaries, pilot-ready settings, and report output."
+  ],
+  "acceptance": [
+    "Local/default settings are blocked for shared deployment.",
+    "Pilot-ready settings pass only when auth, CORS, remote storage, and KMS signing are configured.",
+    "Shared-demo storage is explicitly prevented from being treated as immutable evidence.",
+    "Stop boundaries are documented for credentials, production, cloud changes, storage, signing, and claim expansion."
+  ],
+  "usage_visibility": "not available"
+}
