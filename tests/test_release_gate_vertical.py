@@ -226,17 +226,40 @@ class TestReleaseGateVertical:
         assert mutation["verdict"] == "verified"
         assert mutation["original_decision"] == "DENY"
         assert mutation["mutated_decision"] == "UNDERWRITING_REVIEW"
+        assert mutation["decision_changed"] is True
+
+        scenario = client.get(f"/v1/scenarios/{seeded['scenario_id']}").json()
+        assert scenario["source_vr_id"] == seeded["verification_record_id"]
+        assert scenario["source_incident_id"] == seeded["incident_id"]
+        assert scenario["approved_label_id"] == seeded["label_id"]
+        assert scenario["expected_outcome"] == "UNDERWRITING_REVIEW"
+        assert f"vr:{seeded['verification_record_id']}" in scenario["evidence_refs"]
+        assert f"incident:{seeded['incident_id']}" in scenario["evidence_refs"]
 
         before_gate = client.get(f"/v1/release-gate/checks/{seeded['release_gate_before_fix_id']}").json()
         assert before_gate["status"] == "fail"
         assert before_gate["certificate_id"] == ""
         assert seeded["scenario_id"] in before_gate["failing_scenarios"]
+        assert before_gate["scenario_run_id"]
+        assert f"readiness_check:{before_gate['readiness_check_id']}" in before_gate["evidence_refs"]
+        assert f"scenario_run:{before_gate['scenario_run_id']}" in before_gate["evidence_refs"]
+        before_result = next(r for r in before_gate["scenario_results"] if r["scenario_id"] == seeded["scenario_id"])
+        assert before_result["status"] == "failed"
+        assert before_result["expected_decision"] == "UNDERWRITING_REVIEW"
+        assert before_result["actual_decision"] == "DENY"
+        assert before_result["reason"] == "Expected UNDERWRITING_REVIEW, got DENY"
 
         after_gate = client.get(f"/v1/release-gate/checks/{seeded['release_gate_after_fix_id']}").json()
         assert after_gate["status"] == "pass"
         assert after_gate["failing_scenarios"] == []
         assert after_gate["certificate_id"]
         assert after_gate["certificate_id"] == seeded["release_gate_after_fix_certificate_id"]
+        assert f"certificate:{after_gate['certificate_id']}" in after_gate["evidence_refs"]
+        after_result = next(r for r in after_gate["scenario_results"] if r["scenario_id"] == seeded["scenario_id"])
+        assert after_result["status"] == "passed"
+        assert after_result["expected_decision"] == "UNDERWRITING_REVIEW"
+        assert after_result["actual_decision"] == "UNDERWRITING_REVIEW"
+        assert after_result["reason"] == ""
 
         cert = client.get(f"/v1/certificates/{after_gate['certificate_id']}").json()
         assert cert["certificate_type"] == "proof_of_readiness"

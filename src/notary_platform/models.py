@@ -1025,6 +1025,9 @@ class ReleaseGateResult:
     failing_scenarios: list[str] = field(default_factory=list)
     errored_scenarios: list[str] = field(default_factory=list)
     certificate_id: str = ""
+    scenario_run_id: str = ""
+    scenario_results: list[dict[str, Any]] = field(default_factory=list)
+    evidence_refs: list[str] = field(default_factory=list)
     error_code: str = ""
     retry_guidance: str = ""
     ci_cd_command: str = ""
@@ -1039,6 +1042,9 @@ class ReleaseGateResult:
             "failing_scenarios": self.failing_scenarios,
             "errored_scenarios": self.errored_scenarios,
             "certificate_id": self.certificate_id,
+            "scenario_run_id": self.scenario_run_id,
+            "scenario_results": self.scenario_results,
+            "evidence_refs": self.evidence_refs,
             "error_code": self.error_code,
             "retry_guidance": self.retry_guidance,
             "ci_cd_command": self.ci_cd_command,
