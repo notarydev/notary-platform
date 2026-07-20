@@ -29,6 +29,7 @@ from notary_platform.models import (
     ReadinessCheck,
     ReadinessPolicy,
     ReleaseGateResult,
+    ReplayExecutionEvent,
     ReplayRun,
     Scenario,
     ScenarioCandidate,
@@ -754,6 +755,7 @@ class PostgresS3Storage(StorageBackend):
         self._session = boto3.session.Session()
         self._s3 = self._session.client("s3")
         self._ensure_schema()
+        self._replay_execution_events: dict[str, list[ReplayExecutionEvent]] = {}
 
     # -- metadata (Postgres) -------------------------------------------------
     def _ensure_schema(self) -> None:
@@ -1005,6 +1007,10 @@ class PostgresS3Storage(StorageBackend):
         return self._get_wo28("replay_run", run_id, ReplayRun)
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
         return [r for r in self._list_wo28("replay_run", "", "", ReplayRun) if r.verification_record_id == vr_id]
+    def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None:
+        self._replay_execution_events[run_id] = events
+    def list_replay_execution_events(self, run_id: str) -> list[ReplayExecutionEvent]:
+        return self._replay_execution_events.get(run_id, [])
     def create_mutation_test(self, test: MutationTest) -> MutationTest:
         self._write_wo28("mutation_test", test)
         return test

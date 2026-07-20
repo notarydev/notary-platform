@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import uuid
 from typing import Any, AsyncGenerator, Callable, Optional
 
@@ -45,7 +44,6 @@ def _derive_execution_events(snapshot_dict: dict[str, Any], result: dict[str, An
     input_el = next((e for e in elements if e.get("kind") == "input"), None)
     http_el = next((e for e in elements if e.get("kind") == "http"), None)
     policy_el = next((e for e in elements if e.get("kind") == "policy"), None)
-    decision_el = next((e for e in elements if e.get("kind") == "decision"), None)
 
     applicant_id = (input_el or {}).get("payload", {}).get("applicant_id", "—") if input_el else "—"
     bureau_status = (http_el or {}).get("payload", {}).get("response", {}).get("status", "missing_evidence") if http_el else "—"
@@ -53,12 +51,21 @@ def _derive_execution_events(snapshot_dict: dict[str, Any], result: dict[str, An
     replayed_decision = result.get("decision", "—")
     replay_status = result.get("replay_status", "error")
 
+    s = "pass" if result.get("replay_status") else "pending"
     events = [
-        ReplayExecutionEvent(step="Applicant facts", source="sealed input", expected="match", actual="match" if applicant_id != "—" else "—", status="pass", sequence=0),
-        ReplayExecutionEvent(step="Bureau response", source="cassette", expected=bureau_status, actual=bureau_status, status="pass" if result.get("replay_status") else "pending", sequence=1),
-        ReplayExecutionEvent(step="Policy version", source="sealed metadata", expected=policy_version, actual=policy_version, status="pass" if result.get("replay_status") else "pending", sequence=2),
-        ReplayExecutionEvent(step="AI decision", source="replay", expected=decision, actual=replayed_decision, status="reproduced" if replay_status == "replayed" else "pending", sequence=3),
-        ReplayExecutionEvent(step="Replay verdict", source="comparison", expected="reproduce failure", actual="reproduced" if replay_status == "replayed" else "pending", status=replay_status, sequence=4),
+        ReplayExecutionEvent(step="Applicant facts", source="sealed input",
+            expected="match", actual="match" if applicant_id != "—" else "—", status="pass", sequence=0),
+        ReplayExecutionEvent(step="Bureau response", source="cassette",
+            expected=bureau_status, actual=bureau_status, status=s, sequence=1),
+        ReplayExecutionEvent(step="Policy version", source="sealed metadata",
+            expected=policy_version, actual=policy_version, status=s, sequence=2),
+        ReplayExecutionEvent(step="AI decision", source="replay",
+            expected=decision, actual=replayed_decision,
+            status="reproduced" if replay_status == "replayed" else "pending", sequence=3),
+        ReplayExecutionEvent(step="Replay verdict", source="comparison",
+            expected="reproduce failure",
+            actual="reproduced" if replay_status == "replayed" else "pending",
+            status=replay_status, sequence=4),
     ]
     return events
 
