@@ -73,8 +73,11 @@ aws ecr get-login-password --region "${REGION}" \
   | docker login --username AWS --password-stdin \
     "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-# 2. Build + push for the target platform (no :latest — tags are immutable)
-docker buildx build --platform "${BUILD_PLATFORM}" -t "${ECR_URI}" --push .
+# 2. Build + push for the target platform (no :latest — tags are immutable).
+#    INSTALL_CLOUD=1 is required because the production ECS task sets
+#    NOTARY_KMS_KEY_ARN and NOTARY_DB_SECRET_ARN; without boto3/sqlalchemy the
+#    seed/proof paths fail with ModuleNotFoundError.
+docker buildx build --platform "${BUILD_PLATFORM}" --build-arg INSTALL_CLOUD=1 -t "${ECR_URI}" --push .
 
 # 3. Register a new task-definition revision that points at the new image, then
 #    force a redeploy. (A bare --force-new-deployment does NOT change the image;
