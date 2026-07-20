@@ -393,13 +393,371 @@ function openReleaseGateDetail(id) {
 
 // --- SETUP ---
 
+const SETUP_STEPS = [
+  { id: "workflow", label: "Decision Workflow" },
+  { id: "boundary", label: "AI Decision Boundary" },
+  { id: "systems", label: "Evidence Systems" },
+  { id: "capture", label: "Capture Method" },
+  { id: "test", label: "Test Capture" },
+  { id: "readiness", label: "Replay Readiness" },
+];
+
+const SETUP_SYSTEMS = [
+  {
+    id: "loan-origination",
+    name: "Loan Origination System",
+    selected: true,
+    tier: "required",
+    captures: "Applicant facts, application state, and requested product.",
+    why: "The AI decision is made about this applicant and application.",
+    proof: "Proves the inputs the AI actually saw.",
+    not: "Does not capture queue timing, employee assignments, or CRM history.",
+  },
+  {
+    id: "credit-bureau",
+    name: "Credit Bureau Evidence",
+    selected: true,
+    tier: "required",
+    captures: "External bureau response used by the AI.",
+    why: "A missing or borderline bureau response is the causal evidence for the adverse action.",
+    proof: "Enables cassette replay without live bureau calls.",
+    not: "Does not capture bureau latency SLA or third-party availability metrics.",
+  },
+  {
+    id: "policy-rules",
+    name: "Underwriting Policy Rules",
+    selected: true,
+    tier: "required",
+    captures: "Policy/rules/config version that defined the correct route.",
+    why: "The AI must be evaluated against the policy version in force at the time.",
+    proof: "Proves the rule set that should have routed the case to underwriting review.",
+    not: "Does not capture policy drafting workflow or approval chains.",
+  },
+  {
+    id: "ai-agent",
+    name: "AI Decision Agent",
+    selected: true,
+    tier: "required",
+    captures: "Model/prompt/output and final AI decision.",
+    why: "This is the decision system whose behavior is under review.",
+    proof: "Shows exactly what the AI decided and on what basis.",
+    not: "Does not capture unrelated model training data or general model metrics.",
+  },
+  {
+    id: "human-review",
+    name: "Human Review Queue",
+    selected: false,
+    tier: "optional",
+    captures: "Expected correct outcome label or override.",
+    why: "A reviewer supplies the ground-truth outcome the AI should have produced.",
+    proof: "Provides customer-approved expected outcome for replay and fix verification.",
+    not: "Does not capture queue wait time, reviewer productivity, or case assignment.",
+  },
+  {
+    id: "crm",
+    name: "CRM / Customer Communications",
+    selected: false,
+    tier: "excluded",
+    captures: "Notifications and follow-up activity.",
+    why: "Out of scope for AI Decision Assurance.",
+    proof: "—",
+    not: "Not captured because it does not affect the decision itself.",
+  },
+  {
+    id: "ops",
+    name: "Generic Ops Logs / SLA Monitoring",
+    selected: false,
+    tier: "excluded",
+    captures: "System latency, throughput, uptime.",
+    why: "Out of scope for AI Decision Assurance.",
+    proof: "—",
+    not: "Not captured because it explains infrastructure, not the decision.",
+  },
+];
+
+const SETUP_CAPTURE_METHODS = [
+  {
+    id: "sdk",
+    title: "Python SDK",
+    best: "Instrumented Python AI agents.",
+    captures: "LLM calls, tool calls, decisions, and sealed cassettes in-process.",
+    not: "Non-Python backends or third-party systems you cannot instrument.",
+    action: "openSDKSetup()",
+  },
+  {
+    id: "api",
+    title: "API Submission",
+    best: "Backend systems sending Verification Records directly.",
+    captures: "Structured decision evidence, labels, and references.",
+    not: "In-process model internals unless you serialize them.",
+    action: "openAPISubmissionSetup()",
+  },
+  {
+    id: "manual",
+    title: "Manual Submission",
+    best: "Complaints, overrides, disputes, or one-off reviews.",
+    captures: "Human-provided expected outcome and evidence summary.",
+    not: "High-volume automated decisions.",
+    action: "openManualSubmissionForm()",
+  },
+  {
+    id: "webhook",
+    title: "Webhook",
+    best: "Source-system event forwarding.",
+    captures: "Events that represent a decision or escalation.",
+    not: "Arbitrary operational telemetry.",
+    action: "openWebhookSetup()",
+  },
+];
+
+function renderSetupStepIndicator(step) {
+  return `
+    <div class="setup-steps">
+      ${SETUP_STEPS.map((s, i) => `
+        <div class="setup-step ${i === step ? 'active' : i < step ? 'done' : ''}">
+          <span class="setup-step-num">${i + 1}</span>
+          <span class="setup-step-label">${esc(s.label)}</span>
+        </div>
+        ${i < SETUP_STEPS.length - 1 ? '<span class="setup-step-line"></span>' : ''}
+      `).join("")}
+    </div>`;
+}
+
+function renderSetupNav(step, canNext = true) {
+  return `
+    <div class="setup-nav">
+      ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})">Back</button>` : "<span></span>"}
+      ${step < SETUP_STEPS.length - 1 ? `<button class="btn" onclick="renderSetupStep(${step + 1})" ${canNext ? "" : "disabled"}>Next</button>` : ""}
+    </div>`;
+}
+
+function renderSetupWorkflowStep() {
+  return `
+    <div class="setup-step-content">
+      <h2>Choose the decision workflow to assure</h2>
+      <p class="setup-lead">Notary turns a captured AI failure into sealed, replayable evidence. Start with one high-stakes decision workflow.</p>
+      <div class="workflow-grid">
+        <div class="workflow-card selected">
+          <div class="workflow-org">Harborline Credit Union</div>
+          <h3>Thin-file personal loan adverse-action</h3>
+          <p>A thin-file applicant was denied when missing bureau evidence should have routed the case to underwriting review.</p>
+          <div class="workflow-meta">
+            <span><strong>Original AI decision:</strong> DENY</span>
+            <span><strong>Expected outcome:</strong> UNDERWRITING_REVIEW</span>
+          </div>
+          <div class="workflow-risk">Risk: fair lending / adverse action / customer harm</div>
+          <span class="badge badge-built" style="margin-top:12px">SELECTED</span>
+        </div>
+        <div class="workflow-card planned">
+          <h3>Other workflows</h3>
+          <p>Additional decision workflows can be added once the Harborline demo path is proven.</p>
+          <span class="badge badge-planned">Planned</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderSetupBoundaryStep() {
+  return `
+    <div class="setup-step-content">
+      <h2>Define the AI decision boundary</h2>
+      <p class="setup-lead">Notary is AI Decision Assurance, not process mining. We capture only what affects the AI decision.</p>
+      <div class="scope-grid">
+        <div class="scope-block in-scope">
+          <h3>In scope because it affects the AI decision</h3>
+          <ul>
+            <li>Applicant facts.</li>
+            <li>Credit bureau / bureau evidence response.</li>
+            <li>Policy/rules/config version.</li>
+            <li>LLM / decision agent prompt + output.</li>
+            <li>Final AI decision.</li>
+            <li>Human-approved expected outcome.</li>
+            <li>Replay cassette or sandbox validation method.</li>
+            <li>Proof / certificate references.</li>
+          </ul>
+        </div>
+        <div class="scope-block out-scope">
+          <h3>Out of scope for AI Decision Assurance</h3>
+          <ul>
+            <li>Queue wait time.</li>
+            <li>Employee workload.</li>
+            <li>Generic CRM activity.</li>
+            <li>Notification delivery.</li>
+            <li>SLA analytics.</li>
+            <li>Generic process optimization.</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderSetupSystemsStep() {
+  return `
+    <div class="setup-step-content">
+      <h2>Select evidence systems</h2>
+      <p class="setup-lead">Each system is included because it provides decision-relevant evidence. We do not capture operational telemetry.</p>
+      <div class="systems-grid">
+        ${SETUP_SYSTEMS.map(sys => `
+          <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}">
+            <div class="system-header">
+              <strong>${esc(sys.name)}</strong>
+              <span class="system-tier ${sys.tier}">${sys.tier}</span>
+            </div>
+            <div class="system-field"><span class="system-label">Captures</span><span>${esc(sys.captures)}</span></div>
+            <div class="system-field"><span class="system-label">Why include it</span><span>${esc(sys.why)}</span></div>
+            <div class="system-field"><span class="system-label">Proof it enables</span><span>${esc(sys.proof)}</span></div>
+            <div class="system-field"><span class="system-label">Does not capture</span><span>${esc(sys.not)}</span></div>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+}
+
+function renderSetupCaptureStep() {
+  return `
+    <div class="setup-step-content">
+      <h2>Choose a capture method</h2>
+      <p class="setup-lead">Pick the path that matches how this decision enters your environment.</p>
+      <div class="capture-grid">
+        ${SETUP_CAPTURE_METHODS.map(m => `
+          <div class="capture-card">
+            <h3>${esc(m.title)}</h3>
+            <div class="capture-field"><span>Best for</span><span>${esc(m.best)}</span></div>
+            <div class="capture-field"><span>Captures</span><span>${esc(m.captures)}</span></div>
+            <div class="capture-field"><span>Does not capture</span><span>${esc(m.not)}</span></div>
+            <button class="btn btn-sm" onclick="${m.action}">Open ${esc(m.title)} Guide</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+}
+
+async function sendHarborlineTestCapture() {
+  const btn = q("#harborline-test-capture-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+  try {
+    const snapshot = {
+      schema_version: 1,
+      timestamp: new Date().toISOString(),
+      elements: [
+        { kind: "input", payload: { applicant_id: "HLCU-PL-0427", product: "personal_loan", thin_file: true } },
+        { kind: "llm", payload: { prompt: "Adverse-action decision for HLCU-PL-0427", response: "Decision: DENY — thin file, insufficient bureau evidence" } },
+        { kind: "http", payload: { request: { method: "POST", url: "/credit-bureau/evidence" }, response: { status: "missing_evidence", tradelines: 0 }, status: 200 } },
+        { kind: "policy", payload: { version: "underwriting-policy-v1.3", rule: "thin_file_missing_bureau → route to underwriting review" } },
+        { kind: "decision", payload: { decision: "DENY", confidence: 0.72 } },
+      ],
+      merkle_chain: [],
+      root_hash: "demo-harborline-root-" + Date.now(),
+    };
+    const r = await apiPost("/v1/incidents/ingest", { snapshot });
+    S.setupTestCapture = {
+      id: r.incident_id || r.verification_record_id || "vr-?",
+      applicant_id: "HLCU-PL-0427",
+      decision: "DENY",
+      expected: "UNDERWRITING_REVIEW",
+      systems: ["Loan Origination System", "Credit Bureau Evidence", "Underwriting Policy Rules", "AI Decision Agent"],
+      root_hash: snapshot.root_hash,
+      replayability: "Replayable from sealed cassette",
+    };
+    notify("Harborline test capture created", "success");
+    renderSetupStep(5); // jump to readiness
+  } catch (e) {
+    notify("Test capture failed: " + e.message, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Send Test Capture"; }
+  }
+}
+
+function renderSetupTestStep() {
+  const cap = S.setupTestCapture;
+  return `
+    <div class="setup-step-content">
+      <h2>Send a test capture</h2>
+      <p class="setup-lead">Create a sample Harborline capture packet and confirm the evidence is sealed and replayable.</p>
+      ${cap ? `
+        <div class="test-capture-packet">
+          <h3>Captured packet</h3>
+          <div class="packet-grid">
+            <div class="packet-field"><span>Record ID</span><span>${esc(cap.id)}</span></div>
+            <div class="packet-field"><span>Applicant ID</span><span>${esc(cap.applicant_id)}</span></div>
+            <div class="packet-field"><span>Decision</span><span class="packet-decision decision-fail">${esc(cap.decision)}</span></div>
+            <div class="packet-field"><span>Expected outcome</span><span class="packet-decision decision-pass">${esc(cap.expected)}</span></div>
+            <div class="packet-field"><span>Captured systems</span><span>${cap.systems.map(s => esc(s)).join(", ")}</span></div>
+            <div class="packet-field"><span>Root hash / seal</span><span class="mono">${esc(cap.root_hash)}</span></div>
+            <div class="packet-field"><span>Replay readiness</span><span>${esc(cap.replayability)}</span></div>
+          </div>
+          <div class="action-row" style="margin-top:12px">
+            <button class="btn" onclick="nav('verification-records')">Open Verification Records</button>
+            <button class="btn btn-outline" onclick="S.setupTestCapture=null; renderSetupStep(4)">Send Another</button>
+          </div>
+        </div>
+      ` : `
+        <div class="empty-state compact">
+          <h3>Harborline test capture</h3>
+          <p>This will create one Verification Record for applicant HLCU-PL-0427 with a sealed cassette and root hash.</p>
+          <button id="harborline-test-capture-btn" class="btn" onclick="sendHarborlineTestCapture()">Send Test Capture</button>
+        </div>
+      `}
+    </div>`;
+}
+
+function renderSetupReadinessStep() {
+  const cap = S.setupTestCapture;
+  const items = [
+    { label: "AI decision captured", ok: true },
+    { label: "External response cassette sealed", ok: true },
+    { label: "Policy version captured", ok: true },
+    { label: "Expected outcome labeled", ok: true },
+    { label: "Replayable from sealed cassette", ok: true },
+    { label: "Ready for incident / release gate", ok: true },
+  ];
+  return `
+    <div class="setup-step-content">
+      <h2>Replay readiness checklist</h2>
+      <p class="setup-lead">Before a record becomes an incident or gates a release, Notary confirms it can be deterministically replayed.</p>
+      <div class="readiness-checklist">
+        ${items.map(item => `
+          <div class="readiness-item">
+            <span class="readiness-check ${item.ok ? 'ok' : ''}">${item.ok ? '✓' : '○'}</span>
+            <span class="readiness-label">${esc(item.label)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${cap ? `
+        <div class="action-row" style="margin-top:16px">
+          <button class="btn" onclick="nav('verification-records')">View Verification Record</button>
+          <button class="btn btn-outline" onclick="nav('incidents')">Open Incidents</button>
+        </div>
+      ` : `
+        <div class="action-row" style="margin-top:16px">
+          <button class="btn btn-outline" onclick="renderSetupStep(4)">Send Test Capture First</button>
+        </div>
+      `}
+    </div>`;
+}
+
+function renderSetupStep(step) {
+  S.setupStep = step;
+  const c = q("#setup-container");
+  if (!c) return;
+  let content = "";
+  switch (SETUP_STEPS[step].id) {
+    case "workflow": content = renderSetupWorkflowStep(); break;
+    case "boundary": content = renderSetupBoundaryStep(); break;
+    case "systems": content = renderSetupSystemsStep(); break;
+    case "capture": content = renderSetupCaptureStep(); break;
+    case "test": content = renderSetupTestStep(); break;
+    case "readiness": content = renderSetupReadinessStep(); break;
+  }
+  c.innerHTML = renderSetupStepIndicator(step) + content + renderSetupNav(step);
+}
+
 async function renderSetup(c) {
   c.innerHTML = sk(40);
   const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
+  const step = typeof S.setupStep === "number" ? S.setupStep : 0;
   c.innerHTML = `
-    <div class="section-title">Get Started</div>
-    <div class="section-sub">Your API token is already configured. Use it in API calls and SDK setup.</div>
-    <div class="int-card" style="margin-bottom:16px">
+    <div class="int-card" style="margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><h4>API Token</h4><p style="font-size:12px;color:var(--muted)">Sent automatically in headers. Copy for CLI/curl use.</p></div>
         <span class="badge badge-built">ACTIVE</span>
@@ -407,30 +765,12 @@ async function renderSetup(c) {
       ${renderCodeBlock(S.token || "ntry-demo-...")}
       <div style="font-size:11px;color:var(--muted);margin-top:4px">Change or view in <span class="link" onclick="nav('settings')">Settings</span></div>
     </div>
-    <div class="section-title">Connect Your AI System</div>
-    <div class="section-sub">Choose an integration path. Each card opens a guided setup workflow.</div>
-    ${setupCard("python_sdk", "Python SDK", "Best for Python agents and custom workflows.", "built", `pip install -e packages/notary-sdk-py`, [
-      {label: "Install Instructions", action: "openSDKSetup()", primary: true},
-      {label: "Send Test Capture", action: "sendSDKTestCapture()", primary: false},
-    ])}
-    ${setupCard("api_submission", "API Submission", "Send JSON Verification Records from any backend.", "built", null, [
-      {label: "Open API Guide", action: "openAPISubmissionSetup()", primary: true},
-      {label: "Send Sample Record", action: "sendAPISampleRecord()", primary: false},
-    ])}
-    ${setupCard("manual_submission", "Manual Submission", "Submit overrides, complaints, or disputes by hand.", "built", null, [
-      {label: "Submit Manual Record", action: "openManualSubmissionForm()", primary: true},
-    ])}
-    ${setupCard("webhook", "Webhook", "POST events from support systems or workflow tools.", "built", null, [
-      {label: "Configure Webhook", action: "openWebhookSetup()", primary: true},
-      {label: "Send Test Event", action: "sendWebhookTestEvent()", primary: false},
-    ])}
-    ${setupCard("batch_import", "Batch Import", "Import historical data via CSV/JSONL.", "planned", null, [
-      {label: "Planned", action: "", primary: false, disabled: true, reason: "Planned for future release. Use API or manual submission today."},
-    ])}
-    ${setupCard("trace_import", "Trace Import", "Ingest OpenTelemetry/OpenInference traces.", "planned", null, [
-      {label: "Planned", action: "", primary: false, disabled: true, reason: "Planned for future release. Use SDK or API submission today."},
-    ])}
-    <div class="section-title" style="margin-top:24px">Capture Adapter Registry</div>
+    <div id="setup-container" class="setup-wizard">
+      ${renderSetupStepIndicator(step)}
+      <div id="setup-step-content"></div>
+      ${renderSetupNav(step)}
+    </div>
+    <div class="section-title" style="margin-top:32px">Capture Adapter Registry</div>
     <div class="section-sub">What capture methods are available today vs planned</div>
     ${renderTable(["Adapter", "Status", "Description"], adapters.map(ad => [
       `<span style="font-weight:700;color:var(--text)">${ad.label}</span>`,
@@ -438,6 +778,7 @@ async function renderSetup(c) {
       `<span style="font-size:11px">${esc(ad.desc)}</span>`,
     ]), {emptyDetail: "Adapter registry unavailable"})}
   `;
+  renderSetupStep(step);
 }
 
 function setupCard(id, title, desc, status, code, actions) {
