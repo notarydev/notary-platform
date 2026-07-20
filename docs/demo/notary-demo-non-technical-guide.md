@@ -15,13 +15,12 @@ Use these links as the current source of truth for the demo stack.
 
 | Surface | Link | What it is for |
 |---|---|---|
-| Platform PR | https://github.com/notarydev/notary-platform/pull/13 | Current top platform branch with Harborline proof loop, preflight, evidence pack, and this guide. |
-| SDK PR | https://github.com/notarydev/notary-sdk/pull/2 | SDK claim hardening: explicit capture, local sealing, local verification. |
-| Website PR | https://github.com/notarydev/GetNotary.ai/pull/4 | Canonical current website/pilot copy stack. |
-| Control-plane PR | https://github.com/notarydev/notary-viz/pull/1 | Execution history and autonomous work-order coordination. |
-| Website | https://getnotary.ai | Public story; use if deployed copy is current. If not, use the website PR branch/source as the accurate copy. |
+| Platform main | https://github.com/notarydev/notary-platform/tree/main | Current platform code: Harborline proof loop, guided Setup, Home golden path, Incidents investigation console, Proofs, VRs, preflight, evidence pack, and this guide. |
+| SDK main | https://github.com/notarydev/notary-sdk/tree/main | SDK claim hardening: explicit capture, local sealing, local verification. |
+| Website main | https://github.com/notarydev/GetNotary.ai/tree/main | Canonical current website/pilot copy stack. |
+| Website | https://getnotary.ai | Public story; use if deployed copy is current. |
 
-Important: for today's demo, treat `notary-platform` PR #13, `notary-sdk` PR #2, and `GetNotary.ai` PR #4 as the relevant surfaces. Command Center can wait.
+Important: for today's demo, the relevant surfaces are `notary-platform` main, `notary-sdk` main, and `GetNotary.ai` main. Command Center is deferred.
 
 ## 3. The Demo Scenario
 
@@ -123,12 +122,111 @@ Notary tests the corrected behavior against the same scenario. The expected corr
 
 The verified scenario becomes part of a Release Gate. Before the fix, the gate fails. After the fix, the gate passes and returns a Proof of Readiness certificate reference.
 
-## 6. How To Run The Demo Locally
+## 6. UI Walkthrough (what each screen now shows)
+
+This section maps the current `/app/` UI to the demo story. All URLs assume a local platform at `http://localhost:8000/app/` or the live deploy at `https://api.getnotary.ai/app/`.
+
+### 6.0 Demo URL assumptions
+
+- Local platform: `http://localhost:8000/app/`
+- Live platform: `https://api.getnotary.ai/app/`
+- Live health check: `https://api.getnotary.ai/health`
+- Website: `https://getnotary.ai`
+
+When auth is enabled, set the API token in **Settings** before seeding.
+
+### 6.1 Setup — guided AI decision setup flow
+
+Open **Setup** from the side nav.
+
+The Setup wizard walks through six steps:
+
+1. **Decision Workflow** — Harborline Credit Union thin-file personal-loan adverse-action. Original decision `DENY`, expected outcome `UNDERWRITING_REVIEW`, risk: fair lending / adverse action / customer harm.
+2. **AI Decision Boundary** — shows what is in scope (inputs, bureau response, policy, model output, final decision, expected outcome, replay cassette, proof) vs out of scope (queue timing, employee workload, CRM activity, SLA analytics). This is the line between AI Decision Assurance and process mining.
+3. **Evidence Systems** — required/selected cards for Loan Origination System, Credit Bureau Evidence, Underwriting Policy Rules, and AI Decision Agent; optional Human Review Queue; excluded CRM/ops logs. Each card explains what Notary captures, why it matters, what proof it enables, and what it does not capture.
+4. **Capture Method** — SDK, API, Manual, Webhook cards with "Captures / Does not capture / Best for" and a CTA to the relevant guide.
+5. **Test Capture** — click **Send Test Capture** to create a Harborline sample record (`HLCU-PL-0427`). The packet shows applicant ID, original decision, expected outcome, captured systems, root hash/seal, and replay readiness.
+6. **Replay Readiness Checklist** — confirms the record is AI-decision captured, cassette sealed, policy captured, expected outcome labeled, replayable, and ready for incident/release gate.
+
+### 6.2 Home — visual golden path
+
+Open **Home**.
+
+- The top banner shows the Harborline golden path: Capture → Replay → Fix → Proof → Scenario → Gate.
+- After seeding, each step displays concrete data (applicant ID, original/replayed decisions, fix outcome, proof ID, scenario ID, gate before/after status).
+- Click any seeded step to open the corresponding record, incident, proof, scenario, or gate.
+- The stat cards (SDK Installed, Agents, Systems, Policies, Need Label, Proofs) are clickable and route to Setup, Readiness, filtered Verification Records, or Proofs.
+- Active queue chips (Need replay, Need verification, Proofs ready, Need label) route to Incidents, Verification Records, or Proofs.
+
+### 6.3 Verification Records — upstream capture layer
+
+Open **Verification Records**.
+
+Each row is a captured decision case file. Columns:
+- **ID** — record identifier.
+- **Source** — SDK snapshot, API submission, manual submission, or webhook.
+- **Decision** — original AI decision (e.g., `DENY`).
+- **Captured Systems** — source system and agent.
+- **Replayability** — whether the record can be replayed and what it needs.
+- **Label** — labeled or needs label.
+- **Links** — Incident, Scenario, or Proof if promoted.
+- **Actions** — Add Label, Replay, Promote, Investigate, Detail.
+
+Rows are clickable and open the record detail. Use this screen to narrate: "This is how a captured decision becomes an incident, then a scenario, then a release gate."
+
+### 6.4 Incidents — AI failure investigation console
+
+Open **Incidents**.
+
+The list shows R (Replay reproduced), F (Fix verified), C (Certificate/proof issued) columns. Click **Investigate** on the Harborline incident.
+
+The detail page shows:
+- **Business Summary** — workflow, observed outcome, target outcome.
+- **Proof Loop Workflow** — action buttons for Replay, Verify Fix, Issue Proof.
+- **Captured AI Decision Path** — source record, agent, expected outcome, replayability, label.
+- **Replay Execution Trace** — step-by-step trace of sealed inputs, cassette selection, response injection, decision reconstruction, comparison, and verdict.
+- **Replay Run Detail** — table with Step | Source | Expected | Actual | Status:
+  - Applicant facts → sealed input → match
+  - Bureau response → cassette → missing evidence
+  - Policy version → sealed metadata → v1.3
+  - AI decision → replay → DENY reproduced
+  - Replay verdict → comparison → reproduced
+- **Original vs Replayed Comparison** — original `DENY`, replayed `DENY`, after-fix `UNDERWRITING_REVIEW`.
+- **Fix Verification Before / After** — shows the change that routes missing-bureau cases to underwriting review.
+- **Proof / Certificate** — if proof is issued, shows proof ID, root hash, replay method, signature status, claim scope, and limitations. If not eligible, shows the exact missing prerequisite (e.g., "proof requires a successful fix verification").
+- **Scenario Promotion** — links to the Scenario Library once proof exists.
+- **Release Gate Impact** — visual path: Captured → Blocked before fix → Pass after fix → Proof attached.
+
+### 6.5 Proofs — bounded evidence package
+
+Open **Proofs** or click a proof from an incident.
+
+The proof detail shows:
+- Proof ID, source incident, source Verification Record.
+- Decision workflow name.
+- Original AI decision and verified fixed outcome.
+- Expected outcome provenance.
+- Replay method (sealed cassette replay).
+- Root hash / seal.
+- Signature status and signing algorithm.
+- Claim scope and limitations.
+- Download JSON / PDF / Verify Signature actions.
+
+Language is bounded: "verified for this scenario," not "AI system is safe."
+
+### 6.6 Release Gate result
+
+Open the Blocked Gate and Passing Gate from Home or Incidents.
+
+- **Blocked Gate** — status `fail`, Harborline scenario listed as failing because the before-fix agent repeats `DENY`.
+- **Passing Gate** — status `pass`, evidence refs, scenario result, and readiness certificate reference.
+
+## 7. How To Run The Demo Locally
 
 These commands are for the `notary-platform` repo on the top demo branch:
 
 ```bash
-git checkout codex/prg-018-final-evidence-pack
+git checkout main
 ```
 
 If dependencies are not installed yet, use the repo's normal Python setup. Depending on the environment, that may be one of:
@@ -236,7 +334,7 @@ Use this sequence when training someone else.
 
 ### 7.1 Five-minute prep
 
-1. Pull or open the latest platform branch: `codex/prg-018-final-evidence-pack`.
+1. Pull or open the latest platform branch: `main`.
 2. Run `PYTHONPATH=src python3 -m notary_platform.demo_preflight`.
 3. If it passes, start the app.
 4. Open `http://localhost:8000/app/`.
@@ -402,7 +500,7 @@ Common causes:
 |---|---|---|
 | import error | dependencies missing | install repo dev dependencies, activate venv, confirm `PYTHONPATH=src`. |
 | API health | app import/runtime issue | run targeted tests or start FastAPI manually to see error. |
-| Harborline seed | branch is wrong or route missing | confirm branch is `codex/prg-018-final-evidence-pack`. |
+| Harborline seed | branch is wrong or route missing | confirm branch is `main` and the deploy includes `INSTALL_CLOUD=1`. |
 | replay or mutation | platform proof loop regression | do not demo; ask engineering to inspect release-gate vertical test. |
 | presenter UI | static app not updated | confirm PRG-012 changes are in the branch. |
 | certificate verification | certificate/signature regression | do not claim readiness proof until fixed. |
@@ -425,7 +523,7 @@ If `uvicorn` is missing, install dev dependencies in the active virtual environm
 
 ### 13.3 The website does not match the story
 
-Use the canonical website PR #4 as the source of truth. Older website PRs may be superseded.
+Use the canonical `GetNotary.ai` main branch as the source of truth. Older website PRs are superseded.
 
 Do not use stale deployed copy if it has not been updated.
 
@@ -506,7 +604,7 @@ This appendix is for engineers or technical reviewers.
 ### 17.1 Main local commands
 
 ```bash
-git checkout codex/prg-018-final-evidence-pack
+git checkout main
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -e ".[dev]"
