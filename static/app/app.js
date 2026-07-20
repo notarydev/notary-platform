@@ -684,18 +684,21 @@ async function sendHarborlineTestCapture() {
         { kind: "policy", payload: { version: "underwriting-policy-v1.3", rule: "thin_file_missing_bureau → route to underwriting review" } },
         { kind: "decision", payload: { decision: "DENY", confidence: 0.72 } },
       ],
-      merkle_chain: [],
-      root_hash: "demo-harborline-root-" + Date.now(),
     };
-    const r = await apiPost("/v1/incidents/ingest", { snapshot });
+    const r = await apiPost("/v1/verification-records/from-snapshot", {
+      snapshot: snapshot,
+      agent_id: "browser-sdk-demo",
+    });
+    const vrId = r.id;
+    const vr = await apiGet("/v1/verification-records/" + vrId);
     S.setupTestCapture = {
-      id: r.incident_id || r.verification_record_id || "vr-?",
+      id: vr.id,
       applicant_id: "HLCU-PL-0427",
       decision: "DENY",
       expected: "UNDERWRITING_REVIEW",
       systems: ["Loan Origination System", "Credit Bureau Evidence", "Underwriting Policy Rules", "AI Decision Agent"],
-      root_hash: snapshot.root_hash,
-      replayability: "Replayable from sealed cassette",
+      root_hash: vr.root_hash || "",
+      replayability: vr.replayability || "Pending assessment",
     };
     notify("Harborline test capture created", "success");
     renderSetupStep(5); // jump to readiness
@@ -741,13 +744,14 @@ function renderSetupTestStep() {
 
 function renderSetupReadinessStep() {
   const cap = S.setupTestCapture;
+  const hasVR = cap && cap.root_hash && cap.id;
   const items = [
-    { label: "AI decision captured", ok: true },
-    { label: "External response cassette sealed", ok: true },
-    { label: "Policy version captured", ok: true },
-    { label: "Expected outcome labeled", ok: true },
-    { label: "Replayable from sealed cassette", ok: true },
-    { label: "Ready for incident / release gate", ok: true },
+    { label: "AI decision captured", ok: hasVR },
+    { label: "External response cassette sealed", ok: hasVR },
+    { label: "Policy version captured", ok: hasVR },
+    { label: "Expected outcome labeled", ok: false },
+    { label: "Replayable from sealed cassette", ok: false },
+    { label: "Ready for incident / release gate", ok: false },
   ];
   return `
     <div class="setup-step-content">
@@ -860,11 +864,11 @@ async function sendSDKTestCapture() {
         {kind: "http", payload: {request: {method: "POST", url: "/score"}, response: {score: 620}, status: 200}},
         {kind: "decision", payload: {decision: "DENY"}},
       ],
-      merkle_chain: [],
-      root_hash: "demo-root-hash",
     };
-    const r = await apiPost("/v1/incidents/ingest", {snapshot});
-    notify("Created SDK Verification Record " + r.incident_id, "success");
+    const r = await apiPost("/v1/verification-records/from-snapshot", {
+      snapshot: snapshot,
+    });
+    notify("Created Verification Record " + r.id, "success");
     nav("verification-records");
   } catch (e) {
     notify("Failed: " + e.message, "error");
@@ -1144,7 +1148,7 @@ function openMissingContextHelp(vrId) {
 function openAddLabelForm(vrId) {
   const body = `
     <div class="np-form">
-      <div class="np-field"><label>Expected Outcome</label><input id="label-outcome" placeholder="e.g. APPROVE"></div>
+      <div class="np-field"><label>Expected Outcome</label><input id="label-outcome" placeholder="e.g. UNDERWRITING_REVIEW"></div>
       <div class="np-field"><label>Reviewer</label><input id="label-reviewer" placeholder="e.g. QA Lead"></div>
       <div class="np-field"><label>Role</label><input id="label-role" placeholder="e.g. QA"></div>
       <div class="np-field"><label>Reason</label><textarea id="label-reason">Policy requires this outcome for the recorded scenario.</textarea></div>
@@ -1263,7 +1267,6 @@ async function runVRMutation(vrId) {
   try {
     const r = await apiPost("/v1/verification-records/" + vrId + "/mutation-tests", {
       fix_config: {threshold: 620},
-      expected_correct_behavior: "APPROVE",
     });
     notify("Mutation test " + r.verdict, r.verdict === "verified" ? "success" : "error");
     openVRDetail(vrId);
@@ -1452,7 +1455,7 @@ async function renderIncidentDetail(c, i, wf) {
     <div class="action-row" style="margin-top:16px">
       <button class="btn${i.replay_result ? " btn-outline" : ""}" onclick="runIncidentReplay('${i.incident_id}')">${i.replay_result ? "Replay Again" : "Run Replay"}</button>
       ${i.replay_result && !i.mutation_result ? `<button class="btn btn-amber" onclick="runIncidentVerify('${i.incident_id}')">Verify Fix</button>` : ""}
-      ${!cert.certificate_id ? `<button class="btn btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : ""}
+      ${!cert.certificate_id ? (wf.can_issue_proof ? `<button class="btn btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : `<button class="btn btn-green" disabled title="${esc(proofError || 'Fix verification required first')}">Issue Proof</button>`) : ""}
       ${cert.certificate_id ? `<button class="btn btn-sm btn-outline" onclick="nav('scenarios')">Promote to Scenario</button>` : ""}
     </div>
   `;
@@ -1476,7 +1479,7 @@ async function runIncidentReplay(id) {
 
 async function runIncidentVerify(id) {
   try {
-    await apiPost("/v1/incidents/" + id + "/mutation-tests", {fix_config: {threshold: 620}, expected_correct_behavior: "APPROVE"});
+    await apiPost("/v1/incidents/" + id + "/mutation-tests", {fix_config: {threshold: 620}});
     notify("Fix verification completed", "success");
     openIncidentDetail(id);
   } catch (e) {
@@ -2077,13 +2080,12 @@ async function renderSettings(c) {
       <div id="api-keys-list" style="margin-top:12px">${sk(40)}</div>
     `)}
     ${renderSection("Organization", `
-      ${renderKV("Name", "Acme Assurance Demo")}
-      ${renderKV("ID", "org:acme-demo")}
+      <div id="settings-org-info">${sk(60)}</div>
     `)}
     ${renderSection("Integrations", `
       <div class="action-row">
         ${renderDisabledAction("GRC Connector", "Planned")}
-        ${renderDisabledAction("CI/CD Release Gate", "Planned")}
+        ${renderDisabledAction("Release Gate (CI/CD delivery)", "Planned")}
       </div>
     `)}
     ${renderSection("Users & Roles", `
@@ -2091,6 +2093,12 @@ async function renderSettings(c) {
     `)}
   `;
   loadApiKeys();
+  try {
+    const org = await apiGet("/v1/platform/org");
+    q("#settings-org-info").innerHTML = renderKV("Name", esc(org.name || "")) + renderKV("ID", esc(org.id || ""));
+  } catch (e) {
+    q("#settings-org-info").innerHTML = `<p style="color:var(--red);font-size:12px">Failed to load org info.</p>`;
+  }
 }
 
 function saveSettingsToken() {

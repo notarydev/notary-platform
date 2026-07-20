@@ -516,7 +516,7 @@ def _snapshot_for_case(case: DemoCase) -> dict[str, Any] | None:
 
 def _run_full_proof_loop(incident: Any, snapshot: dict[str, Any], agent_fn: Callable[..., Any]) -> None:
     run_replay(incident, snapshot, agent_fn)
-    result = run_mutation(snapshot, agent_fn, {"threshold": 620}, expected_correct_behavior="APPROVE")
+    result = run_mutation(snapshot, agent_fn, {"threshold": 620}, expected_correct_behavior="UNDERWRITING_REVIEW")
     incident.mutation_result = result
     if result.get("mitigated"):
         incident.status = IncidentStatus.mitigated
@@ -528,7 +528,7 @@ def _run_full_proof_loop(incident: Any, snapshot: dict[str, Any], agent_fn: Call
         original_decision=result.get("original_decision"),
         mutated_decision=result.get("mutated_decision"),
         fix_config=result.get("fix_config", {}),
-        expected_correct_behavior="APPROVE",
+        expected_correct_behavior="UNDERWRITING_REVIEW",
         timestamp=incident.snapshot_summary.get("timestamp", ""),
     )
     incident.certificate = cert

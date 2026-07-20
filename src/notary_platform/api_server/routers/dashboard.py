@@ -457,7 +457,7 @@ code {{ color:#93c5fd; font-size:12px; }}
 function replay(id) {{ fetch('/v1/incidents/' + id + '/replay', {{method:'POST'}}).then(() => location.reload()); }}
 function applyFix(id, scenario) {{
   let fixes = {{
-    'lending-denial': {{fix_config:{{threshold:620}}, expected_correct_behavior:'APPROVE'}},
+    'lending-denial': {{fix_config:{{threshold:620}}, expected_correct_behavior:'UNDERWRITING_REVIEW'}},
     'prior-auth-denial': {{fix_config:{{require_human_review_for_high_risk_note:true}}, expected_correct_behavior:'ESCALATE_TO_HUMAN_REVIEW'}},
     'hiring-screen-rejection': {{fix_config:{{remove_age_proxy:true, route_borderline_to_human_review:true}}, expected_correct_behavior:'ADVANCE_TO_REVIEW'}},
     'customer-service-handoff': {{fix_config:{{escalate_after_repeated_human_request:true}}, expected_correct_behavior:'ESCALATE_TO_HUMAN'}}

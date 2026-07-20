@@ -12,7 +12,7 @@ def run_mutation(
     agent_fn: Callable[..., Any],
     fix_config: dict[str, Any],
     agent_kwargs: Optional[dict[str, Any]] = None,
-    expected_correct_behavior: str = "APPROVE",
+    expected_correct_behavior: str = "",
 ) -> dict[str, Any]:
     """Replay with the mutated config and return both decisions.
 

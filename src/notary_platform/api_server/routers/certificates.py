@@ -31,7 +31,7 @@ router = APIRouter(tags=["mutation", "certificates", "proofs"])
 
 class MutationRequest(BaseModel):
     fix_config: dict[str, Any]
-    expected_correct_behavior: str = "APPROVE"
+    expected_correct_behavior: str = ""
 
 
 @router.post("/incidents/{incident_id}/mutation-tests")
@@ -53,11 +53,23 @@ def apply_mutation(incident_id: str, body: MutationRequest, org_id: str = Depend
     if agent_fn is None:
         raise HTTPException(status_code=400, detail="no agent function registered")
 
+    # Resolve expected outcome from the incident's source VR label.
+    expected = body.expected_correct_behavior
+    if not expected:
+        vrs = incidents_mod.storage.list_vrs(org_id)
+        source_vr = next((v for v in vrs if v.promoted_to_incident == incident_id), None)
+        if source_vr and source_vr.current_label_id:
+            label = incidents_mod.storage.get_label(source_vr.current_label_id)
+            if label:
+                expected = label.expected_outcome
+    if not expected:
+        raise HTTPException(status_code=400, detail="expected_correct_behavior is required and could not be resolved from label")
+
     result = run_mutation(
         snapshot_dict,
         agent_fn,
         body.fix_config,
-        expected_correct_behavior=body.expected_correct_behavior,
+        expected_correct_behavior=expected,
     )
 
     inc.mutation_result = result

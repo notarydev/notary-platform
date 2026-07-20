@@ -24,10 +24,8 @@
 <div class="main">
   <div class="topbar">
     <h1 id="view-title">Home</h1>
-    <select class="env-select" id="env-select" onchange="switchEnv(this.value)">
-      <option value="env:demo">Demo</option>
-      <option value="env:staging">Staging</option>
-      <option value="env:production">Production</option>
+    <select class="env-select" id="env-select" disabled>
+      <option value="env:demo" selected>Demo (locked)</option>
     </select>
     <input class="env-select" id="agent-version" value="1.2.0" placeholder="Agent version" style="width:120px" onchange="switchAgentVersion(this.value)">
     <span class="badge badge-demo hidden" id="global-demo">DEMO</span>

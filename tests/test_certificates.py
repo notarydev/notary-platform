@@ -182,7 +182,7 @@ class TestMutationEndpoint:
         self._replay(inc_id)
         client.post(
             f"/v1/incidents/{inc_id}/mutation-tests",
-            json={"fix_config": {"threshold": 620}},
+            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         resp = client.get(f"/v1/incidents/{inc_id}")
         assert resp.json()["status"] == "mitigated"
@@ -200,7 +200,7 @@ class TestCertificateEndpoint:
         client.post(f"/v1/incidents/{inc_id}/replay")
         client.post(
             f"/v1/incidents/{inc_id}/mutation-tests",
-            json={"fix_config": {"threshold": 620}},
+            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
         )
         return inc_id
 

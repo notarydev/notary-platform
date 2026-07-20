@@ -306,7 +306,7 @@ def seed_demo(
                 storage.persist_evidence(inc.incident_id, "snapshot", snap)
                 if do_full:
                     run_replay(inc, snap, agent_fn)
-                    result = run_mutation(snap, agent_fn, {"threshold": 620}, expected_correct_behavior="APPROVE")
+                    result = run_mutation(snap, agent_fn, {"threshold": 620}, expected_correct_behavior="UNDERWRITING_REVIEW")
                     inc.mutation_result = result
                     if result.get("mitigated"):
                         inc.status = IncidentStatus("mitigated")
@@ -318,7 +318,7 @@ def seed_demo(
                         original_decision=result.get("original_decision"),
                         mutated_decision=result.get("mutated_decision"),
                         fix_config=result.get("fix_config", {}),
-                        expected_correct_behavior="APPROVE",
+                        expected_correct_behavior="UNDERWRITING_REVIEW",
                         timestamp=inc.snapshot_summary.get("timestamp", ""),
                     )
                     inc.certificate = cert
