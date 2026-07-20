@@ -29,8 +29,7 @@ function q(s) { return document.querySelector(s); }
 function qa(s) { return document.querySelectorAll(s); }
 
 function _token() {
-  // Prefer user-provided token; fall back to a legacy default if nothing set.
-  return S.token || "ntry-xcQYhyLfBgKtWGvq3t1ZG0hzYgRo7iFch_IaxUnW0R8";
+  return S.token;
 }
 
 function authHeaders() {
@@ -336,6 +335,16 @@ async function renderSetup(c) {
   c.innerHTML = sk(40);
   const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
   c.innerHTML = `
+    <div class="section-title">Get Started</div>
+    <div class="section-sub">Your API token is already configured. Use it in API calls and SDK setup.</div>
+    <div class="int-card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><h4>API Token</h4><p style="font-size:12px;color:var(--muted)">Sent automatically in headers. Copy for CLI/curl use.</p></div>
+        <span class="badge badge-built">ACTIVE</span>
+      </div>
+      ${renderCodeBlock(S.token || "ntry-demo-...")}
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Change or view in <span class="link" onclick="nav('settings')">Settings</span></div>
+    </div>
     <div class="section-title">Connect Your AI System</div>
     <div class="section-sub">Choose an integration path. Each card opens a guided setup workflow.</div>
     ${setupCard("python_sdk", "Python SDK", "Best for Python agents and custom workflows.", "built", `pip install -e packages/notary-sdk-py`, [
