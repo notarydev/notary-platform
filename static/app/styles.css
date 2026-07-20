@@ -161,5 +161,6 @@ section{margin-bottom:20px}
   .side-nav{display:flex;overflow-x:auto}.nav-item{white-space:nowrap}
   .content{padding:16px}.queue-row{flex-direction:column}.stat-grid{grid-template-columns:repeat(2,1fr)}
   .golden-path{grid-template-columns:1fr;padding:14px}.golden-copy h2{font-size:19px}
+  .incident-summary{display:block}.summary-outcome{margin-top:16px;flex-wrap:wrap;white-space:normal}.investigation-grid{grid-template-columns:1fr}.comparison-grid{grid-template-columns:1fr}.before-after{grid-template-columns:1fr}.before-after-arrow{transform:rotate(90deg);justify-self:center}.promotion-panel{align-items:flex-start;flex-direction:column}.path-rail{gap:8px;flex-wrap:wrap}
   .drawer{width:100%}
 }
