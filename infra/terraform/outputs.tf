@@ -67,7 +67,18 @@ output "secrets_arns" {
   }
 }
 
-output "dashboard_url" {
-  description = "Constructed dashboard URL (host-relative if api_dns unset)"
-  value       = var.api_dns == "" ? "http://localhost:8000/dashboard" : "https://${var.api_dns}/dashboard"
+output "app_url" {
+  description = "Constructed Notary Platform SPA URL"
+  value       = var.api_dns == "" ? "http://localhost:8000/app/" : "https://api.${var.api_dns}/app/"
 }
+
+output "alb_dns_name" {
+  description = "ALB DNS name (for CNAME/alias reference)"
+  value       = var.api_dns != "" ? aws_lb.main[0].dns_name : ""
+}
+
+output "route53_nameservers" {
+  description = "Nameservers for the Route53 zone (must be set at the domain registrar)"
+  value       = var.api_dns != "" ? aws_route53_zone.main[0].name_servers : []
+}
+

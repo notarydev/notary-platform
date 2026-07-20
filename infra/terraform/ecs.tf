@@ -24,14 +24,26 @@ resource "aws_security_group" "api" {
   description = "Allow inbound API traffic on 8000"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "API port"
-    from_port   = 8000
-    to_port     = 8000
-    protocol    = "tcp"
-    # NOTE: default CIDR is open (0.0.0.0/0) for convenience — restrict this
-    # to a real source (ALB / bastion / corporate CIDR) in production.
-    cidr_blocks = [var.api_ingress_cidr]
+  dynamic "ingress" {
+    for_each = var.api_dns != "" ? [1] : []
+    content {
+      description     = "API port from ALB"
+      from_port       = 8000
+      to_port         = 8000
+      protocol        = "tcp"
+      security_groups = [aws_security_group.alb[0].id]
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.api_dns == "" ? [1] : []
+    content {
+      description = "API port"
+      from_port   = 8000
+      to_port     = 8000
+      protocol    = "tcp"
+      cidr_blocks = [var.api_ingress_cidr]
+    }
   }
 
   egress {
@@ -134,6 +146,15 @@ resource "aws_ecs_service" "api" {
     subnets          = var.enable_nat ? aws_subnet.private[*].id : aws_subnet.public[*].id
     security_groups  = [aws_security_group.api.id]
     assign_public_ip = var.enable_nat ? false : true
+  }
+
+  dynamic "load_balancer" {
+    for_each = var.api_dns != "" ? [1] : []
+    content {
+      target_group_arn = aws_lb_target_group.api[0].arn
+      container_name   = "api"
+      container_port   = 8000
+    }
   }
 
   depends_on = [
