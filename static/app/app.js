@@ -1498,6 +1498,25 @@ async function renderIncidentDetail(c, i, wf) {
     ["Label", sourceVr.current_label_id || "Reviewer label not attached"],
   ].map(([label, value]) => renderKV(label, esc(value))).join("") : renderEmptyState("Captured path unavailable", "The incident is missing its source verification record.", "");
   const comparisonHtml = renderKV("Original captured decision", `<span class="decision-pill decision-fail">${esc(decision)}</span>`) + renderKV("Replayed decision", `<span class="decision-pill ${i.replay_result?.decision === decision ? "decision-fail" : "decision-neutral"}">${esc(i.replay_result?.decision || "Pending")}</span>`) + renderKV("After-fix decision", `<span class="decision-pill decision-pass">${esc(fixedDecision)}</span>`);
+
+  // Tabbed sections
+  var tabs = [
+    {id: "evidence", label: "Evidence"},
+    {id: "replay", label: "Replay"},
+    {id: "fix", label: "Fix"},
+    {id: "proof", label: "Proof"},
+    {id: "gate", label: "Gate"},
+  ];
+  var activeTab = S._incTab || "evidence";
+  S._incTab = activeTab;
+  var tabContent = {
+    evidence: renderSection("Captured AI Decision Path", pathHtml + '<div class="path-rail"><span>Input</span><span>Agent + policy</span><span>Tool evidence</span><span>Decision</span></div>', {sub: "What was captured, labeled, and made eligible for replay."}),
+    replay: renderSection("Replay Execution Trace", '<div class="investigation-trace">' + traceHtml + '</div>' + (i.replay_result && i.replay_result.reason ? '<div class="error-state">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : ""), {sub: "Cassette replay reconstructs the known decision under recorded conditions."}) + renderSection("Replay Run Detail", replayTableHtml, {sub: "Step-by-step comparison of the recorded and replayed decision path."}) + renderSection("Original vs Replayed Comparison", '<div class="comparison-grid">' + comparisonHtml + '</div><div class="comparison-verdict ' + (i.replay_result && i.replay_result.replay_status === "replayed" ? "verdict-fail" : "verdict-pending") + '">' + (i.replay_result && i.replay_result.replay_status === "replayed" ? "Failure reproduced: the replay matched the recorded decision." : "Run Replay to compare the recorded and reconstructed decisions.") + '</div>'),
+    fix: i.mutation_result ? '<div class="before-after"><div><span class="comparison-label">BEFORE FIX</span><strong>' + esc(i.mutation_result.original_decision || decision) + '</strong><p>Known failure reproduced under the captured conditions.</p></div><div class="before-after-arrow">→</div><div><span class="comparison-label">AFTER FIX</span><strong class="text-green">' + esc(i.mutation_result.mutated_decision || "—") + '</strong><p>' + (i.mutation_result.mitigated ? "Expected behavior verified for this scenario." : "Expected behavior was not verified.") + '</p></div></div>' : '<div class="empty-state compact"><h3>Fix verification pending</h3><p>Replay the failure first, then run the scenario-specific fix against the same cassette.</p></div>',
+    proof: (cert.certificate_id ? '<div class="proof-bundle"><h3>' + cert.certificate_id + '</h3>' + renderKV("Algorithm", cert.signing_algorithm || "—") + renderKV("Root hash", cert.root_hash || (i.snapshot_summary && i.snapshot_summary.root_hash) || "—") + renderKV("Replay method", cert.replay_method || (i.replay_result && i.replay_result.replay_method) || "cassette") + renderKV("Signature Valid", sigValid === true ? "✓ Yes" : sigValid === false ? "✗ No" : "Unknown") + renderKV("Claim Scope", "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.") + renderKV("Limitations", cert.known_limitations || "—") + '<div class="action-row" style="margin-top:12px"><a href="/v1/incidents/' + i.incident_id + '/certificates/' + cert.certificate_id + '/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a><a href="/v1/incidents/' + i.incident_id + '/certificates/' + cert.certificate_id + '/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a><button class="btn btn-sm btn-outline" onclick="verifyIncidentCert(\'' + i.incident_id + '\')">Verify Signature</button></div></div>' : '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p></div>') + (cert.certificate_id ? renderSection("Scenario Promotion", '<div class="promotion-panel"><div><strong>Reusable scenario candidate</strong><p>This verified failure can be promoted into the scenario library and run in future release checks.</p></div>' + (sourceVr ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + '\', \'' + i.incident_id + '\')">Promote to Scenario</button>' : '<button class="btn btn-sm btn-outline" onclick="nav(\'scenarios\')">Open Scenario Library</button>') + '</div>') : '<div class="proof-pending"><strong>Promotion is gated</strong><p>Issue a scenario-scoped proof before promoting this incident.</p></div>'),
+    gate: renderSection("Release Gate Impact", '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (i.mutation_result && i.mutation_result.mitigated ? "gate-pass" : "gate-muted") + '">' + (i.mutation_result && i.mutation_result.mitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>'),
+  };
+
   c.innerHTML = `
     <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('incidents')">← Back to Incidents</button>
     ${badgeDemo()}
@@ -1505,40 +1524,24 @@ async function renderIncidentDetail(c, i, wf) {
       ${statusBadge(i.status)}
       <span style="font-size:13px;color:var(--muted)">ID: ${i.incident_id}</span>
     </div>
-    ${renderSection("Business Summary", `<div class="incident-summary"><div><div class="eyebrow">AI decision assurance investigation</div><h2>${esc(scenario.title || sourceVr?.business_function || "Captured AI decision failure")}</h2><p>${esc(scenario.risk || "A recorded AI decision is being investigated through sealed evidence, deterministic replay, and scenario-scoped fix verification.")}</p></div><div class="summary-outcome"><span class="summary-label">Observed outcome</span><strong>${esc(decision)}</strong><span class="summary-arrow">→</span><strong class="text-green">${esc(fixedDecision)}</strong><span class="summary-label">target outcome</span></div></div>`)}
-    ${renderSection("Proof Loop Workflow", wf.steps.map(s => renderWorkflowStep(s.label, s.state, s.detail, s.action ? `<button class="btn btn-sm" onclick="wfAction('${i.incident_id}', '${s.label}')">${s.action}</button>` : "")).join(""))}
-    <div class="investigation-grid">
-      ${renderSection("Captured AI Decision Path", pathHtml + `<div class="path-rail"><span>Input</span><span>Agent + policy</span><span>Tool evidence</span><span>Decision</span></div>`, {sub: "What was captured, labeled, and made eligible for replay."})}
-      ${renderSection("Replay Execution Trace", `<div class="investigation-trace">${traceHtml}</div>${i.replay_result?.reason ? `<div class="error-state">Replay issue: ${esc(i.replay_result.reason)}</div>` : ""}`, {sub: "Cassette replay reconstructs the known decision under recorded conditions."})}
+    ${renderSection("Business Summary", '<div class="incident-summary"><div><div class="eyebrow">AI decision assurance investigation</div><h2>' + esc(scenario.title || (sourceVr && sourceVr.business_function) || "Captured AI decision failure") + '</h2><p>' + esc(scenario.risk || "A recorded AI decision is being investigated through sealed evidence, deterministic replay, and scenario-scoped fix verification.") + '</p></div><div class="summary-outcome"><span class="summary-label">Observed outcome</span><strong>' + esc(decision) + '</strong><span class="summary-arrow">→</span><strong class="text-green">' + esc(fixedDecision) + '</strong><span class="summary-label">target outcome</span></div></div>')}
+    ${renderSection("Proof Loop Workflow", wf.steps.map(function(s) { return renderWorkflowStep(s.label, s.state, s.detail, s.action ? '<button class="btn btn-sm" onclick="wfAction(\'' + i.incident_id + '\', \'' + s.label + '\')">' + s.action + '</button>' : ""); }).join(""))}
+    <div class="incident-tabs">
+      ${tabs.map(function(t) { return '<button class="incident-tab' + (t.id === activeTab ? ' active' : '') + '" onclick="switchIncidentTab(\'' + t.id + '\')">' + esc(t.label) + '</button>'; }).join("")}
     </div>
-    ${renderSection("Replay Run Detail", replayTableHtml, {sub: "Step-by-step comparison of the recorded and replayed decision path."})}
-    ${renderSection("Original vs Replayed Comparison", `<div class="comparison-grid">${comparisonHtml}</div><div class="comparison-verdict ${i.replay_result?.replay_status === "replayed" ? "verdict-fail" : "verdict-pending"}">${i.replay_result?.replay_status === "replayed" ? "Failure reproduced: the replay matched the recorded decision." : "Run Replay to compare the recorded and reconstructed decisions."}</div>`)}
-    ${renderSection("Fix Verification Before / After", i.mutation_result ? `<div class="before-after"><div><span class="comparison-label">BEFORE FIX</span><strong>${esc(i.mutation_result.original_decision || decision)}</strong><p>Known failure reproduced under the captured conditions.</p></div><div class="before-after-arrow">→</div><div><span class="comparison-label">AFTER FIX</span><strong class="text-green">${esc(i.mutation_result.mutated_decision || "—")}</strong><p>${i.mutation_result.mitigated ? "Expected behavior verified for this scenario." : "Expected behavior was not verified."}</p></div></div>` : `<div class="empty-state compact"><h3>Fix verification pending</h3><p>Replay the failure first, then run the scenario-specific fix against the same cassette.</p></div>`)}
-    ${renderSection("Proof / Certificate", cert.certificate_id ? `
-      <div class="proof-bundle">
-        <h3>${cert.certificate_id}</h3>
-        ${renderKV("Algorithm", cert.signing_algorithm || "—")}
-        ${renderKV("Root hash", cert.root_hash || i.snapshot_summary?.root_hash || "—")}
-        ${renderKV("Replay method", cert.replay_method || i.replay_result?.replay_method || "cassette")}
-        ${renderKV("Signature Valid", sigValid === true ? "✓ Yes" : sigValid === false ? "✗ No" : "Unknown")}
-        ${renderKV("Claim Scope", "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
-        ${renderKV("Limitations", cert.known_limitations || "—")}
-        <div class="action-row" style="margin-top:12px">
-          <a href="/v1/incidents/${i.incident_id}/certificates/${cert.certificate_id}/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a>
-          <a href="/v1/incidents/${i.incident_id}/certificates/${cert.certificate_id}/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a>
-          <button class="btn btn-sm btn-outline" onclick="verifyIncidentCert('${i.incident_id}')">Verify Signature</button>
-        </div>
-      </div>
-    ` : `<div class="proof-pending"><strong>No certificate issued</strong><p>${esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.")}</p></div>`)}
-    ${renderSection("Scenario Promotion", cert.certificate_id ? `<div class="promotion-panel"><div><strong>Reusable scenario candidate</strong><p>This verified failure can be promoted into the scenario library and run in future release checks.</p></div>${sourceVr ? `<button class="btn btn-sm btn-outline" onclick="promoteToScenario('${sourceVr.id}', '${i.incident_id}')">Promote to Scenario</button>` : `<button class="btn btn-sm btn-outline" onclick="nav('scenarios')">Open Scenario Library</button>`}</div>` : `<div class="proof-pending"><strong>Promotion is gated</strong><p>Issue a scenario-scoped proof before promoting this incident.</p></div>`)}
-    ${renderSection("Release Gate Impact", `<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ${i.replay_result ? "gate-fail" : "gate-muted"}">${i.replay_result ? "Blocked before fix" : "Replay pending"}</span><span class="gate-line"></span><span class="gate-node ${i.mutation_result?.mitigated ? "gate-pass" : "gate-muted"}">${i.mutation_result?.mitigated ? "Pass after fix" : "Fix pending"}</span><span class="gate-line"></span><span class="gate-node ${cert.certificate_id ? "gate-pass" : "gate-muted"}">${cert.certificate_id ? "Proof attached" : "Gate not updated"}</span></div><p class="section-sub">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>`)}
+    <div class="incident-tab-content">${tabContent[activeTab] || ""}</div>
     <div class="action-row" style="margin-top:16px">
       <button class="btn${i.replay_result ? " btn-outline" : ""}" onclick="runIncidentReplay('${i.incident_id}')">${i.replay_result ? "Replay Again" : "Run Replay"}</button>
-      ${i.replay_result && !i.mutation_result ? `<button class="btn btn-amber" onclick="runIncidentVerify('${i.incident_id}')">Verify Fix</button>` : ""}
-      ${!cert.certificate_id ? (wf.can_issue_proof ? `<button class="btn btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : `<button class="btn btn-green" disabled title="${esc(proofError || 'Fix verification required first')}">Issue Proof</button>`) : ""}
-      ${sourceVr && cert.certificate_id ? `<button class="btn btn-sm btn-outline" onclick="promoteToScenario('${sourceVr.id}', '${i.incident_id}')">Promote to Scenario</button>` : ""}
+      ${i.replay_result && !i.mutation_result ? '<button class="btn btn-amber" onclick="runIncidentVerify(\'' + i.incident_id + '\')">Verify Fix</button>' : ""}
+      ${!cert.certificate_id ? (wf.can_issue_proof ? '<button class="btn btn-green" onclick="runIncidentCertify(\'' + i.incident_id + '\')">Issue Proof</button>' : '<button class="btn btn-green" disabled title="' + esc(proofError || "Fix verification required first") + '">Issue Proof</button>') : ""}
+      ${sourceVr && cert.certificate_id ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + '\', \'' + i.incident_id + '\')">Promote to Scenario</button>' : ""}
     </div>
   `;
+}
+
+function switchIncidentTab(id) {
+  S._incTab = id;
+  openIncidentDetail(S.selectedIncident);
 }
 
 function wfAction(incidentId, label) {
