@@ -1,0 +1,20 @@
+{
+  "id": "PRG-013",
+  "status": "implemented",
+  "title": "Harborline demo bootstrap, preflight, and presenter script",
+  "branch": "codex/prg-013-demo-preflight-script",
+  "scope": [
+    "Added a local Harborline demo preflight module and script entry point.",
+    "Preflight exercises the real FastAPI app with TestClient and validates health, seed, Verification Record, replay, mutation, scenario, Release Gate, evidence refs, certificate signature, and presenter UI anchors.",
+    "Added text and JSON report modes for presenter dry runs and CI-style evidence capture.",
+    "Added a Harborline presenter script with local-only setup, flow, evidence checklist, and stop boundaries.",
+    "Added regression tests for the preflight command/report."
+  ],
+  "acceptance": [
+    "Presenter can run one local command before a demo and see pass/fail readiness.",
+    "Preflight proves the blocked before-fix gate and passing after-fix gate.",
+    "Three recorded dry runs can be captured as JSON without cloud or production access.",
+    "Presenter script preserves the scoped claim language and stop boundaries."
+  ],
+  "usage_visibility": "not available"
+}

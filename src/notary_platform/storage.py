@@ -248,6 +248,9 @@ class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
 
     def __init__(self) -> None:
+        self._reset_memory()
+
+    def _reset_memory(self) -> None:
         self._incidents: dict[str, Incident] = {}
         self._snapshots: dict[str, dict[str, Any]] = {}
         self._certificates: dict[str, dict[str, Any]] = {}
@@ -272,6 +275,10 @@ class MemoryStorage(StorageBackend):
         self._readiness_policies: dict[str, ReadinessPolicy] = {}
         self._readiness_checks: dict[str, ReadinessCheck] = {}
         self._release_gate_results: dict[str, ReleaseGateResult] = {}
+
+    def reset(self) -> None:
+        """Clear local/dev state for repeatable demos and tests."""
+        self._reset_memory()
 
     def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
         self._counter += 1
@@ -536,7 +543,7 @@ class SharedDemoFileStorage(MemoryStorage):
         self._loading = False
 
     def reset(self) -> None:
-        super().__init__()
+        self._reset_memory()
         self._save()
 
     def _load(self) -> None:
