@@ -51,6 +51,7 @@ tr{cursor:pointer;transition:.1s}tr:hover{background:rgba(59,130,212,.06)}
 .btn-outline{background:transparent;color:var(--accent)}.btn-outline:hover{background:rgba(59,130,212,.1)}
 .btn-green{background:var(--green);border-color:var(--green);color:#fff}
 .btn-amber{background:var(--amber);border-color:var(--amber);color:#000}
+.btn-purple{background:var(--purple);border-color:var(--purple);color:#fff}
 .btn-red{background:var(--red);border-color:var(--red);color:#fff}
 .action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .skeleton{background:rgba(31,42,61,.5);border-radius:var(--radius);animation:sk-pulse 1.5s infinite}

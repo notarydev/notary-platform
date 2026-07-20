@@ -16,6 +16,7 @@
     <button class="nav-item" data-view="incidents">⚠ Incidents</button>
     <button class="nav-item" data-view="proofs">✓ Proofs</button>
     <button class="nav-item" data-view="scenarios">▤ Scenarios</button>
+    <button class="nav-item" data-view="readiness">🛡 Readiness</button>
     <button class="nav-item" data-view="governance">⚖ Governance</button>
     <button class="nav-item" data-view="settings">⚙ Settings</button>
   </div>
@@ -28,6 +29,7 @@
       <option value="env:staging">Staging</option>
       <option value="env:production">Production</option>
     </select>
+    <input class="env-select" id="agent-version" value="1.2.0" placeholder="Agent version" style="width:120px" onchange="switchAgentVersion(this.value)">
     <span class="badge badge-demo hidden" id="global-demo">DEMO</span>
     <span style="margin-left:auto;font-size:11px;color:var(--dim)" id="org-name"></span>
   </div>

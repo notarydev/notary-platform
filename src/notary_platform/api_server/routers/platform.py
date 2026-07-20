@@ -15,8 +15,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from notary_platform.api_server.auth import require_auth
+from notary_platform.api_server.routers.incidents import _demo_agent_fn
 from notary_platform.api_server.routers.ingestion import storage
-from notary_platform.models import HomeStats, IncidentStatus, ScenarioCandidate
+from notary_platform.models import HomeStats, IncidentStatus
 from notary_platform.platform_data import seed
 
 router = APIRouter(tags=["platform"])
@@ -29,8 +30,7 @@ _AGENTS_BY_ID = {a.id: a for a in _SEED["agents"]}
 _SYSTEMS_BY_ID = {s.id: s for s in _SEED["systems"]}
 _POLICIES_BY_ID = {p.id: p for p in _SEED["policies"]}
 
-# Product surface stores (WO-80)
-_scenario_store: dict[str, ScenarioCandidate] = {}
+# Product surface stores are now on the storage backend (WO-28).
 
 
 @router.get("/platform/org")
@@ -113,8 +113,6 @@ def get_home(
     _org: str = Depends(require_auth),
 ) -> dict:
     """Return Home overview stats for the given environment."""
-    from notary_platform.api_server.routers.verification import _vr_store
-
     agents = [a for a in _SEED["agents"] if a.environment_id == environment_id]
     systems = [s for s in _SEED["systems"] if s.environment_id == environment_id]
     incidents = storage.list_incidents(org_id=_org)
@@ -124,7 +122,7 @@ def get_home(
     pending_replay = sum(1 for i in incidents if i.status.value == "ingested" and not i.replay_result)
     pending_verification = sum(1 for i in incidents if i.status.value == "replayed" and i.status.value != "mitigated")
 
-    vrs = [vr for vr in _vr_store.values() if vr.org_id == _org and vr.environment_id == environment_id]
+    vrs = [vr for vr in storage.list_vrs(_org, environment_id) if vr.org_id == _org]
     vrs_replayable = sum(1 for v in vrs if v.replayability.value == "replayable")
     vrs_requires_label = sum(1 for v in vrs if v.replayability.value == "requires_human_label")
     vrs_requires_sandbox = sum(1 for v in vrs if v.replayability.value == "requires_sandbox")
@@ -146,6 +144,7 @@ def get_home(
     }
 
     # Active queues
+    candidates = storage.list_scenario_candidates(_org, environment_id)
     queues = {
         "needs_replay": pending_replay,
         "needs_verification": pending_verification,
@@ -153,7 +152,7 @@ def get_home(
         "needs_label": vrs_requires_label,
         "needs_sandbox": vrs_requires_sandbox,
         "evidence_only": vrs_evidence_only,
-        "scenario_candidates": len(_scenario_store),
+        "scenario_candidates": len(candidates),
     }
 
     # Recent proofs
@@ -203,8 +202,9 @@ def get_home(
             if inc.status.value == "mitigated" and not inc.certificate:
                 next_action = {"action": "proof", "incident_id": inc.incident_id, "label": f"Issue proof for {inc.incident_id}", "view": "incidents"}
                 break
-    if not next_action and _scenario_store:
-        sc = next((s for s in _scenario_store.values() if s.state == "candidate"), None)
+    if not next_action:
+        candidates = storage.list_scenario_candidates(_org, environment_id)
+        sc = next((s for s in candidates if s.state == "candidate"), None)
         if sc:
             next_action = {"action": "scenario", "scenario_id": sc.id, "label": f"Promote {sc.business_title} to scenario", "view": "scenarios"}
 
@@ -232,7 +232,7 @@ def get_home(
         labels_needing_review=labels_needing_review,
         systems_disconnected=sum(1 for s in systems if s.status == "disconnected"),
         systems_sandbox_ready=sum(1 for s in systems if s.sandbox_supported),
-        scenario_candidates=len(_scenario_store),
+        scenario_candidates=len(candidates),
         blocked_items=len(blockers),
     )
     result = stats.to_dict()
@@ -276,9 +276,8 @@ def seed_demo(
     depth=full: 20 Verification Records, incidents, proofs, labels, scenario candidates.
     depth=quick: legacy 3-incident seed (kept for backward compatibility).
     """
-    from notary_platform.api_server.routers.incidents import _demo_agent_fn
-    from notary_platform.api_server.routers.verification import _label_store, _vr_store
     from notary_platform.demo_catalog import build_catalog
+    from notary_platform.services import ServiceRegistry
 
     if depth == "quick":
         from notary_platform.certificates import generate_certificate
@@ -333,7 +332,8 @@ def seed_demo(
             created.append(inc.incident_id)
         return {"created": len(created), "incident_ids": created}
 
-    result = build_catalog(storage, _vr_store, _label_store, _scenario_store, org_id=_org)
+    registry = ServiceRegistry(storage)
+    result = build_catalog(registry, org_id=_org)
     return result
 
 
@@ -363,7 +363,7 @@ def demo_catalog(_org: str = Depends(require_auth)) -> dict:
 @router.get("/platform/product-status")
 def product_status(_org: str = Depends(require_auth)) -> dict:
     """Return product-surface readiness summary for the internal Command Center."""
-    from notary_platform.api_server.routers.verification import _vr_store
+    vrs = storage.list_vrs(_org)
     return {
         "environment": "env:demo",
         "product_surface": {
@@ -377,17 +377,18 @@ def product_status(_org: str = Depends(require_auth)) -> dict:
             "governance": "ready_scaffold",
             "settings": "ready",
         },
-        "demo_data_seeded": len(_vr_store) > 0,
+        "demo_data_seeded": len(vrs) > 0,
     }
 
 
 @router.get("/scenario-candidates")
 def list_scenario_candidates(
     state: Optional[str] = Query(None),
+    environment_id: Optional[str] = Query("env:demo"),
     _org: str = Depends(require_auth),
 ) -> list[dict]:
     """List scenario candidates, optionally filtered by state."""
-    candidates = [s for s in _scenario_store.values() if s.org_id == _org]
+    candidates = storage.list_scenario_candidates(_org, environment_id or "env:demo")
     if state:
         candidates = [s for s in candidates if s.state == state]
     return [s.to_dict() for s in candidates]

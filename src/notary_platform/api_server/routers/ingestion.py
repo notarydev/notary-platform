@@ -15,11 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from notary_platform.api_server.auth import require_auth
+from notary_platform.services import ServiceRegistry
 from notary_platform.snapshot import ForensicSnapshot, verify_snapshot
 from notary_platform.storage import get_storage
 
 router = APIRouter(tags=["incidents"])
 storage = get_storage()
+_registry = ServiceRegistry(storage)
 
 
 class SnapshotIngestRequest(BaseModel):
@@ -70,19 +72,14 @@ def ingest_snapshot(body: SnapshotIngestRequest, org_id: str = Depends(require_a
 
     # Phase 2: also create a Verification Record from the SDK snapshot
     try:
-        from notary_platform.api_server.routers.verification import _next_vr_id, _vr_store
-        from notary_platform.models import DataSourceType, VerificationRecord, sdk_element_to_event
+        from notary_platform.services import IngestionService
 
-        vid = _next_vr_id()
-        events = [sdk_element_to_event(e, i) for i, e in enumerate(snapshot_dict.get("elements", []))]
-        vr = VerificationRecord(
-            id=vid, org_id=acting_org, source_type=DataSourceType.sdk_snapshot,
-            agent_id="agent:unknown", events=events, root_hash=snapshot_dict.get("root_hash", ""),
+        ingestion_service = IngestionService(_registry)
+        ingestion_service.create_from_sdk_snapshot(
+            snapshot_dict,
+            org_id=acting_org,
             promoted_to_incident=incident.incident_id,
         )
-        from notary_platform.api_server.routers.verification import _assess_replayability
-        vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-        _vr_store[vid] = vr
     except Exception:
         pass  # V.R. creation is best-effort; don't break existing ingestion
 

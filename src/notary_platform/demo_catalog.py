@@ -13,7 +13,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from notary_platform.api_server.routers.incidents import _demo_agent_fn
 from notary_platform.certificates import generate_certificate
 from notary_platform.demo_scenarios import SCENARIOS, build_snapshot
 from notary_platform.models import (
@@ -430,7 +429,7 @@ def _base_events_for_case(case: DemoCase) -> list[AIExecutionEvent]:
             AIExecutionEvent(
                 id=uuid.uuid4().hex,
                 kind=EventKind.model_call,
-                payload={"model": "demo-model", "policy_version": "v1", "temperature": 0.0},
+                payload={"model": "demo-model", "policy_version": "v1", "temperature": 0.0, "seed": 12345},
                 source_system="sys:model-provider",
                 order=order,
             )
@@ -536,33 +535,38 @@ def _run_full_proof_loop(incident: Any, snapshot: dict[str, Any], agent_fn: Call
     incident.status = IncidentStatus.certified
 
 
-def build_catalog(
-    storage: Any,
-    vr_store: dict[str, VerificationRecord],
-    label_store: dict[str, HumanLabel],
-    scenario_store: dict[str, ScenarioCandidate],
-    org_id: str,
-) -> dict[str, Any]:
-    """Seed the full demo catalog and return counts."""
-    from notary_platform.api_server.routers.verification import _assess_replayability, _next_vr_id
+def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
+    """Seed the full demo catalog using product services and return counts."""
+    from notary_platform.api_server.routers.verification import _assess_replayability
+    from notary_platform.services import (
+        CertificateService,
+        IngestionService,
+        MutationService,
+        ReplayService,
+        ScenarioLibraryService,
+    )
+
+    storage = registry.storage
+    ingestion = IngestionService(registry)
+    replay_service = ReplayService(registry)
+    mutation_service = MutationService(registry)
+    certificate_service = CertificateService(registry)
+    scenario_library = ScenarioLibraryService(registry)
 
     created_vrs: list[VerificationRecord] = []
     created_incidents: list[Any] = []
     created_labels: list[HumanLabel] = []
-    created_scenarios: list[ScenarioCandidate] = []
+    created_candidates: list[ScenarioCandidate] = []
     created_proofs = 0
 
-    agent_fn = _demo_agent_fn
-
     for case in DEMO_CASES:
-        vr_id = _next_vr_id()
         try:
             source_type = DataSourceType(case.capture_source)
         except ValueError:
             source_type = DataSourceType.api_submission
 
         vr = VerificationRecord(
-            id=vr_id,
+            id=ingestion._next_vr_id(),
             org_id=org_id,
             environment_id="env:demo",
             source_type=source_type,
@@ -641,14 +645,14 @@ def build_catalog(
                 "remediation": "Capture retrieval context.",
             })
 
-        vr_store[vr_id] = vr
+        storage.create_vr(vr)
         created_vrs.append(vr)
 
         # Labels
         if case.label_state in {"suggested", "approved"} and case.expected_outcome:
             label = HumanLabel(
                 id=uuid.uuid4().hex,
-                verification_record_id=vr_id,
+                verification_record_id=vr.id,
                 expected_outcome=case.expected_outcome,
                 reviewer="Demo QA Lead" if case.label_state == "approved" else "",
                 role="QA",
@@ -659,56 +663,43 @@ def build_catalog(
             )
             if case.label_state == "approved":
                 label.approval_reason = "Approved for demo"
-            label_store[label.id] = label
+            if case.label_state == "suggested":
+                label.status = "suggested"
+            storage.create_label(label)
             vr.current_label_id = label.id
             vr.label_source = label.suggested_by
+            # Re-assess replayability now that label state is set.
+            vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
+            vr.replayability = case.replayability
+            storage.update_vr(vr)
             created_labels.append(label)
 
-        # Incident + proof loop
+        # Incident + proof loop via product services.
         incident: Any | None = None
         if case.incident_state != "none":
-            snap = _snapshot_for_case(case) or {
-                "elements": [e.payload for e in vr.events],
-                "root_hash": vr.root_hash,
-                "schema_version": 1,
-                "timestamp": vr.created_at,
-            }
-            incident = storage.create_incident(snap, org_id=org_id)
-            incident._record_custody("ingested", actor=f"demo: {case.scenario_id}", detail=case.business_title)
-            vr.promoted_to_incident = incident.incident_id
-            storage.persist_evidence(incident.incident_id, "snapshot", snap)
+            incident = ingestion.create_incident_from_vr(vr)
             created_incidents.append(incident)
 
-            if case.incident_state in {"replayed", "mitigated", "certified"} and agent_fn:
-                run_replay(incident, snap, agent_fn)
-                incident._record_custody("replayed", actor="demo", detail="Replay succeeded")
+            if case.incident_state in {"replayed", "mitigated", "certified"}:
+                replay_service.run_replay(vr.id, org_id)
 
-            if case.incident_state in {"mitigated", "certified"} and agent_fn:
-                result = run_mutation(snap, agent_fn, {"threshold": 620}, expected_correct_behavior=case.expected_outcome or "APPROVE")
-                incident.mutation_result = result
-                if result.get("mitigated"):
-                    incident.status = IncidentStatus.mitigated
-                    incident._record_custody("fix_verified", actor="demo", detail="Fix verified")
+            if case.incident_state in {"mitigated", "certified"}:
+                fix_config = case.sandbox_readiness.get("fix_config", {"threshold": 620}) if isinstance(case.sandbox_readiness, dict) else {"threshold": 620}
+                mutation_service.run_mutation(vr.id, org_id, fix_config, expected_correct_behavior=case.expected_outcome or "APPROVE")
 
             if case.proof_state == "issued" or case.incident_state == "certified":
-                cert = generate_certificate(
-                    incident_id=incident.incident_id,
-                    root_hash=incident.snapshot_summary.get("root_hash", ""),
-                    integrity_status="verified",
-                    replay_result=incident.replay_result,
-                    original_decision=incident.mutation_result.get("original_decision") if incident.mutation_result else "DENY",
-                    mutated_decision=incident.mutation_result.get("mutated_decision") if incident.mutation_result else "APPROVE",
-                    fix_config=incident.mutation_result.get("fix_config", {}) if incident.mutation_result else {},
-                    expected_correct_behavior=case.expected_outcome or "APPROVE",
-                    timestamp=incident.snapshot_summary.get("timestamp", ""),
-                )
-                incident.certificate = cert
-                incident.status = IncidentStatus.certified
-                storage.store_certificate(incident.incident_id, cert)
-                incident._record_custody("certified", actor="demo", detail="Proof issued")
-                created_proofs += 1
-
-            storage.update_incident(incident)
+                try:
+                    certificate_service.issue_proof_of_mitigation(vr.id, org_id)
+                    created_proofs += 1
+                except ValueError:
+                    # Some demo cases do not have a matching scenario agent; skip proof for those.
+                    if incident is not None:
+                        incident._record_custody(
+                            "proof_skipped",
+                            actor="demo_catalog",
+                            detail="Mutation did not verify against available scenario agent",
+                        )
+                        storage.update_incident(incident)
 
         # Scenario candidate
         if case.scenario_state != "none":
@@ -716,14 +707,14 @@ def build_catalog(
                 id=f"sc-{uuid.uuid4().hex[:6]}",
                 org_id=org_id,
                 environment_id="env:demo",
-                source_vr_id=vr_id,
+                source_vr_id=vr.id,
                 source_incident_id=incident.incident_id if incident else "",
                 business_title=case.business_title,
                 source_system_id=case.source_system_id,
                 approved_label_id=vr.current_label_id,
                 replayability=case.replayability.value,
                 replayability_score=vr.replayability_score,
-                required_sandbox_id=case.sandbox_readiness.get("system_id", ""),
+                required_sandbox_id=case.sandbox_readiness.get("system_id", "") if isinstance(case.sandbox_readiness, dict) else "",
                 last_run_status=(
                     "passed" if case.scenario_state == "ready" else "not_started" if case.scenario_state == "candidate" else "failed"
                 ),
@@ -735,8 +726,12 @@ def build_catalog(
                 ),
                 state=case.scenario_state,
             )
-            scenario_store[candidate.id] = candidate
-            created_scenarios.append(candidate)
+            storage.create_scenario_candidate(candidate)
+            created_candidates.append(candidate)
+
+            # Promote ready scenarios into the Scenario Library.
+            if case.scenario_state == "ready":
+                scenario_library.promote_candidate(candidate.id, org_id)
 
     # Link systems to created VRs/incidents/proofs/scenarios.
     for sys in DEMO_SYSTEMS:
@@ -756,14 +751,36 @@ def build_catalog(
             inc.incident_id for inc in created_incidents
             if inc.certificate and inc.incident_id in sys.linked_incidents
         ]
-        sys.linked_scenarios = [sc.id for sc in created_scenarios if sc.source_system_id == sys.id]
+        scenarios = storage.list_scenarios(org_id)
+        sys.linked_scenarios = [sc.id for sc in scenarios if sc.source_system_id == sys.id]
 
     return {
         "created_verification_records": len(created_vrs),
         "created_incidents": len(created_incidents),
-        "created_proofs": created_proofs,
+        "created_replay_runs": len(storage.list_replay_runs_for_vr("")),
+        "created_mutation_tests": len(storage.list_mutation_tests_for_vr("")),
+        "created_proof_certificates": len(storage._proof_certs),
         "created_labels": len(created_labels),
-        "scenario_candidates": len(created_scenarios),
+        "scenario_candidates": len(created_candidates),
+        "scenarios": len(storage.list_scenarios(org_id)),
         "systems": len(DEMO_SYSTEMS),
         "known_blockers": [],
     }
+
+
+def build_catalog_legacy(
+    storage: Any,
+    vr_store: dict[str, VerificationRecord],
+    label_store: dict[str, HumanLabel],
+    scenario_store: dict[str, ScenarioCandidate],
+    org_id: str,
+) -> dict[str, Any]:
+    """Legacy signature kept for compatibility. Use build_catalog(registry, org_id) for new code."""
+    from notary_platform.services import ServiceRegistry
+
+    registry = ServiceRegistry(storage)
+    result = build_catalog(registry, org_id)
+    # Sync created objects back to legacy dicts for callers that still use them.
+    for vr in registry.storage.list_vrs(org_id):
+        vr_store[vr.id] = vr
+    return result

@@ -69,9 +69,9 @@ def get_replay(incident_id: str, org_id: str = Depends(require_auth)) -> dict[st
 def incident_workflow(incident_id: str, org_id: str = Depends(require_auth)) -> dict[str, Any]:
     """Return the proof-loop workflow stepper state for an incident."""
     inc = _get_incident(incident_id, org_id)
-    from notary_platform.api_server.routers.verification import _vr_store
     from notary_platform.models import EventKind
-    source_vr = next((v for v in _vr_store.values() if v.promoted_to_incident == incident_id), None)
+    vrs = storage.list_vrs(org_id)
+    source_vr = next((v for v in vrs if v.promoted_to_incident == incident_id), None)
     has_label = source_vr is not None and bool(source_vr.current_label_id)
     has_cassette = source_vr is not None and any(
         e.kind in (EventKind.api_response, EventKind.tool_call) for e in source_vr.events

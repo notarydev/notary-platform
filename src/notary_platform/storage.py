@@ -19,9 +19,21 @@ from notary_platform.models import (
     Agent,
     CapturePolicy,
     Environment,
+    EvidenceArtifact,
+    HumanLabel,
     Incident,
+    MutationTest,
     Organization,
+    ProofCertificate,
+    ReadinessCheck,
+    ReadinessPolicy,
+    ReleaseGateResult,
+    ReplayRun,
+    Scenario,
+    ScenarioCandidate,
+    ScenarioRun,
     SystemConnection,
+    VerificationRecord,
 )
 
 
@@ -91,6 +103,125 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]: ...
 
+    # ── Product objects (WO-28) ──
+
+    @abc.abstractmethod
+    def create_vr(self, vr: VerificationRecord) -> VerificationRecord: ...
+
+    @abc.abstractmethod
+    def get_vr(self, vr_id: str) -> VerificationRecord | None: ...
+
+    @abc.abstractmethod
+    def list_vrs(self, org_id: str, environment_id: str = "") -> list[VerificationRecord]: ...
+
+    @abc.abstractmethod
+    def update_vr(self, vr: VerificationRecord) -> VerificationRecord: ...
+
+    @abc.abstractmethod
+    def create_label(self, label: HumanLabel) -> HumanLabel: ...
+
+    @abc.abstractmethod
+    def get_label(self, label_id: str) -> HumanLabel | None: ...
+
+    @abc.abstractmethod
+    def list_labels_for_vr(self, vr_id: str) -> list[HumanLabel]: ...
+
+    @abc.abstractmethod
+    def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact: ...
+
+    @abc.abstractmethod
+    def get_evidence_artifact(self, artifact_id: str) -> EvidenceArtifact | None: ...
+
+    @abc.abstractmethod
+    def list_evidence_artifacts_for_vr(self, vr_id: str, org_id: str) -> list[EvidenceArtifact]: ...
+
+    @abc.abstractmethod
+    def create_replay_run(self, run: ReplayRun) -> ReplayRun: ...
+
+    @abc.abstractmethod
+    def get_replay_run(self, run_id: str) -> ReplayRun | None: ...
+
+    @abc.abstractmethod
+    def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]: ...
+
+    @abc.abstractmethod
+    def create_mutation_test(self, test: MutationTest) -> MutationTest: ...
+
+    @abc.abstractmethod
+    def get_mutation_test(self, test_id: str) -> MutationTest | None: ...
+
+    @abc.abstractmethod
+    def list_mutation_tests_for_vr(self, vr_id: str) -> list[MutationTest]: ...
+
+    @abc.abstractmethod
+    def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate: ...
+
+    @abc.abstractmethod
+    def get_proof_certificate(self, cert_id: str) -> ProofCertificate | None: ...
+
+    @abc.abstractmethod
+    def create_scenario(self, scenario: Scenario) -> Scenario: ...
+
+    @abc.abstractmethod
+    def get_scenario(self, scenario_id: str) -> Scenario | None: ...
+
+    @abc.abstractmethod
+    def list_scenarios(self, org_id: str, environment_id: str = "") -> list[Scenario]: ...
+
+    @abc.abstractmethod
+    def update_scenario(self, scenario: Scenario) -> Scenario: ...
+
+    @abc.abstractmethod
+    def create_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate: ...
+
+    @abc.abstractmethod
+    def get_scenario_candidate(self, candidate_id: str) -> ScenarioCandidate | None: ...
+
+    @abc.abstractmethod
+    def list_scenario_candidates(self, org_id: str, environment_id: str = "") -> list[ScenarioCandidate]: ...
+
+    @abc.abstractmethod
+    def update_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate: ...
+
+    @abc.abstractmethod
+    def create_scenario_run(self, run: ScenarioRun) -> ScenarioRun: ...
+
+    @abc.abstractmethod
+    def get_scenario_run(self, run_id: str) -> ScenarioRun | None: ...
+
+    @abc.abstractmethod
+    def update_scenario_run(self, run: ScenarioRun) -> ScenarioRun: ...
+
+    @abc.abstractmethod
+    def list_scenario_runs(self, org_id: str, environment_id: str = "") -> list[ScenarioRun]: ...
+
+    @abc.abstractmethod
+    def create_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy: ...
+
+    @abc.abstractmethod
+    def get_readiness_policy(self, policy_id: str) -> ReadinessPolicy | None: ...
+
+    @abc.abstractmethod
+    def list_readiness_policies(self, org_id: str, environment_id: str = "") -> list[ReadinessPolicy]: ...
+
+    @abc.abstractmethod
+    def update_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy: ...
+
+    @abc.abstractmethod
+    def create_readiness_check(self, check: ReadinessCheck) -> ReadinessCheck: ...
+
+    @abc.abstractmethod
+    def get_readiness_check(self, check_id: str) -> ReadinessCheck | None: ...
+
+    @abc.abstractmethod
+    def list_readiness_checks(self, org_id: str, environment_id: str = "") -> list[ReadinessCheck]: ...
+
+    @abc.abstractmethod
+    def create_release_gate_result(self, result: ReleaseGateResult) -> ReleaseGateResult: ...
+
+    @abc.abstractmethod
+    def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -107,6 +238,19 @@ class MemoryStorage(StorageBackend):
         self._agents: dict[str, Agent] = {}
         self._systems: dict[str, SystemConnection] = {}
         self._policies: dict[str, CapturePolicy] = {}
+        # Product objects (WO-28)
+        self._vrs: dict[str, VerificationRecord] = {}
+        self._labels: dict[str, HumanLabel] = {}
+        self._evidence_artifacts: dict[str, EvidenceArtifact] = {}
+        self._replay_runs: dict[str, ReplayRun] = {}
+        self._mutation_tests: dict[str, MutationTest] = {}
+        self._proof_certs: dict[str, ProofCertificate] = {}
+        self._scenarios: dict[str, Scenario] = {}
+        self._scenario_candidates: dict[str, ScenarioCandidate] = {}
+        self._scenario_runs: dict[str, ScenarioRun] = {}
+        self._readiness_policies: dict[str, ReadinessPolicy] = {}
+        self._readiness_checks: dict[str, ReadinessCheck] = {}
+        self._release_gate_results: dict[str, ReleaseGateResult] = {}
 
     def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
         self._counter += 1
@@ -201,6 +345,160 @@ class MemoryStorage(StorageBackend):
             policies = [p for p in policies if p.environment_id == environment_id]
         return policies
 
+    # ── Product objects (WO-28) ──
+
+    def create_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        self._vrs[vr.id] = vr
+        return vr
+
+    def get_vr(self, vr_id: str) -> VerificationRecord | None:
+        return self._vrs.get(vr_id)
+
+    def list_vrs(self, org_id: str, environment_id: str = "") -> list[VerificationRecord]:
+        vrs = [v for v in self._vrs.values() if v.org_id == org_id]
+        if environment_id:
+            vrs = [v for v in vrs if v.environment_id == environment_id]
+        return vrs
+
+    def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        self._vrs[vr.id] = vr
+        return vr
+
+    def create_label(self, label: HumanLabel) -> HumanLabel:
+        self._labels[label.id] = label
+        return label
+
+    def get_label(self, label_id: str) -> HumanLabel | None:
+        return self._labels.get(label_id)
+
+    def list_labels_for_vr(self, vr_id: str) -> list[HumanLabel]:
+        return [lbl for lbl in self._labels.values() if lbl.verification_record_id == vr_id]
+
+    def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact:
+        self._evidence_artifacts[artifact.id] = artifact
+        return artifact
+
+    def get_evidence_artifact(self, artifact_id: str) -> EvidenceArtifact | None:
+        return self._evidence_artifacts.get(artifact_id)
+
+    def list_evidence_artifacts_for_vr(self, vr_id: str, org_id: str) -> list[EvidenceArtifact]:
+        return [a for a in self._evidence_artifacts.values() if a.verification_record_id == vr_id and a.org_id == org_id]
+
+    def create_replay_run(self, run: ReplayRun) -> ReplayRun:
+        self._replay_runs[run.id] = run
+        return run
+
+    def get_replay_run(self, run_id: str) -> ReplayRun | None:
+        return self._replay_runs.get(run_id)
+
+    def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
+        return [r for r in self._replay_runs.values() if r.verification_record_id == vr_id]
+
+    def create_mutation_test(self, test: MutationTest) -> MutationTest:
+        self._mutation_tests[test.id] = test
+        return test
+
+    def get_mutation_test(self, test_id: str) -> MutationTest | None:
+        return self._mutation_tests.get(test_id)
+
+    def list_mutation_tests_for_vr(self, vr_id: str) -> list[MutationTest]:
+        return [m for m in self._mutation_tests.values() if m.verification_record_id == vr_id]
+
+    def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate:
+        self._proof_certs[cert.id] = cert
+        return cert
+
+    def get_proof_certificate(self, cert_id: str) -> ProofCertificate | None:
+        return self._proof_certs.get(cert_id)
+
+    def create_scenario(self, scenario: Scenario) -> Scenario:
+        self._scenarios[scenario.id] = scenario
+        return scenario
+
+    def get_scenario(self, scenario_id: str) -> Scenario | None:
+        return self._scenarios.get(scenario_id)
+
+    def list_scenarios(self, org_id: str, environment_id: str = "") -> list[Scenario]:
+        scenarios = [s for s in self._scenarios.values() if s.org_id == org_id]
+        if environment_id:
+            scenarios = [s for s in scenarios if s.environment_id == environment_id]
+        return scenarios
+
+    def update_scenario(self, scenario: Scenario) -> Scenario:
+        self._scenarios[scenario.id] = scenario
+        return scenario
+
+    def create_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        self._scenario_candidates[candidate.id] = candidate
+        return candidate
+
+    def get_scenario_candidate(self, candidate_id: str) -> ScenarioCandidate | None:
+        return self._scenario_candidates.get(candidate_id)
+
+    def list_scenario_candidates(self, org_id: str, environment_id: str = "") -> list[ScenarioCandidate]:
+        candidates = [c for c in self._scenario_candidates.values() if c.org_id == org_id]
+        if environment_id:
+            candidates = [c for c in candidates if c.environment_id == environment_id]
+        return candidates
+
+    def update_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        self._scenario_candidates[candidate.id] = candidate
+        return candidate
+
+    def create_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        self._scenario_runs[run.id] = run
+        return run
+
+    def get_scenario_run(self, run_id: str) -> ScenarioRun | None:
+        return self._scenario_runs.get(run_id)
+
+    def update_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        self._scenario_runs[run.id] = run
+        return run
+
+    def list_scenario_runs(self, org_id: str, environment_id: str = "") -> list[ScenarioRun]:
+        runs = [r for r in self._scenario_runs.values() if r.org_id == org_id]
+        if environment_id:
+            runs = [r for r in runs if r.environment_id == environment_id]
+        return runs
+
+    def create_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        self._readiness_policies[policy.id] = policy
+        return policy
+
+    def get_readiness_policy(self, policy_id: str) -> ReadinessPolicy | None:
+        return self._readiness_policies.get(policy_id)
+
+    def list_readiness_policies(self, org_id: str, environment_id: str = "") -> list[ReadinessPolicy]:
+        policies = [p for p in self._readiness_policies.values() if p.org_id == org_id]
+        if environment_id:
+            policies = [p for p in policies if p.environment_id == environment_id]
+        return policies
+
+    def update_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        self._readiness_policies[policy.id] = policy
+        return policy
+
+    def create_readiness_check(self, check: ReadinessCheck) -> ReadinessCheck:
+        self._readiness_checks[check.id] = check
+        return check
+
+    def get_readiness_check(self, check_id: str) -> ReadinessCheck | None:
+        return self._readiness_checks.get(check_id)
+
+    def list_readiness_checks(self, org_id: str, environment_id: str = "") -> list[ReadinessCheck]:
+        checks = [c for c in self._readiness_checks.values() if c.org_id == org_id]
+        if environment_id:
+            checks = [c for c in checks if c.environment_id == environment_id]
+        return checks
+
+    def create_release_gate_result(self, result: ReleaseGateResult) -> ReleaseGateResult:
+        self._release_gate_results[result.id] = result
+        return result
+
+    def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
+        return self._release_gate_results.get(result_id)
+
 
 class PostgresS3Storage(StorageBackend):
     """PostgreSQL metadata + S3 immutable evidence storage.
@@ -243,6 +541,66 @@ class PostgresS3Storage(StorageBackend):
                 )
                 """
             )
+            conn.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS wo28_objects (
+                    id TEXT PRIMARY KEY,
+                    org_id TEXT NOT NULL,
+                    environment_id TEXT NOT NULL DEFAULT 'env:demo',
+                    kind TEXT NOT NULL,
+                    data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_wo28_kind_org_env ON wo28_objects(kind, org_id, environment_id)"
+            )
+
+    def _write_wo28(self, kind: str, obj: Any) -> None:
+        data = obj.to_dict()
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                """
+                INSERT INTO wo28_objects (id, org_id, environment_id, kind, data)
+                VALUES (%(id)s, %(org)s, %(env)s, %(kind)s, %(data)s)
+                ON CONFLICT (id) DO UPDATE SET
+                    data = EXCLUDED.data,
+                    updated_at = now()
+                """,
+                {
+                    "id": getattr(obj, "id", ""),
+                    "org": getattr(obj, "org_id", ""),
+                    "env": getattr(obj, "environment_id", "env:demo"),
+                    "kind": kind,
+                    "data": json.dumps(data),
+                },
+            )
+
+    def _get_wo28(self, kind: str, id: str, cls: type[Any]) -> Any | None:
+        with self._engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND id = %(id)s",
+                {"kind": kind, "id": id},
+            ).mappings().first()
+        if not row:
+            return None
+        return cls.from_dict(dict(row["data"]))
+
+    def _list_wo28(self, kind: str, org_id: str, environment_id: str, cls: type[Any]) -> list[Any]:
+        with self._engine.connect() as conn:
+            if environment_id:
+                rows = conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s AND environment_id = %(env)s ORDER BY created_at",
+                    {"kind": kind, "org": org_id, "env": environment_id},
+                ).mappings().all()
+            else:
+                rows = conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s ORDER BY created_at",
+                    {"kind": kind, "org": org_id},
+                ).mappings().all()
+        return [cls.from_dict(dict(r["data"])) for r in rows]
 
     def _row_to_incident(self, row: dict[str, Any]) -> Incident:
         inc = Incident(
@@ -382,6 +740,103 @@ class PostgresS3Storage(StorageBackend):
     def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]: return []
     def create_policy(self, policy: CapturePolicy) -> CapturePolicy: return policy
     def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]: return []
+
+    # ── Product objects (WO-28) — JSONB persistence in Postgres ──
+    def create_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        self._write_wo28("verification_record", vr)
+        return vr
+    def get_vr(self, vr_id: str) -> VerificationRecord | None:
+        return self._get_wo28("verification_record", vr_id, VerificationRecord)
+    def list_vrs(self, org_id: str, environment_id: str = "") -> list[VerificationRecord]:
+        return self._list_wo28("verification_record", org_id, environment_id, VerificationRecord)
+    def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
+        self._write_wo28("verification_record", vr)
+        return vr
+    def create_label(self, label: HumanLabel) -> HumanLabel:
+        self._write_wo28("human_label", label)
+        return label
+    def get_label(self, label_id: str) -> HumanLabel | None:
+        return self._get_wo28("human_label", label_id, HumanLabel)
+    def list_labels_for_vr(self, vr_id: str) -> list[HumanLabel]:
+        return [lbl for lbl in self._list_wo28("human_label", "", "", HumanLabel) if lbl.verification_record_id == vr_id]
+    def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact:
+        self._write_wo28("evidence_artifact", artifact)
+        return artifact
+    def get_evidence_artifact(self, artifact_id: str) -> EvidenceArtifact | None:
+        return self._get_wo28("evidence_artifact", artifact_id, EvidenceArtifact)
+    def list_evidence_artifacts_for_vr(self, vr_id: str, org_id: str) -> list[EvidenceArtifact]:
+        return [a for a in self._list_wo28("evidence_artifact", org_id, "", EvidenceArtifact) if a.verification_record_id == vr_id]
+    def create_replay_run(self, run: ReplayRun) -> ReplayRun:
+        self._write_wo28("replay_run", run)
+        return run
+    def get_replay_run(self, run_id: str) -> ReplayRun | None:
+        return self._get_wo28("replay_run", run_id, ReplayRun)
+    def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
+        return [r for r in self._list_wo28("replay_run", "", "", ReplayRun) if r.verification_record_id == vr_id]
+    def create_mutation_test(self, test: MutationTest) -> MutationTest:
+        self._write_wo28("mutation_test", test)
+        return test
+    def get_mutation_test(self, test_id: str) -> MutationTest | None:
+        return self._get_wo28("mutation_test", test_id, MutationTest)
+    def list_mutation_tests_for_vr(self, vr_id: str) -> list[MutationTest]:
+        return [t for t in self._list_wo28("mutation_test", "", "", MutationTest) if t.verification_record_id == vr_id]
+    def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate:
+        self._write_wo28("proof_certificate", cert)
+        return cert
+    def get_proof_certificate(self, cert_id: str) -> ProofCertificate | None:
+        return self._get_wo28("proof_certificate", cert_id, ProofCertificate)
+    def create_scenario(self, scenario: Scenario) -> Scenario:
+        self._write_wo28("scenario", scenario)
+        return scenario
+    def get_scenario(self, scenario_id: str) -> Scenario | None:
+        return self._get_wo28("scenario", scenario_id, Scenario)
+    def list_scenarios(self, org_id: str, environment_id: str = "") -> list[Scenario]:
+        return self._list_wo28("scenario", org_id, environment_id, Scenario)
+    def update_scenario(self, scenario: Scenario) -> Scenario:
+        self._write_wo28("scenario", scenario)
+        return scenario
+    def create_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        self._write_wo28("scenario_candidate", candidate)
+        return candidate
+    def get_scenario_candidate(self, candidate_id: str) -> ScenarioCandidate | None:
+        return self._get_wo28("scenario_candidate", candidate_id, ScenarioCandidate)
+    def list_scenario_candidates(self, org_id: str, environment_id: str = "") -> list[ScenarioCandidate]:
+        return self._list_wo28("scenario_candidate", org_id, environment_id, ScenarioCandidate)
+    def update_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
+        self._write_wo28("scenario_candidate", candidate)
+        return candidate
+    def create_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        self._write_wo28("scenario_run", run)
+        return run
+    def get_scenario_run(self, run_id: str) -> ScenarioRun | None:
+        return self._get_wo28("scenario_run", run_id, ScenarioRun)
+    def update_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
+        self._write_wo28("scenario_run", run)
+        return run
+    def list_scenario_runs(self, org_id: str, environment_id: str = "") -> list[ScenarioRun]:
+        return self._list_wo28("scenario_run", org_id, environment_id, ScenarioRun)
+    def create_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        self._write_wo28("readiness_policy", policy)
+        return policy
+    def get_readiness_policy(self, policy_id: str) -> ReadinessPolicy | None:
+        return self._get_wo28("readiness_policy", policy_id, ReadinessPolicy)
+    def list_readiness_policies(self, org_id: str, environment_id: str = "") -> list[ReadinessPolicy]:
+        return self._list_wo28("readiness_policy", org_id, environment_id, ReadinessPolicy)
+    def update_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
+        self._write_wo28("readiness_policy", policy)
+        return policy
+    def create_readiness_check(self, check: ReadinessCheck) -> ReadinessCheck:
+        self._write_wo28("readiness_check", check)
+        return check
+    def get_readiness_check(self, check_id: str) -> ReadinessCheck | None:
+        return self._get_wo28("readiness_check", check_id, ReadinessCheck)
+    def list_readiness_checks(self, org_id: str, environment_id: str = "") -> list[ReadinessCheck]:
+        return self._list_wo28("readiness_check", org_id, environment_id, ReadinessCheck)
+    def create_release_gate_result(self, result: ReleaseGateResult) -> ReleaseGateResult:
+        self._write_wo28("release_gate_result", result)
+        return result
+    def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
+        return self._get_wo28("release_gate_result", result_id, ReleaseGateResult)
 
 
 def get_storage() -> StorageBackend:

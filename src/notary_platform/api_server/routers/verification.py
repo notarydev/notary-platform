@@ -15,20 +15,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from notary_platform.api_server.auth import require_auth
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.models import (
-    AIExecutionEvent,
     DataSourceType,
     EventKind,
-    HumanLabel,
     ReplayabilityStatus,
     VerificationRecord,
-    sdk_element_to_event,
+)
+from notary_platform.services import (
+    IngestionService,
+    LabelProvenanceService,
+    ServiceRegistry,
 )
 
 router = APIRouter(tags=["verification"])
 
-# In-memory V.R. store. Production replaces with Postgres persistence.
-_vr_store: dict[str, VerificationRecord] = {}
-_label_store: dict[str, HumanLabel] = {}
+# Backward-compatible module-level registry. New code uses the storage backend.
+_registry = ServiceRegistry(storage)
 
 
 def _next_vr_id() -> str:
@@ -36,76 +37,9 @@ def _next_vr_id() -> str:
 
 
 def _assess_replayability(vr: VerificationRecord) -> tuple[ReplayabilityStatus, str, list[str]]:
-    has_llm = any(e.kind == EventKind.model_call for e in vr.events)
-    has_cassette = any(e.kind in (EventKind.api_response, EventKind.tool_call) for e in vr.events)
-    has_decision = any(e.kind == EventKind.decision for e in vr.events)
-    has_label = bool(vr.current_label_id and _label_store.get(vr.current_label_id))
-    missing = []
-
-    # WO-78: Compute determinism score and flags
-    score, flags = _compute_determinism(vr)
-    vr.replayability_score = score
-    vr.non_deterministic_flags = flags
-
-    if has_llm and not has_cassette:
-        state = ReplayabilityStatus.evidence_only
-        msg = "LLM outputs are non-deterministic. Replay can verify conditions but not exact outputs."
-    elif not has_cassette and not has_llm and not has_decision:
-        state = ReplayabilityStatus.missing_context
-        msg = "No recorded responses, model calls, or decisions found in this record."
-        missing.append("cassette_data")
-    elif has_cassette and not has_label:
-        state = ReplayabilityStatus.requires_human_label
-        msg = "Cassette data is present but no expected outcome label has been added."
-        missing.append("human_label")
-    elif has_cassette and has_label and has_decision:
-        state = ReplayabilityStatus.replayable
-        msg = "All prerequisites met: cassette data, human label, and decision present."
-    elif has_llm and has_cassette:
-        state = ReplayabilityStatus.partially_replayable
-        msg = "LLM call present; replay can verify recorded system responses but LLM outputs may differ."
-    else:
-        state = ReplayabilityStatus.unknown
-        msg = "Replayability could not be determined."
-
-    if score >= 0.8 and state == ReplayabilityStatus.replayable:
-        vr.defensibility_summary = f"{int(score*100)}% of the decision path is deterministically re-testable. Proof demonstrates fix resolves core logic."
-    elif score >= 0.5:
-        vr.defensibility_summary = f"{int(score*100)}% deterministically re-testable. Remaining relies on sealed evidence assumptions."
-    else:
-        vr.defensibility_summary = f"Evidence-only: {int(score*100)}% deterministically testable. Manual verification required."
-
-    return state, msg, missing
-
-
-def _compute_determinism(vr: VerificationRecord) -> tuple[float, list[dict]]:
-    """WO-78: Compute replayability score and flag non-deterministic components."""
-    total_weight = 10.0
-    penalty = 0.0
-    flags = []
-    has_llm = any(e.kind == EventKind.model_call for e in vr.events)
-    has_http = any(e.kind in (EventKind.tool_call, EventKind.api_response) for e in vr.events)
-
-    if has_llm:
-        penalty += 3.0
-        flags.append({"component": "llm_call", "severity": "NON_DETERMINISTIC_CORE", "location": "model_interaction",
-            "description": "LLM outputs are non-deterministic. May differ on replay.", "remediation": "Use temp=0 or seed."})
-    if not has_http:
-        penalty += 2.0
-        flags.append({"component": "missing_cassette", "severity": "NON_DETERMINISTIC_CORE", "location": "external_calls",
-            "description": "No recorded API/tool responses. Cannot replay.", "remediation": "Capture all API calls with responses."})
-    is_missing_label = not vr.current_label_id
-    if is_missing_label:
-        penalty += 1.5
-        flags.append({"component": "missing_label", "severity": "NON_DETERMINISTIC_SIDE_EFFECT", "location": "human_review",
-            "description": "No expected outcome label.", "remediation": "Add approved expected outcome."})
-    if not any(e.kind == EventKind.decision for e in vr.events):
-        penalty += 1.0
-        flags.append({"component": "missing_decision", "severity": "NON_DETERMINISTIC_CORE", "location": "decision_path",
-            "description": "No decision event captured.", "remediation": "Capture final decision in SDK."})
-
-    score = max(0.0, min(1.0, 1.0 - (penalty / total_weight)))
-    return score, flags
+    """Assess replayability using the service-layer logic."""
+    from notary_platform.services import ReplayabilityService
+    return ReplayabilityService(_registry).assess(vr)
 
 
 # ── CRUD ──
@@ -119,14 +53,19 @@ def create_vr(
     business_function: str = Query(""),
     org_id: str = Depends(require_auth),
 ) -> dict:
-    vid = _next_vr_id()
     try:
-        st = DataSourceType(source_type)
+        DataSourceType(source_type)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown source_type: {source_type}")
-    vr = VerificationRecord(id=vid, org_id=org_id, source_type=st, external_ref=external_ref, agent_id=agent_id, business_function=business_function)
-    vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-    _vr_store[vid] = vr
+    ingestion = IngestionService(_registry)
+    vr = ingestion.create_from_api_submission(
+        org_id=org_id,
+        external_ref=external_ref,
+        agent_id=agent_id,
+    )
+    vr.source_type = DataSourceType(source_type)
+    vr.business_function = business_function
+    storage.update_vr(vr)
     return vr.to_dict()
 
 
@@ -137,22 +76,12 @@ def create_vr_from_snapshot(
     agent_id: str = Query(""),
     org_id: str = Depends(require_auth),
 ) -> dict:
-    vid = _next_vr_id()
     try:
-        st = DataSourceType(source_type)
+        DataSourceType(source_type)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown source_type: {source_type}")
-    events = [sdk_element_to_event(e, i) for i, e in enumerate(snapshot.get("elements", []))]
-    vr = VerificationRecord(
-        id=vid,
-        org_id=org_id,
-        source_type=st,
-        agent_id=agent_id,
-        events=events,
-        root_hash=snapshot.get("root_hash", ""),
-    )
-    vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-    _vr_store[vid] = vr
+    ingestion = IngestionService(_registry)
+    vr = ingestion.create_from_sdk_snapshot(snapshot, org_id=org_id, agent_id=agent_id)
     return vr.to_dict()
 
 
@@ -163,8 +92,7 @@ def list_vrs(
     agent_id: Optional[str] = Query(None),
     org_id: str = Depends(require_auth),
 ) -> list[dict]:
-    results = list(_vr_store.values())
-    results = [r for r in results if r.org_id == org_id]
+    results = storage.list_vrs(org_id=org_id)
     if source_type:
         results = [r for r in results if r.source_type.value == source_type]
     if replayability:
@@ -176,15 +104,24 @@ def list_vrs(
 
 @router.get("/verification-records/{vr_id}")
 def get_vr(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
     return vr.to_dict()
 
 
+@router.get("/verification-records/{vr_id}/evidence")
+def get_vr_evidence(vr_id: str, org_id: str = Depends(require_auth)) -> list[dict]:
+    vr = storage.get_vr(vr_id)
+    if vr is None or vr.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Verification Record not found")
+    artifacts = storage.list_evidence_artifacts_for_vr(vr_id, org_id)
+    return [a.to_dict() for a in artifacts]
+
+
 @router.get("/verification-records/{vr_id}/replayability")
 def get_replayability(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
     return {"id": vr_id, "replayability": vr.replayability.value, "reason": vr.replayability_reason, "missing_prerequisites": vr.missing_prerequisites}
@@ -192,13 +129,11 @@ def get_replayability(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
 
 @router.post("/verification-records/{vr_id}/promote-to-incident")
 def promote_to_incident(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
-    snap = {"elements": [e.payload for e in vr.events], "root_hash": vr.root_hash, "schema_version": 1, "timestamp": vr.created_at, "merkle_chain": []}
-    incident = storage.create_incident(snap, org_id=org_id)
-    vr.promoted_to_incident = incident.incident_id
-    _vr_store[vr_id] = vr
+    ingestion = IngestionService(_registry)
+    incident = ingestion.create_incident_from_vr(vr)
     return {"verification_record_id": vr_id, "incident_id": incident.incident_id, "status": incident.status.value}
 
 
@@ -214,25 +149,22 @@ def add_label(
     reason: str = Query(""),
     org_id: str = Depends(require_auth),
 ) -> dict:
-    vr = _vr_store.get(vr_id)
-    if vr is None or vr.org_id != org_id:
-        raise HTTPException(status_code=404, detail="Verification Record not found")
-    label = HumanLabel(id=uuid.uuid4().hex, verification_record_id=vr_id, expected_outcome=expected_outcome, reviewer=reviewer, role=role, reason=reason)
-    _label_store[label.id] = label
-    vr.current_label_id = label.id
-    vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-    _vr_store[vr_id] = vr
+    labels = LabelProvenanceService(_registry)
+    try:
+        label = labels.create_label(vr_id, org_id, expected_outcome, reviewer=reviewer, role=role, reason=reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     return label.to_dict()
 
 
 @router.get("/verification-records/{vr_id}/label")
 def get_label(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
     if not vr.current_label_id:
         raise HTTPException(status_code=404, detail="No label found")
-    label = _label_store.get(vr.current_label_id)
+    label = storage.get_label(vr.current_label_id)
     if label is None:
         raise HTTPException(status_code=404, detail="Label not found")
     return label.to_dict()
@@ -243,44 +175,15 @@ def get_label(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
 
 @router.post("/verification-records/manual")
 def manual_intake(payload: dict, org_id: str = Depends(require_auth)) -> dict:
-    vid = _next_vr_id()
-    events = []
-    if payload.get("transcript"):
-        events.append(AIExecutionEvent(id=uuid.uuid4().hex, kind=EventKind.human_action, payload={"transcript": payload["transcript"][:500]}, order=0))
-    if payload.get("decision"):
-        events.append(AIExecutionEvent(id=uuid.uuid4().hex, kind=EventKind.decision, payload={"decision": payload["decision"]}, order=1))
-    vr = VerificationRecord(
-        id=vid, org_id=org_id, source_type=DataSourceType.manual_submission,
-        external_ref=payload.get("ticket_id", ""), agent_id=payload.get("agent_id", ""),
-        business_function=payload.get("business_function", ""), events=events,
-        is_demo=payload.get("is_demo", False),
-    )
-    vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-    _vr_store[vid] = vr
+    ingestion = IngestionService(_registry)
+    vr = ingestion.create_manual(org_id, payload)
     return vr.to_dict()
 
 
 @router.post("/verification-records/webhook")
 def webhook_intake(payload: dict, org_id: str = Depends(require_auth)) -> dict:
-    vid = _next_vr_id()
-    events_data = payload.get("events", [])
-    events = []
-    for i, e in enumerate(events_data):
-        kind_str = e.get("kind", "model_call")
-        try:
-            kind = EventKind(kind_str)
-        except ValueError:
-            kind = EventKind.decision
-        ev = AIExecutionEvent(id=uuid.uuid4().hex, kind=kind, payload=e.get("payload", {}), order=i)
-        events.append(ev)
-    if not events:
-        events = [AIExecutionEvent(id=uuid.uuid4().hex, kind=EventKind.decision, payload=payload, order=0)]
-    vr = VerificationRecord(
-        id=vid, org_id=org_id, source_type=DataSourceType.webhook,
-        external_ref=payload.get("source_id", ""), events=events,
-    )
-    vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
-    _vr_store[vid] = vr
+    ingestion = IngestionService(_registry)
+    vr = ingestion.create_webhook(org_id, payload)
     return vr.to_dict()
 
 
@@ -314,10 +217,9 @@ def list_adapters() -> list[dict]:
 
 @router.get("/verification-records/{vr_id}/replay-preflight")
 def replay_preflight(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
-    [f for f in vr.non_deterministic_flags if f.get("component") == "missing_cassette"]
     warnings = [f for f in vr.non_deterministic_flags if f.get("severity") == "NON_DETERMINISTIC_SIDE_EFFECT"]
     blocks = [f for f in vr.non_deterministic_flags if f.get("severity") == "NON_DETERMINISTIC_CORE"]
 
@@ -363,7 +265,7 @@ _LABEL_HEURISTICS = {
 
 @router.post("/verification-records/{vr_id}/label-suggest")
 def suggest_labels(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
     has_llm = any(e.kind == EventKind.model_call for e in vr.events)
@@ -382,27 +284,27 @@ def suggest_labels(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
             elif cat == "severity":
                 suggestions.append({"category": cat, "value": value, "confidence": conf, "heuristic": "default_v1", "reasoning": desc})
     vr.suggested_labels = suggestions
-    _vr_store[vr_id] = vr
+    storage.update_vr(vr)
     return {"vr_id": vr_id, "suggested_labels": suggestions}
 
 
 @router.post("/verification-records/{vr_id}/label-reject")
 def reject_suggested_label(vr_id: str, body: dict, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
     reject_value = body.get("value", "")
     vr.suggested_labels = [s for s in vr.suggested_labels if s.get("value") != reject_value]
-    _vr_store[vr_id] = vr
+    storage.update_vr(vr)
     return {"vr_id": vr_id, "rejected": reject_value, "remaining": len(vr.suggested_labels)}
 
 
 @router.get("/verification-records/{vr_id}/label-history")
 def label_history(vr_id: str, org_id: str = Depends(require_auth)) -> dict:
-    vr = _vr_store.get(vr_id)
+    vr = storage.get_vr(vr_id)
     if vr is None or vr.org_id != org_id:
         raise HTTPException(status_code=404, detail="Verification Record not found")
-    labels = [lbl.to_dict() for lbl in _label_store.values() if lbl.verification_record_id == vr_id]
+    labels = [lbl.to_dict() for lbl in storage.list_labels_for_vr(vr_id)]
     return {"vr_id": vr_id, "labels": labels}
 
 
@@ -412,15 +314,13 @@ def bulk_approve(body: dict, org_id: str = Depends(require_auth)) -> dict:
     min_conf = filter_conf.get("suggested_confidence_min", 0.0)
     max_conf = filter_conf.get("suggested_confidence_max", 1.0)
     approved = []
-    for vid, vr in list(_vr_store.items()):
-        if vr.org_id != org_id:
-            continue
+    for vr in storage.list_vrs(org_id=org_id):
         if vr.current_label_id:
-            lbl = _label_store.get(vr.current_label_id)
+            lbl = storage.get_label(vr.current_label_id)
             if lbl and min_conf <= lbl.suggested_confidence <= max_conf and lbl.status == "active":
                 lbl.status = "active"  # already approved
                 lbl.approval_reason = body.get("approval_reason", "Bulk approved")
-                approved.append(vid)
+                approved.append(vr.id)
     return {"approved_count": len(approved), "approved_vr_ids": approved}
 
 

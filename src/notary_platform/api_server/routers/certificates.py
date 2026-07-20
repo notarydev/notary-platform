@@ -139,12 +139,12 @@ def download_certificate(incident_id: str, certificate_id: str, org_id: str = De
 @router.get("/proofs")
 def list_proofs(org_id: str = Depends(require_auth)) -> list[dict[str, Any]]:
     """List issued proofs across incidents."""
-    from notary_platform.api_server.routers.verification import _vr_store
+    vrs = incidents_mod.storage.list_vrs(org_id)
     proofs = []
     for inc in incidents_mod.storage.list_incidents(org_id=org_id):
         if not inc.certificate:
             continue
-        source_vr = next((v for v in _vr_store.values() if v.promoted_to_incident == inc.incident_id), None)
+        source_vr = next((v for v in vrs if v.promoted_to_incident == inc.incident_id), None)
         cert = inc.certificate
         proofs.append({
             "proof_id": cert.get("certificate_id", "pom-cert-v1"),
@@ -167,12 +167,12 @@ def list_proofs(org_id: str = Depends(require_auth)) -> list[dict[str, Any]]:
 @router.get("/proofs/{proof_id}")
 def get_proof(proof_id: str, org_id: str = Depends(require_auth)) -> dict[str, Any]:
     """Return a single proof as an evidence package."""
-    from notary_platform.api_server.routers.verification import _vr_store
+    vrs = incidents_mod.storage.list_vrs(org_id)
     for inc in incidents_mod.storage.list_incidents(org_id=org_id):
         cert = inc.certificate
         if not cert or cert.get("certificate_id") != proof_id:
             continue
-        source_vr = next((v for v in _vr_store.values() if v.promoted_to_incident == inc.incident_id), None)
+        source_vr = next((v for v in vrs if v.promoted_to_incident == inc.incident_id), None)
         return {
             "proof_id": proof_id,
             "incident_id": inc.incident_id,

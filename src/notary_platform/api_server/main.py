@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from notary_platform.api_server.routers import certificates, incidents, ingestion, platform, verification, viz
+from notary_platform.api_server.routers import certificates, incidents, ingestion, platform, release_gate, verification, viz
 from notary_platform.config import SETTINGS
 
 app = FastAPI(title="Notary Platform", version="0.0.1")
@@ -30,6 +30,7 @@ app.include_router(incidents.router, prefix="/v1")
 app.include_router(certificates.router, prefix="/v1")
 app.include_router(verification.router, prefix="/v1")
 app.include_router(platform.router, prefix="/v1")
+app.include_router(release_gate.router, prefix="/v1")
 app.include_router(viz.router, prefix="/v1")
 
 # Serve the internal Command Center SPA (static build from notary-viz) at /cc.

@@ -11,12 +11,16 @@ const API = "/v1";
 const S = {
   env: localStorage.getItem("np-env") || "env:demo",
   view: "home",
+  agentVersion: localStorage.getItem("np-agent-version") || "1.2.0",
   token: localStorage.getItem("notaryApiToken") || "",
   authConfigured: null,
   selectedVR: null,
   selectedIncident: null,
   selectedSystem: null,
   selectedProof: null,
+  selectedScenario: null,
+  selectedReadinessCheck: null,
+  selectedReleaseGate: null,
   loading: false,
   error: null,
 };
@@ -74,6 +78,20 @@ async function apiPostForm(path, params, opts = {}) {
   return apiPost(url, {}, opts);
 }
 
+async function apiPatch(path, body, opts = {}) {
+  const res = await fetch(path, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(body || {}),
+    ...opts,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text || res.statusText}`);
+  }
+  return res.json();
+}
+
 // --- Navigation ---
 
 function setupNav() {
@@ -93,6 +111,11 @@ function switchEnv(v) {
   R();
 }
 
+function switchAgentVersion(v) {
+  S.agentVersion = v;
+  localStorage.setItem("np-agent-version", v);
+}
+
 function nav(v) {
   S.view = v;
   qa(".nav-item[data-view]").forEach((x) => x.classList.remove("active"));
@@ -107,6 +130,9 @@ function navWithParam(v, param) {
   if (param.incident) S.selectedIncident = param.incident;
   if (param.system) S.selectedSystem = param.system;
   if (param.proof) S.selectedProof = param.proof;
+  if (param.scenario) S.selectedScenario = param.scenario;
+  if (param.readinessCheck) S.selectedReadinessCheck = param.readinessCheck;
+  if (param.releaseGate) S.selectedReleaseGate = param.releaseGate;
   qa(".nav-item[data-view]").forEach((x) => x.classList.remove("active"));
   const b = q(`.nav-item[data-view="${v}"]`);
   if (b) b.classList.add("active");
@@ -149,6 +175,7 @@ async function R() {
   q("#demo-banner").classList.toggle("hidden", !isDemo);
   q("#global-demo").classList.toggle("hidden", !isDemo);
   q("#env-select").value = S.env;
+  q("#agent-version").value = S.agentVersion;
 
   try {
     if (S.view === "home") {
@@ -183,8 +210,23 @@ async function R() {
       const vrs = await apiGet("/v1/verification-records");
       renderSystemDetail(c, s, vrs);
     } else if (S.view === "scenarios") {
+      const scenarios = await apiGet("/v1/scenarios");
       const candidates = await apiGet("/v1/scenario-candidates");
-      renderScenarios(c, candidates);
+      renderScenarios(c, scenarios, candidates);
+    } else if (S.view === "scenario-detail") {
+      const s = await apiGet("/v1/scenarios/" + S.selectedScenario);
+      const runs = await apiGet("/v1/scenario-runs");
+      renderScenarioDetail(c, s, runs);
+    } else if (S.view === "readiness") {
+      const policies = await apiGet("/v1/readiness-policies");
+      const checks = await apiGet("/v1/readiness-checks");
+      renderReadiness(c, policies, checks);
+    } else if (S.view === "readiness-detail") {
+      const check = await apiGet("/v1/readiness-checks/" + S.selectedReadinessCheck);
+      renderReadinessDetail(c, check);
+    } else if (S.view === "release-gate-detail") {
+      const gate = await apiGet("/v1/release-gate/checks/" + S.selectedReleaseGate);
+      renderReleaseGateDetail(c, gate);
     } else if (S.view === "governance") {
       const vrs = await apiGet("/v1/verification-records");
       renderGovernance(c, vrs);
@@ -198,7 +240,7 @@ async function R() {
   }
 }
 
-function viewTitle(v) {
+  function viewTitle(v) {
   const titles = {
     home: "Home",
     setup: "Setup",
@@ -211,6 +253,10 @@ function viewTitle(v) {
     systems: "Systems",
     "system-detail": "System Detail",
     scenarios: "Scenarios",
+    "scenario-detail": "Scenario Detail",
+    readiness: "Readiness",
+    "readiness-detail": "Readiness Check Detail",
+    "release-gate-detail": "Release Gate Detail",
     governance: "Governance",
     settings: "Settings",
   };
@@ -292,7 +338,7 @@ async function renderSetup(c) {
   c.innerHTML = `
     <div class="section-title">Connect Your AI System</div>
     <div class="section-sub">Choose an integration path. Each card opens a guided setup workflow.</div>
-    ${setupCard("python_sdk", "Python SDK", "Best for Python agents and custom workflows.", "built", `pip install notary-sdk`, [
+    ${setupCard("python_sdk", "Python SDK", "Best for Python agents and custom workflows.", "built", `pip install -e packages/notary-sdk-py`, [
       {label: "Install Instructions", action: "openSDKSetup()", primary: true},
       {label: "Send Test Capture", action: "sendSDKTestCapture()", primary: false},
     ])}
@@ -343,15 +389,15 @@ function setupCard(id, title, desc, status, code, actions) {
 
 function openSDKSetup() {
   const body = `
-    <div class="section-title">1. Install</div>
-    ${renderCodeBlock("pip install notary-sdk")}
-    <div style="font-size:11px;color:var(--muted);margin:4px 0 12px">54 SDK tests passing — ready for design partners</div>
+    <div class="section-title">1. Install (local / Git path)</div>
+    ${renderCodeBlock("git clone https://github.com/notarydev/notary-platform.git\ncd notary-platform\npip install -e packages/notary-sdk-py")}
+    <div style="font-size:11px;color:var(--amber);margin:4px 0 12px">Notary Python SDK is not published to PyPI yet. Install from the repo directly.</div>
     <div class="section-title">2. Configure environment</div>
-    ${renderCodeBlock(`NOTARY_API_URL=https://api.getnotary.ai\nNOTARY_API_TOKEN=your-token-here`)}
+    ${renderCodeBlock(`NOTARY_API_URL=http://localhost:8000\nNOTARY_API_TOKEN=your-token-here`)}
     <div class="section-title">3. Capture a decision</div>
-    ${renderCodeBlock(`from notary import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
+    ${renderCodeBlock(`from notary_sdk import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_tool(method="POST", url="/score", response={"score": 620})\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
     <div class="section-title">4. Submit to Notary</div>
-    ${renderCodeBlock(`import requests\nrequests.post(\n  "https://api.getnotary.ai/v1/incidents/ingest",\n  headers={"Authorization": "Bearer " + snapshot.token},\n  json={"snapshot": snapshot.to_dict()}\n)`)}
+    ${renderCodeBlock(`import requests\nrequests.post(\n  "http://localhost:8000/v1/incidents/ingest",\n  headers={"Authorization": "Bearer your-token-here"},\n  json={"snapshot": snapshot.to_dict()}\n)`)}
   `;
   renderDrawer("Python SDK Setup", body);
 }
@@ -497,7 +543,7 @@ function renderVRs(c, vrs) {
           <td style="font-size:11px">${esc(v.next_action || "—")}</td>
           <td class="action-row">
             ${v.replayability === "requires_human_label" ? `<button class="btn btn-sm btn-amber" onclick="openAddLabelForm('${v.id}')">Add Label</button>` : ""}
-            ${v.replayability === "replayable" || v.replayability === "partially_replayable" ? `<button class="btn btn-sm" onclick="openVRPreflight('${v.id}')">Preflight</button>` : ""}
+            ${v.replayability === "replayable" || v.replayability === "partially_replayable" ? `<button class="btn btn-sm" onclick="runVRReplay('${v.id}')">Replay</button>` : ""}
             ${v.replayability === "replayable" && v.current_label_id ? `<button class="btn btn-sm btn-green" onclick="promoteVR('${v.id}')">Promote</button>` : ""}
             ${v.replayability === "evidence_only" || v.replayability === "missing_context" ? `<button class="btn btn-sm btn-outline" onclick="openVRDetail('${v.id}')">Investigate</button>` : ""}
             <button class="btn btn-sm btn-outline" onclick="openVRDetail('${v.id}')">Detail</button>
@@ -583,15 +629,34 @@ async function renderVRDetail(c, v) {
       </div>
     `)}
     ${renderSection("Next Action", `
-      <div class="action-row">
+      <div class="action-row" id="vr-actions-${v.id}">
         ${v.replayability === "requires_human_label" ? `<button class="btn btn-sm btn-amber" onclick="openAddLabelForm('${v.id}')">Add Label</button>` : ""}
         ${v.replayability === "requires_sandbox" ? `<button class="btn btn-sm btn-amber" onclick="nav('systems')">Configure Sandbox</button>` : ""}
-        ${v.replayability === "replayable" ? `<button class="btn btn-sm btn-green" onclick="promoteVR('${v.id}')">Promote to Incident</button>` : ""}
+        ${v.replayability === "replayable" ? `<button class="btn btn-sm" onclick="runVRReplay('${v.id}')">Replay</button>` : ""}
         ${v.replayability === "evidence_only" ? `<button class="btn btn-sm btn-outline" disabled title="Evidence-only: cannot replay">Evidence only</button>` : ""}
         ${v.replayability === "missing_context" ? `<button class="btn btn-sm btn-outline" onclick="openMissingContextHelp('${v.id}')">Resolve Missing Context</button>` : ""}
+        <button class="btn btn-sm btn-green" onclick="runVRMutation('${v.id}')">Verify Fix</button>
+        <button class="btn btn-sm btn-purple" onclick="issueVRProof('${v.id}')">Issue Proof</button>
+        <button class="btn btn-sm btn-outline" onclick="promoteVRToScenario('${v.id}')">Promote to Scenario</button>
       </div>
+      <div id="vr-eligibility-${v.id}" style="margin-top:8px;font-size:11px;color:var(--muted)"></div>
     `)}
   `;
+  // Load eligibility server-side for primary actions.
+  loadVREligibility(v.id);
+}
+
+async function loadVREligibility(vrId) {
+  try {
+    const actions = ["replay", "mutation", "issue_proof", "promote_to_scenario"];
+    const results = await Promise.all(actions.map(a => apiGet(`/v1/verification-records/${vrId}/eligibility/${a}`)));
+    const box = q(`#vr-eligibility-${vrId}`);
+    if (!box) return;
+    const reasons = results.filter(r => !r.eligible && r.reason).map(r => `<span class="badge badge-planned">${r.action}</span> ${esc(r.reason)}`).join(" ");
+    box.innerHTML = reasons ? `<div class="section-sub">Blocked actions</div>${reasons}` : "All actions eligible";
+  } catch (e) {
+    // ignore
+  }
 }
 
 function openMissingContextHelp(vrId) {
@@ -711,6 +776,50 @@ async function promoteVR(vrId) {
     openIncidentDetail(r.incident_id);
   } catch (e) {
     notify("Failed: " + e.message, "error");
+  }
+}
+
+async function runVRReplay(vrId) {
+  try {
+    const r = await apiPost("/v1/verification-records/" + vrId + "/replay-runs");
+    notify("Replay run " + r.status, r.status === "replayed" ? "success" : "error");
+    openVRDetail(vrId);
+  } catch (e) {
+    notify("Replay failed: " + e.message, "error");
+  }
+}
+
+async function runVRMutation(vrId) {
+  try {
+    const r = await apiPost("/v1/verification-records/" + vrId + "/mutation-tests", {
+      fix_config: {threshold: 620},
+      expected_correct_behavior: "APPROVE",
+    });
+    notify("Mutation test " + r.verdict, r.verdict === "verified" ? "success" : "error");
+    openVRDetail(vrId);
+  } catch (e) {
+    notify("Mutation failed: " + e.message, "error");
+  }
+}
+
+async function issueVRProof(vrId) {
+  try {
+    const r = await apiPost("/v1/verification-records/" + vrId + "/proof-of-mitigation");
+    notify("Proof issued: " + r.id, "success");
+    openVRDetail(vrId);
+  } catch (e) {
+    notify("Proof failed: " + e.message, "error");
+  }
+}
+
+async function promoteVRToScenario(vrId) {
+  try {
+    const r = await apiPost("/v1/scenarios", {vr_id: vrId});
+    notify("Promoted to scenario " + r.id, "success");
+    S.selectedScenario = r.id;
+    nav("scenario-detail");
+  } catch (e) {
+    notify("Promotion failed: " + e.message, "error");
   }
 }
 
@@ -1052,25 +1161,12 @@ async function testSystemConnection(id) {
 
 // --- SCENARIOS ---
 
-function renderScenarios(c, candidates) {
-  const byState = {candidate: [], ready: [], blocked: []};
-  candidates.forEach(sc => {
-    byState[sc.state] = byState[sc.state] || [];
-    byState[sc.state].push(sc);
-  });
+function renderScenarios(c, scenarios, candidates) {
   c.innerHTML = `
     <div class="section-title">Scenario Library</div>
-    <div class="section-sub">Promote verified incidents to reusable scenarios and release gates.</div>
-    ${renderSection("Scenario Candidates", byState.candidate.length ? byState.candidate.map(sc => scenarioCard(sc)).join("") : "No candidates ready")}
-    ${renderSection("Ready Scenarios", byState.ready.length ? byState.ready.map(sc => scenarioCard(sc)).join("") : "No scenarios promoted yet")}
-    ${renderSection("Blocked Scenarios", byState.blocked.length ? byState.blocked.map(sc => scenarioCard(sc)).join("") : "No blocked scenarios")}
-    ${renderSection("Release Gates", `
-      <div class="stat">
-        <div style="font-size:14px;font-weight:700">Release Gates</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">Planned capability. Scenarios will block/fail releases when runs fail.</div>
-        <div class="action-row" style="margin-top:12px">${renderDisabledAction("Create Gate", "Release gates are planned")}</div>
-      </div>
-    `)}
+    <div class="section-sub">Promote verified incidents to reusable scenarios, run them against agent versions, and use them in readiness policies.</div>
+    ${renderSection("Active Scenarios", scenarios.length ? scenarios.map(s => scenarioCard(s)).join("") : "No scenarios in the library yet")}
+    ${renderSection("Scenario Candidates", candidates.length ? candidates.filter(sc => sc.state === "candidate").map(sc => candidateCard(sc)).join("") : "No candidates ready")}
   `;
 }
 
@@ -1080,19 +1176,301 @@ function scenarioCard(sc) {
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
           <h4>${esc(sc.business_title)}</h4>
-          <p style="font-size:12px;color:var(--muted)">Source: ${sc.source_vr_id} / ${sc.source_incident_id || "—"}</p>
+          <p style="font-size:12px;color:var(--muted)">Expected outcome: ${esc(sc.expected_outcome)} · Source: ${sc.source_vr_id}</p>
+        </div>
+        <span class="badge badge-${sc.state === "active" ? "built" : "planned"}">${sc.state}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">
+        Replayability: ${statusBadge(sc.replayability)} ${Math.round((sc.replayability_score || 0) * 100)}% · Sandbox: ${sc.required_sandbox_id || "—"} · Last run: ${sc.last_run_status || "not_started"}
+      </div>
+      <div class="action-row" style="margin-top:12px">
+        <button class="btn btn-sm" onclick="runScenarioSet(['${sc.id}'])">Run This Scenario</button>
+        <button class="btn btn-sm btn-outline" onclick="openScenarioDetail('${sc.id}')">Detail</button>
+      </div>
+    </div>`;
+}
+
+function candidateCard(sc) {
+  return `
+    <div class="int-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h4>${esc(sc.business_title)}</h4>
+          <p style="font-size:12px;color:var(--muted)">Source: ${sc.source_vr_id}</p>
         </div>
         ${statusBadge(sc.state)}
       </div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px">
-        Replayability: ${statusBadge(sc.replayability)} ${Math.round((sc.replayability_score || 0) * 100)}% · Sandbox: ${sc.required_sandbox_id || "—"} · Last run: ${sc.last_run_status}
+        Replayability: ${statusBadge(sc.replayability)} ${Math.round((sc.replayability_score || 0) * 100)}%
       </div>
       <div class="action-row" style="margin-top:12px">
-        ${sc.state === "candidate" ? `<button class="btn btn-sm btn-green" onclick="notify('Scenario promotion is demo-only in this build')">Promote to Scenario</button>` : ""}
-        ${sc.state === "blocked" ? `<button class="btn btn-sm btn-amber" onclick="notify('Re-run release gate is demo-only')">Re-run Gate</button>` : ""}
+        <button class="btn btn-sm btn-green" onclick="promoteCandidate('${sc.id}')">Promote to Scenario</button>
         <button class="btn btn-sm btn-outline" onclick="openVRDetail('${sc.source_vr_id}')">View Source V.R.</button>
       </div>
     </div>`;
+}
+
+function openScenarioDetail(id) {
+  S.selectedScenario = id;
+  nav("scenario-detail");
+}
+
+async function renderScenarioDetail(c, s, runs) {
+  const sourceRuns = runs.filter(r => r.scenario_ids.includes(s.id));
+  c.innerHTML = `
+    <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('scenarios')">← Back to Scenarios</button>
+    <div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">
+      <span class="badge badge-${s.state === "active" ? "built" : "planned"}">${s.state}</span>
+      <span style="font-size:13px;color:var(--muted)">ID: ${s.id}</span>
+    </div>
+    ${renderSection("Summary", `
+      ${renderKV("Business Title", s.business_title)}
+      ${renderKV("Source V.R.", `<span class="link" onclick="openVRDetail('${s.source_vr_id}')">${s.source_vr_id}</span>`)}
+      ${renderKV("Expected Outcome", s.expected_outcome)}
+      ${renderKV("Replayability", statusBadge(s.replayability))}
+      ${renderKV("Last Run Status", s.last_run_status || "not_started")}
+    `)}
+    ${renderSection("Run History", sourceRuns.length ? `
+      <table>
+        <thead><tr><th>Run</th><th>Agent Version</th><th>Status</th><th>Result</th></tr></thead>
+        <tbody>${sourceRuns.map(r => `
+          <tr>
+            <td><span class="link" onclick="openScenarioRunDetail('${r.id}')">${r.id}</span></td>
+            <td>${esc(r.agent_version)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td>${JSON.stringify(r.summary)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    ` : "No runs yet")}
+    <div class="action-row" style="margin-top:16px">
+      <button class="btn" onclick="runScenarioSet(['${s.id}'])">Run This Scenario</button>
+      <button class="btn btn-outline" onclick="createReadinessPolicyForScenario('${s.id}')">Add to Readiness Policy</button>
+      ${s.state === "active" ? `<button class="btn btn-sm btn-outline" onclick="retireScenario('${s.id}')">Retire</button>` : `<button class="btn btn-sm btn-outline" onclick="reactivateScenario('${s.id}')">Reactivate</button>`}
+    </div>
+  `;
+}
+
+async function openScenarioRunDetail(runId) {
+  try {
+    const run = await apiGet("/v1/scenario-runs/" + runId);
+    const body = `
+      <div class="section-title">Results</div>
+      ${renderTable(["Scenario", "Expected", "Actual", "Status", "Reason"], run.results.map(r => [
+        r.scenario_id,
+        esc(r.expected_decision),
+        esc(r.actual_decision),
+        statusBadge(r.status),
+        esc(r.reason || "—"),
+      ]))}
+    `;
+    renderDrawer("Scenario Run " + runId, body);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function promoteCandidate(candidateId) {
+  try {
+    const r = await apiPost("/v1/scenario-candidates/" + candidateId + "/promote");
+    notify("Promoted to scenario " + r.id, "success");
+    nav("scenarios");
+  } catch (e) {
+    notify("Promotion failed: " + e.message, "error");
+  }
+}
+
+async function runScenarioSet(scenarioIds) {
+  try {
+    const r = await apiPost("/v1/scenario-runs", {scenario_ids: scenarioIds, agent_version: S.agentVersion});
+    notify(`Scenario run ${r.status}: ${r.summary.passed} passed, ${r.summary.failed} failed, ${r.summary.errored} errored`, "success");
+    nav("scenarios");
+  } catch (e) {
+    notify("Scenario run failed: " + e.message, "error");
+  }
+}
+
+async function retireScenario(id) {
+  try {
+    await apiPatch("/v1/scenarios/" + id, {state: "retired"});
+    notify("Scenario retired", "success");
+    R();
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function reactivateScenario(id) {
+  try {
+    await apiPatch("/v1/scenarios/" + id, {state: "active"});
+    notify("Scenario reactivated", "success");
+    R();
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+// --- READINESS ---
+
+function renderReadiness(c, policies, checks) {
+  c.innerHTML = `
+    <div class="section-title">Readiness Policies</div>
+    <div class="section-sub">Define which Scenarios must pass before an agent version can ship.</div>
+    ${policies.length ? policies.map(p => `
+      <div class="int-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <h4>${esc(p.name)} <span class="badge badge-planned">v${p.version}</span></h4>
+            <p style="font-size:12px;color:var(--muted)">Required scenarios: ${p.required_scenario_ids.join(", ") || "—"}</p>
+          </div>
+          <span class="badge badge-${p.enabled ? "built" : "planned"}">${p.enabled ? "enabled" : "disabled"}</span>
+        </div>
+        <div class="action-row" style="margin-top:12px">
+          <button class="btn btn-sm" onclick="runReadinessCheck('${p.id}', S.agentVersion)">Run Check</button>
+          <button class="btn btn-sm btn-green" onclick="triggerReleaseGate('${p.id}', S.agentVersion)">Release Gate</button>
+          <button class="btn btn-sm btn-outline" onclick="togglePolicy('${p.id}', ${!p.enabled})">${p.enabled ? "Disable" : "Enable"}</button>
+        </div>
+      </div>
+    `).join("") : `<p style="font-size:12px;color:var(--muted)">No readiness policies. Create one from the Scenario detail view or below.</p>`}
+    <div class="action-row" style="margin-top:16px">
+      <button class="btn" onclick="openCreatePolicyForm()">Create Policy</button>
+    </div>
+    ${renderSection("Readiness Checks", checks.length ? `
+      <table>
+        <thead><tr><th>Check</th><th>Policy</th><th>Agent Version</th><th>Verdict</th><th>Actions</th></tr></thead>
+        <tbody>${checks.map(ch => `
+          <tr>
+            <td><span class="link" onclick="openReadinessDetail('${ch.id}')">${ch.id}</span></td>
+            <td>${esc(ch.policy_id)}</td>
+            <td>${esc(ch.agent_version)}</td>
+            <td>${statusBadge(ch.verdict)}</td>
+            <td class="action-row">
+              <button class="btn btn-sm btn-outline" onclick="openReadinessDetail('${ch.id}')">Detail</button>
+            </td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    ` : "No readiness checks yet")}
+  `;
+}
+
+function openCreatePolicyForm() {
+  const body = `
+    <div class="np-form">
+      <div class="np-field"><label>Policy Name</label><input id="policy-name" value="Lending Release Gate"></div>
+      <div class="np-field"><label>Required Scenario IDs (comma-separated)</label><input id="policy-scenarios" placeholder="sc-abc123, sc-def456"></div>
+    </div>
+  `;
+  const actions = `<button class="btn" onclick="submitPolicyForm()">Create Policy</button>`;
+  renderDrawer("Create Readiness Policy", body, actions);
+}
+
+async function submitPolicyForm() {
+  try {
+    const ids = q("#policy-scenarios").value.split(",").map(s => s.trim()).filter(Boolean);
+    const r = await apiPost("/v1/readiness-policies", {name: q("#policy-name").value, required_scenario_ids: ids});
+    notify("Created policy " + r.id, "success");
+    closeDrawer();
+    nav("readiness");
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function createReadinessPolicyForScenario(scenarioId) {
+  try {
+    const r = await apiPost("/v1/readiness-policies", {name: "Policy for " + scenarioId, required_scenario_ids: [scenarioId]});
+    notify("Created policy " + r.id, "success");
+    nav("readiness");
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function togglePolicy(policyId, enabled) {
+  try {
+    await apiPatch("/v1/readiness-policies/" + policyId, {enabled});
+    notify("Policy " + (enabled ? "enabled" : "disabled"), "success");
+    R();
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function runReadinessCheck(policyId, agentVersion) {
+  try {
+    const r = await apiPost("/v1/readiness-checks", {policy_id: policyId, agent_version: agentVersion});
+    notify("Readiness check " + r.verdict, r.verdict === "passed" ? "success" : "error");
+    S.selectedReadinessCheck = r.id;
+    nav("readiness-detail");
+  } catch (e) {
+    notify("Readiness check failed: " + e.message, "error");
+  }
+}
+
+async function triggerReleaseGate(policyId, agentVersion) {
+  try {
+    const r = await apiPost("/v1/release-gate/checks", {policy_id: policyId, agent_version: agentVersion});
+    notify("Release gate " + r.status, r.status === "pass" ? "success" : "error");
+    S.selectedReleaseGate = r.id;
+    nav("release-gate-detail");
+  } catch (e) {
+    notify("Release gate failed: " + e.message, "error");
+  }
+}
+
+function openReadinessDetail(id) {
+  S.selectedReadinessCheck = id;
+  nav("readiness-detail");
+}
+
+async function renderReadinessDetail(c, check) {
+  const run = await apiGet("/v1/scenario-runs/" + check.scenario_run_id).catch(() => null);
+  c.innerHTML = `
+    <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('readiness')">← Back to Readiness</button>
+    <div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">
+      ${statusBadge(check.verdict)}
+      <span style="font-size:13px;color:var(--muted)">ID: ${check.id}</span>
+    </div>
+    ${renderSection("Summary", `
+      ${renderKV("Policy", check.policy_id)}
+      ${renderKV("Agent Version", check.agent_version)}
+      ${renderKV("Scenario Run", check.scenario_run_id)}
+      ${renderKV("Certificate", check.certificate_id || "—")}
+    `)}
+    ${run ? renderSection("Scenario Run Results", `
+      ${renderTable(["Scenario", "Expected", "Actual", "Status"], run.results.map(r => [
+        r.scenario_id,
+        esc(r.expected_decision),
+        esc(r.actual_decision),
+        statusBadge(r.status),
+      ]))}
+    `) : ""}
+    ${check.failing_scenarios.length ? renderSection("Failing Scenarios", `<div class="badge badge-red">${check.failing_scenarios.join(", ")}</div>`) : ""}
+    ${check.errored_scenarios.length ? renderSection("Errored Scenarios", `<div class="badge badge-planned">${check.errored_scenarios.join(", ")}</div>`) : ""}
+  `;
+}
+
+async function renderReleaseGateDetail(c, gate) {
+  c.innerHTML = `
+    <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('readiness')">← Back to Readiness</button>
+    <div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">
+      ${statusBadge(gate.status)}
+      <span style="font-size:13px;color:var(--muted)">ID: ${gate.id}</span>
+    </div>
+    ${renderSection("Machine-Readable Result", `
+      ${renderKV("Status", gate.status)}
+      ${renderKV("Readiness Check", gate.readiness_check_id || "—")}
+      ${renderKV("Certificate", gate.certificate_id || "—")}
+      ${renderKV("Error Code", gate.error_code || "—")}
+      ${renderKV("Retry Guidance", gate.retry_guidance || "—")}
+    `)}
+    ${renderSection("CI/CD Command", `
+      ${renderCodeBlock(gate.ci_cd_command)}
+    `)}
+    ${gate.failing_scenarios.length ? renderSection("Failing Scenarios", `<div class="badge badge-red">${gate.failing_scenarios.join(", ")}</div>`) : ""}
+    ${gate.errored_scenarios.length ? renderSection("Errored Scenarios", `<div class="badge badge-planned">${gate.errored_scenarios.join(", ")}</div>`) : ""}
+  `;
 }
 
 // --- GOVERNANCE ---
@@ -1236,6 +1614,10 @@ function init() {
   if (savedEnv) {
     S.env = savedEnv;
     q("#env-select").value = savedEnv;
+  }
+  const params = new URLSearchParams(location.search);
+  if (params.get("view")) {
+    S.view = params.get("view");
   }
   R();
 }

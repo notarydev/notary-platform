@@ -2,7 +2,7 @@
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
-from notary_platform.api_server.routers.verification import _label_store, _vr_store
+from notary_platform.api_server.routers.ingestion import storage
 
 client = TestClient(app)
 
@@ -12,8 +12,13 @@ LLM_SNAP = {"elements": [{"kind": "llm", "payload": {"prompt": "hi"}},
     {"kind": "decision", "payload": {"decision": "DENY"}}], "root_hash": "abc"}
 
 def setup():
-    _vr_store.clear()
-    _label_store.clear()
+    storage._vrs.clear()
+    storage._labels.clear()
+    storage._incidents.clear()
+    storage._snapshots.clear()
+    storage._evidence.clear()
+    storage._certificates.clear()
+    storage._counter = 0
 
 def test_create_vr():
     setup()

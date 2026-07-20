@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import time
+import typing
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, List
@@ -14,6 +15,50 @@ class IncidentStatus(str, enum.Enum):
     replayed = "replayed"
     mitigated = "mitigated"
     certified = "certified"
+
+
+T = typing.TypeVar("T")
+
+
+def _is_dataclass_instance_or_class(obj: Any) -> bool:
+    return hasattr(obj, "__dataclass_fields__") or (isinstance(obj, type) and hasattr(obj, "__dataclass_fields__"))
+
+
+def _is_list_of_dataclasses(annotation: Any) -> bool:
+    origin = getattr(annotation, "__origin__", None)
+    if origin not in (list, List):
+        return False
+    args = getattr(annotation, "__args__", ())
+    return bool(args and _is_dataclass_instance_or_class(args[0]))
+
+
+def _dataclass_inner_type(annotation: Any) -> Any:
+    args = getattr(annotation, "__args__", ())
+    return args[0] if args else None
+
+
+def _coerce_value(value: Any, annotation: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+        return annotation(value)
+    if _is_dataclass_instance_or_class(annotation):
+        return annotation.from_dict(value)
+    if _is_list_of_dataclasses(annotation):
+        inner = _dataclass_inner_type(annotation)
+        return [inner.from_dict(v) for v in value] if inner is not None else value
+    return value
+
+
+def _dataclass_from_dict(cls: type[T], d: dict[str, Any]) -> T:
+    import dataclasses
+
+    type_hints = typing.get_type_hints(cls)
+    kwargs: dict[str, Any] = {}
+    for fld in dataclasses.fields(cls):  # type: ignore[arg-type]
+        if fld.name in d:
+            kwargs[fld.name] = _coerce_value(d[fld.name], type_hints.get(fld.name, fld.type))
+    return cls(**kwargs)
 
 
 class CustodyEvent:
@@ -590,3 +635,462 @@ class AuditEvent:
             "detail": self.detail,
             "timestamp": self.timestamp,
         }
+
+
+# ---------------------------------------------------------------------------
+# WO-28 — Durable product objects for the active product horizon
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class EvidenceArtifact:
+    """Immutable evidence reference for a snapshot, replay, mutation, proof, or scenario run."""
+
+    id: str
+    org_id: str = "demo-org"
+    incident_id: str = ""
+    verification_record_id: str = ""
+    kind: str = "snapshot"  # snapshot | replay_result | mutation_result | certificate | scenario_run | readiness
+    reference: str = ""  # storage reference or inline id
+    payload: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "incident_id": self.incident_id,
+            "verification_record_id": self.verification_record_id,
+            "kind": self.kind,
+            "reference": self.reference,
+            "payload": self.payload,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class KnownLimitation:
+    """Structured limitation for a replay, mutation, proof, or scenario run."""
+
+    code: str
+    severity: str  # NON_DETERMINISTIC_CORE | NON_DETERMINISTIC_SIDE_EFFECT | BYOK | MISSING_KEY | INTEGRITY
+    message: str
+    subject: str = ""  # component or source system id
+    certificate_blocking: bool = False
+    remediation: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "subject": self.subject,
+            "certificate_blocking": self.certificate_blocking,
+            "remediation": self.remediation,
+        }
+
+
+@dataclass
+class ReplayRun:
+    """One replay attempt for a Verification Record."""
+
+    id: str
+    org_id: str = "demo-org"
+    verification_record_id: str = ""
+    incident_id: str = ""
+    status: str = "not_started"  # not_started | replayed | incomplete | error | escalation_required
+    replay_method: str = "cassette"  # cassette | sandbox | mixed
+    original_decision: str = ""
+    replayed_decision: str = ""
+    missing_calls: list[str] = field(default_factory=list)
+    deterministic_controls: dict[str, Any] = field(default_factory=dict)
+    known_limitations: list[KnownLimitation] = field(default_factory=list)
+    evidence_refs: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "verification_record_id": self.verification_record_id,
+            "incident_id": self.incident_id,
+            "status": self.status,
+            "replay_method": self.replay_method,
+            "original_decision": self.original_decision,
+            "replayed_decision": self.replayed_decision,
+            "missing_calls": self.missing_calls,
+            "deterministic_controls": self.deterministic_controls,
+            "known_limitations": [lim.to_dict() for lim in self.known_limitations],
+            "evidence_refs": self.evidence_refs,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class FixReference:
+    """Reference to a fix applied to an agent for mutation testing."""
+
+    id: str
+    config: dict[str, Any] = field(default_factory=dict)
+    description: str = ""
+    agent_id: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "config": self.config,
+            "description": self.description,
+            "agent_id": self.agent_id,
+        }
+
+
+@dataclass
+class MutationTest:
+    """One fix-verification attempt for a reproduced record."""
+
+    id: str
+    org_id: str = "demo-org"
+    verification_record_id: str = ""
+    incident_id: str = ""
+    replay_run_id: str = ""
+    fix_reference: FixReference = field(default_factory=lambda: FixReference(id=""))
+    expected_outcome: str = ""
+    label_id: str = ""
+    original_decision: str = ""
+    mutated_decision: str = ""
+    verdict: str = "not_started"  # not_started | verified | not_verified | error
+    replay_method: str = "cassette"
+    known_limitations: list[KnownLimitation] = field(default_factory=list)
+    evidence_refs: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "verification_record_id": self.verification_record_id,
+            "incident_id": self.incident_id,
+            "replay_run_id": self.replay_run_id,
+            "fix_reference": self.fix_reference.to_dict(),
+            "expected_outcome": self.expected_outcome,
+            "label_id": self.label_id,
+            "original_decision": self.original_decision,
+            "mutated_decision": self.mutated_decision,
+            "verdict": self.verdict,
+            "replay_method": self.replay_method,
+            "known_limitations": [lim.to_dict() for lim in self.known_limitations],
+            "evidence_refs": self.evidence_refs,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ProofClaim:
+    """Bounded statement of what a proof certifies."""
+
+    id: str
+    org_id: str = "demo-org"
+    scenario_id: str = ""
+    scenario_run_id: str = ""
+    agent_version: str = ""
+    fix_reference: FixReference = field(default_factory=lambda: FixReference(id=""))
+    release_context: str = ""
+    expected_outcome: str = ""
+    label_id: str = ""
+    replay_method: str = "cassette"
+    known_limitations: list[KnownLimitation] = field(default_factory=list)
+    scope_disclaimer: str = "This proof applies to the tested scenario conditions and does not certify general AI safety."
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "scenario_id": self.scenario_id,
+            "scenario_run_id": self.scenario_run_id,
+            "agent_version": self.agent_version,
+            "fix_reference": self.fix_reference.to_dict(),
+            "release_context": self.release_context,
+            "expected_outcome": self.expected_outcome,
+            "label_id": self.label_id,
+            "replay_method": self.replay_method,
+            "known_limitations": [lim.to_dict() for lim in self.known_limitations],
+            "scope_disclaimer": self.scope_disclaimer,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ProofCertificate:
+    """Signed proof artifact (Proof of Mitigation or Proof of Readiness)."""
+
+    id: str
+    org_id: str = "demo-org"
+    certificate_id: str = ""
+    certificate_type: str = "proof_of_mitigation"  # proof_of_mitigation | proof_of_readiness
+    subject_id: str = ""  # incident_id or readiness_check_id
+    claim: ProofClaim = field(default_factory=lambda: ProofClaim(id=""))
+    issued_at: str = ""
+    expires_at: str = ""
+    signature: str = ""
+    signed_payload: dict[str, Any] = field(default_factory=dict)
+    integrity_status: str = "unverified"
+    known_limitations: list[KnownLimitation] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "certificate_id": self.certificate_id,
+            "certificate_type": self.certificate_type,
+            "subject_id": self.subject_id,
+            "claim": self.claim.to_dict(),
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+            "signature": self.signature,
+            "signed_payload": self.signed_payload,
+            "integrity_status": self.integrity_status,
+            "known_limitations": [lim.to_dict() for lim in self.known_limitations],
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class Scenario:
+    """Promoted reusable test case derived from a reproduced Verification Record or ScenarioCandidate."""
+
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    source_vr_id: str = ""
+    source_incident_id: str = ""
+    business_title: str = ""
+    source_system_id: str = ""
+    expected_outcome: str = ""
+    approved_label_id: str = ""
+    replayability: str = "unknown"
+    replayability_score: float = 0.0
+    required_sandbox_id: str = ""
+    evidence_refs: list[str] = field(default_factory=list)
+    state: str = "active"  # active | retired
+    last_run_status: str = "not_started"
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "source_vr_id": self.source_vr_id,
+            "source_incident_id": self.source_incident_id,
+            "business_title": self.business_title,
+            "source_system_id": self.source_system_id,
+            "expected_outcome": self.expected_outcome,
+            "approved_label_id": self.approved_label_id,
+            "replayability": self.replayability,
+            "replayability_score": self.replayability_score,
+            "required_sandbox_id": self.required_sandbox_id,
+            "evidence_refs": self.evidence_refs,
+            "state": self.state,
+            "last_run_status": self.last_run_status,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ScenarioRunResult:
+    """Per-scenario result within a ScenarioRun."""
+
+    scenario_id: str
+    status: str = "not_started"  # passed | failed | errored | escalation_required | non_deterministic
+    expected_decision: str = ""
+    actual_decision: str = ""
+    reason: str = ""
+    evidence_ref: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scenario_id": self.scenario_id,
+            "status": self.status,
+            "expected_decision": self.expected_decision,
+            "actual_decision": self.actual_decision,
+            "reason": self.reason,
+            "evidence_ref": self.evidence_ref,
+        }
+
+
+@dataclass
+class ScenarioRun:
+    """Run of one or more Scenarios against an agent version."""
+
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    agent_version: str = ""
+    scenario_ids: list[str] = field(default_factory=list)
+    status: str = "not_started"  # not_started | running | completed | error
+    results: list[ScenarioRunResult] = field(default_factory=list)
+    summary: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "agent_version": self.agent_version,
+            "scenario_ids": self.scenario_ids,
+            "status": self.status,
+            "results": [r.to_dict() for r in self.results],
+            "summary": self.summary,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ReadinessPolicy:
+    """Release policy containing required Scenarios and pass condition."""
+
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    name: str = ""
+    required_scenario_ids: list[str] = field(default_factory=list)
+    pass_condition: str = "all_pass"  # all_pass | majority
+    enabled: bool = True
+    version: int = 1
+    change_history: list[dict[str, Any]] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "name": self.name,
+            "required_scenario_ids": self.required_scenario_ids,
+            "pass_condition": self.pass_condition,
+            "enabled": self.enabled,
+            "version": self.version,
+            "change_history": self.change_history,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ReadinessCheck:
+    """Evaluation of an agent version against a Readiness Policy."""
+
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    policy_id: str = ""
+    agent_version: str = ""
+    scenario_run_id: str = ""
+    verdict: str = "not_started"  # not_started | passed | failed | error
+    failing_scenarios: list[str] = field(default_factory=list)
+    errored_scenarios: list[str] = field(default_factory=list)
+    certificate_id: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "policy_id": self.policy_id,
+            "agent_version": self.agent_version,
+            "scenario_run_id": self.scenario_run_id,
+            "verdict": self.verdict,
+            "failing_scenarios": self.failing_scenarios,
+            "errored_scenarios": self.errored_scenarios,
+            "certificate_id": self.certificate_id,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ReleaseGateResult:
+    """CI/CD-facing result for a release gate check."""
+
+    id: str
+    org_id: str = "demo-org"
+    readiness_check_id: str = ""
+    status: str = "not_started"  # pass | fail | error
+    failing_scenarios: list[str] = field(default_factory=list)
+    errored_scenarios: list[str] = field(default_factory=list)
+    certificate_id: str = ""
+    error_code: str = ""
+    retry_guidance: str = ""
+    ci_cd_command: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "readiness_check_id": self.readiness_check_id,
+            "status": self.status,
+            "failing_scenarios": self.failing_scenarios,
+            "errored_scenarios": self.errored_scenarios,
+            "certificate_id": self.certificate_id,
+            "error_code": self.error_code,
+            "retry_guidance": self.retry_guidance,
+            "ci_cd_command": self.ci_cd_command,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ActionEligibility:
+    """Server-side eligibility check result for a product action."""
+
+    action: str
+    eligible: bool = False
+    reason: str = ""
+    blocking_limitations: list[KnownLimitation] = field(default_factory=list)
+    next_action: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "eligible": self.eligible,
+            "reason": self.reason,
+            "blocking_limitations": [lim.to_dict() for lim in self.blocking_limitations],
+            "next_action": self.next_action,
+        }
+
+
+# Attach generic from_dict to all dataclasses for storage reconstruction.
+_DATACLASS_MODELS = [
+    Organization,
+    Environment,
+    Agent,
+    SystemConnection,
+    CapturePolicy,
+    HomeStats,
+    AIExecutionEvent,
+    VerificationRecord,
+    HumanLabel,
+    APIKey,
+    ScenarioCandidate,
+    AuditEvent,
+    EvidenceArtifact,
+    KnownLimitation,
+    ReplayRun,
+    FixReference,
+    MutationTest,
+    ProofClaim,
+    ProofCertificate,
+    Scenario,
+    ScenarioRunResult,
+    ScenarioRun,
+    ReadinessPolicy,
+    ReadinessCheck,
+    ReleaseGateResult,
+    ActionEligibility,
+]
+for _model_cls in _DATACLASS_MODELS:
+    if not hasattr(_model_cls, "from_dict"):
+        _model_cls.from_dict = classmethod(_dataclass_from_dict)  # type: ignore[attr-defined]

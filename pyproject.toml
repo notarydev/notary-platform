@@ -22,6 +22,10 @@ dev = [
     "mypy>=1.0",
     "ruff>=0.6.0,<0.16.0",
     "httpx>=0.24.0",
+    "pytest-playwright>=0.4.0",
+]
+browser = [
+    "playwright>=1.40.0",
 ]
 # Only needed when NOTARY_USE_REMOTE_STORAGE is enabled (AWS deploy).
 cloud = [
