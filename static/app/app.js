@@ -117,9 +117,15 @@ function switchAgentVersion(v) {
 }
 
 function nav(v) {
-  S.view = v;
+  const [view, query] = v.split("?");
+  S.view = view;
+  S.viewParams = {};
+  if (query) {
+    const params = new URLSearchParams(query);
+    params.forEach((value, key) => { S.viewParams[key] = value; });
+  }
   qa(".nav-item[data-view]").forEach((x) => x.classList.remove("active"));
-  const b = q(`.nav-item[data-view="${v}"]`);
+  const b = q(`.nav-item[data-view="${view}"]`);
   if (b) b.classList.add("active");
   R();
 }
@@ -973,29 +979,39 @@ function renderVRs(c, vrs) {
     <div class="section-sub">Intake investigation workspace — source, systems, replayability, labels, next action.</div>
     ${renderFilterPills(pills)}
     <table>
-      <thead><tr><th>ID</th><th>Source</th><th>System</th><th>Score</th><th>Replayability</th><th>Label</th><th>Next Action</th><th>Actions</th></tr></thead>
-      <tbody>${vrs.map(v => `
-        <tr class="vr-row" data-rp="${esc(v.replayability)}">
-          <td>${v.is_demo ? badgeDemo() : ""} <span class="link" onclick="openVRDetail('${v.id}')">${v.id}</span></td>
+      <thead><tr><th>ID</th><th>Source</th><th>Decision</th><th>Captured Systems</th><th>Replayability</th><th>Label</th><th>Links</th><th>Actions</th></tr></thead>
+      <tbody>${vrs.map(v => {
+        const systems = [v.source_system_id, v.agent_id].filter(Boolean).map(s => `<span class="badge badge-built">${esc(s.replace(/^[^:]+:/, ""))}</span>`).join(" ");
+        const links = [];
+        if (v.promoted_to_incident) links.push(`<span class="link" onclick="openIncidentDetail('${v.promoted_to_incident}')">Incident</span>`);
+        if (v.promoted_to_scenario) links.push(`<span class="link" onclick="openScenarioDetail('${v.promoted_to_scenario}')">Scenario</span>`);
+        if (v.certificate_id) links.push(`<span class="link" onclick="openProofDetail('${v.certificate_id}')">Proof</span>`);
+        return `
+        <tr class="vr-row" data-rp="${esc(v.replayability)}" onclick="openVRDetail('${v.id}')">
+          <td>${v.is_demo ? badgeDemo() : ""} <span class="link">${v.id}</span></td>
           <td><span class="badge badge-${v.source_type === "sdk_snapshot" ? "built" : "ingested"}">${v.source_type.replace(/_/g, " ")}</span></td>
-          <td>${esc(v.source_system_id || "—")}</td>
-          <td><span style="font-weight:800;color:${(v.replayability_score || 0) >= 0.8 ? 'var(--green)' : (v.replayability_score || 0) >= 0.5 ? 'var(--amber)' : 'var(--red)'}">${Math.round((v.replayability_score || 0) * 100)}%</span></td>
+          <td><span class="decision-pill decision-fail">${esc(v.original_decision || "—")}</span></td>
+          <td>${systems || "—"}</td>
           <td>${statusBadge(v.replayability)}</td>
-          <td>${v.current_label_id ? '✓' : v.replayability === "requires_human_label" ? '<span class="badge badge-planned">needs label</span>' : '—'}</td>
-          <td style="font-size:11px">${esc(v.next_action || "—")}</td>
-          <td class="action-row">
+          <td>${v.current_label_id ? '<span class="badge badge-built">labeled</span>' : v.replayability === "requires_human_label" ? '<span class="badge badge-planned">needs label</span>' : '—'}</td>
+          <td class="vr-links">${links.join(" ") || "—"}</td>
+          <td class="action-row" onclick="event.stopPropagation()">
             ${v.replayability === "requires_human_label" ? `<button class="btn btn-sm btn-amber" onclick="openAddLabelForm('${v.id}')">Add Label</button>` : ""}
             ${v.replayability === "replayable" || v.replayability === "partially_replayable" ? `<button class="btn btn-sm" onclick="runVRReplay('${v.id}')">Replay</button>` : ""}
             ${v.replayability === "replayable" && v.current_label_id ? `<button class="btn btn-sm btn-green" onclick="promoteVR('${v.id}')">Promote</button>` : ""}
             ${v.replayability === "evidence_only" || v.replayability === "missing_context" ? `<button class="btn btn-sm btn-outline" onclick="openVRDetail('${v.id}')">Investigate</button>` : ""}
             <button class="btn btn-sm btn-outline" onclick="openVRDetail('${v.id}')">Detail</button>
           </td>
-        </tr>`).join("")}
+        </tr>`;
+      }).join("")}
       </tbody>
     </table>
   `;
-  // Default filter 'all' visible; filterVR toggles rows.
+  // Default filter 'all' visible; filterVR toggles rows. Apply any view param filter.
   window._vrFilter = "all";
+  if (S.viewParams && S.viewParams.filter) {
+    setTimeout(() => filterVR(S.viewParams.filter), 0);
+  }
 }
 
 function filterVR(s) {
