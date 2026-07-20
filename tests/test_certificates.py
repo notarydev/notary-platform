@@ -131,6 +131,7 @@ class TestMutationEndpoint:
         data = resp.json()
         assert data["original_decision"] == "DENY"
         assert data["mutated_decision"] == "APPROVE"
+        assert data["decision_changed"] is True
         assert data["mitigated"] is True
 
     def test_mutation_deny_to_deny_not_mitigated(self) -> None:
@@ -144,6 +145,21 @@ class TestMutationEndpoint:
         data = resp.json()
         assert data["original_decision"] == "DENY"
         assert data["mutated_decision"] == "DENY"
+        assert data["decision_changed"] is False
+        assert data["mitigated"] is False
+
+    def test_relabel_only_fix_is_not_mitigated(self) -> None:
+        inc_id = self._ingest()
+        self._replay(inc_id)
+        resp = client.post(
+            f"/v1/incidents/{inc_id}/mutation-tests",
+            json={"fix_config": {"threshold": 900}, "expected_correct_behavior": "DENY"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["original_decision"] == "DENY"
+        assert data["mutated_decision"] == "DENY"
+        assert data["decision_changed"] is False
         assert data["mitigated"] is False
 
     def test_mutation_rejected_before_replay(self) -> None:

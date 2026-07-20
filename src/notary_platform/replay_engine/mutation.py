@@ -28,11 +28,13 @@ def run_mutation(
     original_decision = original_result.get("decision")
     mutated_decision = mutated_result.get("decision")
 
-    mitigated = mutated_decision == expected_correct_behavior
+    decision_changed = original_decision != mutated_decision
+    mitigated = decision_changed and mutated_decision == expected_correct_behavior
 
     return {
         "original_decision": original_decision,
         "mutated_decision": mutated_decision,
+        "decision_changed": decision_changed,
         "mitigated": mitigated,
         "replay_status": mutated_result.get("replay_status", "unknown"),
         "fix_config": fix_config,

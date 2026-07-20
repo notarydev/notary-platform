@@ -760,6 +760,7 @@ class MutationTest:
     label_id: str = ""
     original_decision: str = ""
     mutated_decision: str = ""
+    decision_changed: bool = False
     verdict: str = "not_started"  # not_started | verified | not_verified | error
     replay_method: str = "cassette"
     known_limitations: list[KnownLimitation] = field(default_factory=list)
@@ -778,6 +779,7 @@ class MutationTest:
             "label_id": self.label_id,
             "original_decision": self.original_decision,
             "mutated_decision": self.mutated_decision,
+            "decision_changed": self.decision_changed,
             "verdict": self.verdict,
             "replay_method": self.replay_method,
             "known_limitations": [lim.to_dict() for lim in self.known_limitations],
