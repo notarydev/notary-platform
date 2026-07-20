@@ -55,6 +55,14 @@ class DemoScenario:
 
     def agent_decision(self, threshold: int | None = None) -> str:
         """Return the demo agent decision for this scenario."""
+        if self.scenario_id == "harborline-personal-loan-adverse-action":
+            route_to_review = bool(
+                self.fix_config.get("route_missing_or_borderline_bureau_to_underwriting_review")
+                if threshold is None
+                else True
+            )
+            return "UNDERWRITING_REVIEW" if route_to_review else "DENY"
+
         if self.scenario_id == "lending-denial":
             score = int(self.cassette_response["score"])
             actual_threshold = threshold if threshold is not None else int(
@@ -100,6 +108,105 @@ class DemoScenario:
 
 
 SCENARIOS: dict[str, DemoScenario] = {
+    "harborline-personal-loan-adverse-action": DemoScenario(
+        scenario_id="harborline-personal-loan-adverse-action",
+        title="Harborline personal-loan adverse action",
+        industry="Credit Union / Consumer Lending",
+        buyer="Chief Risk Officer, Fair Lending team, Consumer Compliance",
+        risk=(
+            "Fair lending / adverse-action risk: a review-worthy personal-loan applicant"
+            " is denied because missing and borderline bureau evidence is treated as a"
+            " hard denial instead of being routed to underwriting review."
+        ),
+        model_name="Harborline Loan Assist with personal-loan-policy-v3",
+        model_version="harborline-loan-assist-2026.07",
+        policy_version="personal-loan-adverse-action-policy-2026.07",
+        temperature=0.0,
+        seed=4207849484,
+        timestamp="2026-07-20T13:45:00Z",
+        external_system="Harborline Credit Bureau Sandbox /applicant-risk",
+        cassette_response={
+            "applicant_id": "HLCU-PL-0427",
+            "credit_score": 681,
+            "income_verified": True,
+            "debt_to_income": 0.32,
+            "bureau_evidence_status": "missing_recent_tradeline",
+            "thin_file": True,
+            "policy_band": "borderline_review",
+            "adverse_action_reason_codes": [],
+        },
+        original_decision="DENY",
+        expected_correct_behavior="UNDERWRITING_REVIEW",
+        fix_config={
+            "route_missing_or_borderline_bureau_to_underwriting_review": True,
+            "review_reason": "missing_or_borderline_credit_bureau_evidence",
+        },
+        source_corpus="2,146 Harborline personal-loan decisions",
+        candidate_cluster="37 adverse-action denials with missing or borderline bureau evidence",
+        pattern="qualified income + borderline credit band + incomplete bureau evidence + hard denial",
+        policy_gap=(
+            "personal-loan-adverse-action-policy-2026.07 did not require underwriting"
+            " review when bureau evidence was incomplete or borderline."
+        ),
+        regulatory_mapping="ECOA / FCRA adverse-action review",
+        label_source="Harborline Fair Lending / demo label",
+        replayability="fully replayable from sealed cassette",
+        release_gate="Harborline personal-loan release gate",
+        nodes=[
+            ScenarioNode(
+                "application",
+                "Personal Loan Application",
+                "input",
+                "Harborline member applies for an unsecured personal loan.",
+                {
+                    "applicant_id": "HLCU-PL-0427",
+                    "loan_type": "personal_loan",
+                    "income_verified": True,
+                    "requested_amount": 12500,
+                },
+            ),
+            ScenarioNode(
+                "loan-assist-agent",
+                "Loan Assist Agent",
+                "model",
+                "Model evaluates the application under Harborline personal-loan policy.",
+                {
+                    "model": "harborline-loan-assist-2026.07",
+                    "temperature": 0.0,
+                    "seed": 4207849484,
+                },
+            ),
+            ScenarioNode(
+                "credit-bureau",
+                "Credit Bureau Sandbox",
+                "tool",
+                "Cassette records the exact missing and borderline bureau evidence.",
+                {
+                    "endpoint": "POST /applicant-risk",
+                    "response": {
+                        "credit_score": 681,
+                        "bureau_evidence_status": "missing_recent_tradeline",
+                        "policy_band": "borderline_review",
+                    },
+                },
+            ),
+            ScenarioNode(
+                "adverse-action-rule",
+                "Adverse Action Rule",
+                "rule",
+                "Original workflow treated incomplete borderline evidence as a hard denial.",
+                {"route_missing_or_borderline_bureau_to_underwriting_review": False},
+                failure=True,
+            ),
+            ScenarioNode(
+                "decision",
+                "Original Captured Decision",
+                "decision",
+                "Agent denies the member instead of routing to underwriting review.",
+                {"decision": "DENY"},
+            ),
+        ],
+    ),
     "customer-service-handoff": DemoScenario(
         scenario_id="customer-service-handoff",
         title="Customer-service failed handoff",

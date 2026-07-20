@@ -199,6 +199,49 @@ class TestReleaseGateVertical:
         assert resp.status_code == 200
         assert resp.json()["status"] == "error"
 
+    def test_harborline_release_gate_fails_before_fix_and_passes_after_fix(self) -> None:
+        resp = client.post("/v1/demo/harborline-release-gate/seed")
+        assert resp.status_code == 200
+        seeded = resp.json()
+        assert seeded["demo_org"] == "Harborline Credit Union"
+        assert seeded["scenario_contract"]["scenario_id"] == "harborline-personal-loan-adverse-action"
+        assert seeded["scenario_contract"]["original_captured_decision"] == "DENY"
+        assert seeded["scenario_contract"]["expected_correct_behavior"] == "UNDERWRITING_REVIEW"
+
+        vr = client.get(f"/v1/verification-records/{seeded['verification_record_id']}").json()
+        assert vr["source_record_ref"] == "HLCU-PL-0427"
+        assert vr["agent_id"] == "agent:harborline-personal-loan-adverse-action"
+        assert vr["replayability"] == "replayable"
+        assert vr["current_label_id"] == seeded["label_id"]
+        assert vr["expected_outcome"] == "UNDERWRITING_REVIEW"
+
+        replay = client.get(f"/v1/replay-runs/{seeded['replay_run_id']}").json()
+        assert replay["status"] == "replayed"
+        assert replay["original_decision"] == "DENY"
+        assert replay["replayed_decision"] == "DENY"
+
+        mutation = client.get(f"/v1/mutation-tests/{seeded['mutation_test_id']}").json()
+        assert mutation["verdict"] == "verified"
+        assert mutation["original_decision"] == "DENY"
+        assert mutation["mutated_decision"] == "UNDERWRITING_REVIEW"
+
+        before_gate = client.get(f"/v1/release-gate/checks/{seeded['release_gate_before_fix_id']}").json()
+        assert before_gate["status"] == "fail"
+        assert before_gate["certificate_id"] == ""
+        assert seeded["scenario_id"] in before_gate["failing_scenarios"]
+
+        after_gate = client.get(f"/v1/release-gate/checks/{seeded['release_gate_after_fix_id']}").json()
+        assert after_gate["status"] == "pass"
+        assert after_gate["failing_scenarios"] == []
+        assert after_gate["certificate_id"]
+        assert after_gate["certificate_id"] == seeded["release_gate_after_fix_certificate_id"]
+
+        cert = client.get(f"/v1/certificates/{after_gate['certificate_id']}").json()
+        assert cert["certificate_type"] == "proof_of_readiness"
+        assert cert["claim"]["scope_disclaimer"].startswith("This proof applies to the tested scenario")
+        verify = client.get(f"/v1/certificates/{after_gate['certificate_id']}/verify").json()
+        assert verify["signature_valid"] is True
+
     def test_action_eligibility_returns_reasons(self) -> None:
         self._seed_catalog()
         # Find a replayable record that has not yet been mutated/proven.

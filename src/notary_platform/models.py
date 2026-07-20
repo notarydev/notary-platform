@@ -482,6 +482,8 @@ class VerificationRecord:
 _SDK_TO_EVENT_MAP = {
     "llm": EventKind.model_call,
     "http": EventKind.api_response,
+    "input": EventKind.human_action,
+    "rule": EventKind.policy_check,
     "decision": EventKind.decision,
     "rng_seed": EventKind.rng_seed,
     "timestamp": EventKind.timestamp,

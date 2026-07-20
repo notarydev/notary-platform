@@ -48,6 +48,15 @@ def seed_demo_catalog(org_id: str = Depends(require_auth)) -> dict[str, Any]:
     return result
 
 
+@router.post("/demo/harborline-release-gate/seed")
+def seed_harborline_release_gate(org_id: str = Depends(require_auth)) -> dict[str, Any]:
+    """Seed the Harborline Credit Union flagship fail/pass Release Gate path."""
+    from notary_platform.demo_catalog import seed_harborline_release_gate_demo
+
+    registry = _registry()
+    return seed_harborline_release_gate_demo(registry, org_id=org_id)
+
+
 # ---------------------------------------------------------------------------
 # Verification Records
 # ---------------------------------------------------------------------------

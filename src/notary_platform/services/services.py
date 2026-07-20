@@ -55,6 +55,31 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
 
     def agent(cassette: ResponseCassette, **kwargs: Any) -> str:
         mode = kwargs.get("mode", "default")
+        if scenario.scenario_id == "harborline-personal-loan-adverse-action":
+            recorded = dict(scenario.cassette_response)
+            result = cassette.lookup("POST", "https://demo.notary.local/credit-bureau")
+            if result is not None and isinstance(result.get("response"), dict):
+                recorded.update(result["response"])
+
+            evidence_status = str(recorded.get("bureau_evidence_status", "")).lower()
+            policy_band = str(recorded.get("policy_band", "")).lower()
+            score = int(recorded.get("credit_score", recorded.get("score", 0)) or 0)
+            review_worthy = (
+                recorded.get("income_verified") is True
+                and (
+                    evidence_status.startswith("missing")
+                    or policy_band == "borderline_review"
+                    or 660 <= score <= 700
+                )
+            )
+            fix_enabled = bool(
+                kwargs.get("route_missing_or_borderline_bureau_to_underwriting_review")
+                or mode == "fixed"
+            )
+            if fix_enabled and review_worthy:
+                return "UNDERWRITING_REVIEW"
+            return "DENY"
+
         if scenario.scenario_id == "lending-denial":
             threshold = int(kwargs.get("threshold", 700))
             result = cassette.lookup("POST", "https://demo.notary.local/credit-api")
@@ -368,8 +393,14 @@ class ReplayabilityService:
 
         if has_llm:
             # Deterministic LLM params reduce the severity of the limitation.
+            def _deterministic_llm_payload(payload: dict[str, Any]) -> bool:
+                metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                temperature = payload.get("temperature", metadata.get("temperature"))
+                seed = payload.get("seed", metadata.get("seed"))
+                return temperature == 0.0 and seed is not None
+
             deterministic_llm = all(
-                e.payload.get("temperature") == 0.0 and e.payload.get("seed") is not None
+                _deterministic_llm_payload(e.payload)
                 for e in llm_events
             )
             if deterministic_llm:

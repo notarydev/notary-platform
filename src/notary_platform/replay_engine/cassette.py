@@ -25,7 +25,7 @@ class ResponseCassette:
     def __init__(self, elements: list[dict[str, Any]]) -> None:
         self._entries: dict[str, dict[str, Any]] = {}
         for elem in elements:
-            if elem.get("kind") != "http":
+            if elem.get("kind") not in {"http", "tool_call", "api_response"}:
                 continue
             payload = elem.get("payload", {})
             req = payload.get("request", {})

@@ -768,6 +768,151 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
     }
 
 
+def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, Any]:
+    """Create the deterministic Harborline flagship Release Gate demo path."""
+    from notary_platform.services import (
+        CertificateService,
+        IngestionService,
+        LabelProvenanceService,
+        MutationService,
+        ReadinessService,
+        ReleaseGateService,
+        ReplayService,
+        ScenarioLibraryService,
+    )
+
+    scenario = SCENARIOS["harborline-personal-loan-adverse-action"]
+    snapshot = build_snapshot(scenario)
+    ingestion = IngestionService(registry)
+    labels = LabelProvenanceService(registry)
+    replay = ReplayService(registry)
+    mutation = MutationService(registry)
+    certificates = CertificateService(registry)
+    scenarios = ScenarioLibraryService(registry)
+    readiness = ReadinessService(registry)
+    release_gate = ReleaseGateService(registry)
+
+    vr = ingestion.create_from_sdk_snapshot(
+        snapshot,
+        org_id=org_id,
+        agent_id="agent:harborline-personal-loan-adverse-action",
+        environment_id="env:demo",
+    )
+    vr.business_function = "Harborline Credit Union personal-loan adverse-action workflow"
+    vr.source_system_id = "sys:harborline-credit-bureau"
+    vr.source_record_ref = "HLCU-PL-0427"
+    vr.external_ref = "HLCU-PL-0427"
+    vr.agent_version = scenario.model_version
+    vr.model_provider = "Harborline Demo Model Provider"
+    vr.model_name = scenario.model_name
+    vr.policy_version = scenario.policy_version
+    vr.expected_outcome = scenario.expected_correct_behavior
+    vr.is_demo = True
+    vr.sandbox_readiness = {
+        "required": True,
+        "system_id": "sys:harborline-credit-bureau",
+        "ready": True,
+        "cassette": "sealed",
+        "fix_config": scenario.fix_config,
+    }
+    vr.next_action = "Replay original denial, verify underwriting-review fix, and run Release Gate"
+    registry.storage.update_vr(vr)
+
+    label = labels.create_label(
+        vr.id,
+        org_id,
+        expected_outcome=scenario.expected_correct_behavior,
+        reviewer="Harborline Fair Lending Review",
+        role="Consumer Compliance",
+        reason=(
+            "Applicant is qualified or review-worthy; missing/borderline bureau evidence"
+            " must route to underwriting review instead of hard denial."
+        ),
+    )
+    incident = ingestion.create_incident_from_vr(vr)
+    replay_run = replay.run_replay(vr.id, org_id)
+    mutation_test = mutation.run_mutation(
+        vr.id,
+        org_id,
+        scenario.fix_config,
+        expected_correct_behavior=scenario.expected_correct_behavior,
+    )
+    mitigation_proof = certificates.issue_proof_of_mitigation(vr.id, org_id)
+    promoted_scenario = scenarios.promote_vr(vr.id, org_id)
+    promoted_scenario.business_title = scenario.title
+    registry.storage.update_scenario(promoted_scenario)
+    policy = readiness.create_policy(
+        org_id,
+        "env:demo",
+        "Harborline Credit Union Release Gate",
+        [promoted_scenario.id],
+    )
+    gate_before_fix = release_gate.check(
+        policy.id,
+        agent_version="harborline-loan-assist-before-fix",
+        org_id=org_id,
+        environment_id="env:demo",
+    )
+    readiness_after_fix = readiness.run_check(
+        policy.id,
+        agent_version="harborline-loan-assist-fixed",
+        org_id=org_id,
+        environment_id="env:demo",
+        fix_config=scenario.fix_config,
+    )
+    gate_after_fix = release_gate.check(
+        policy.id,
+        agent_version="harborline-loan-assist-fixed",
+        org_id=org_id,
+        environment_id="env:demo",
+        fix_config=scenario.fix_config,
+    )
+
+    return {
+        "demo_org": "Harborline Credit Union",
+        "scenario_contract": {
+            "scenario_id": scenario.scenario_id,
+            "title": scenario.title,
+            "seed": scenario.seed,
+            "original_captured_decision": scenario.original_decision,
+            "expected_correct_behavior": scenario.expected_correct_behavior,
+            "failure": (
+                "Missing or borderline credit-bureau evidence was treated as a hard denial"
+                " instead of routing to underwriting review."
+            ),
+            "scope": (
+                "This proof is scoped to the sealed Harborline personal-loan cassette and"
+                " does not certify general AI safety, transparent capture, or active GRC integrations."
+            ),
+        },
+        "verification_record_id": vr.id,
+        "label_id": label.id,
+        "incident_id": incident.incident_id,
+        "replay_run_id": replay_run.id,
+        "mutation_test_id": mutation_test.id,
+        "proof_of_mitigation_certificate_id": mitigation_proof.id,
+        "scenario_id": promoted_scenario.id,
+        "readiness_policy_id": policy.id,
+        "readiness_after_fix_id": readiness_after_fix.id,
+        "proof_of_readiness_certificate_id": readiness_after_fix.certificate_id,
+        "release_gate_before_fix_id": gate_before_fix.id,
+        "release_gate_before_fix_status": gate_before_fix.status,
+        "release_gate_after_fix_id": gate_after_fix.id,
+        "release_gate_after_fix_status": gate_after_fix.status,
+        "release_gate_after_fix_certificate_id": gate_after_fix.certificate_id,
+        "arc": [
+            "original captured decision",
+            "replay exact recorded condition",
+            "apply fix",
+            "verify corrected outcome under same cassette",
+            "issue scoped proof",
+            "promote to scenario",
+            "run readiness",
+            "Release Gate fail before fix and pass after fix",
+        ],
+    }
+
+
 def build_catalog_legacy(
     storage: Any,
     vr_store: dict[str, VerificationRecord],
