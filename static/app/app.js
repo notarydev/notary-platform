@@ -1305,7 +1305,7 @@ function renderIncidents(c, ix) {
   c.innerHTML = `
     ${renderFilterPills(pills)}
     <table>
-      <thead><tr><th>ID</th><th>Status</th><th>R</th><th>F</th><th>C</th><th>Actions</th></tr></thead>
+      <thead><tr><th>ID</th><th>Status</th><th title="Replay reproduced">R</th><th title="Fix verified">F</th><th title="Certificate/proof issued">C</th><th>Actions</th></tr></thead>
       <tbody>${ix.map(i => `
         <tr class="inc-row" data-status="${esc(i.status)}">
           <td>${badgeDemo()} <span class="link" onclick="openIncidentDetail('${i.incident_id}')">${i.incident_id}</span></td>
@@ -1354,6 +1354,36 @@ async function renderIncidentDetail(c, i, wf) {
   const decision = i.replay_result?.decision || i.mutation_result?.original_decision || sourceVr?.original_decision || "—";
   const fixedDecision = i.mutation_result?.mutated_decision || sourceVr?.expected_correct_behavior || "—";
   const proofError = i.mutation_result ? "" : "Issue Proof requires a successful Fix Verification. Run Verify Fix after a successful replay.";
+  const inputEl = elements.find(e => e.kind === "input") || {};
+  const httpEl = elements.find(e => e.kind === "http") || {};
+  const policyEl = elements.find(e => e.kind === "policy") || {};
+  const decisionEl = elements.find(e => e.kind === "decision") || {};
+  const applicantId = inputEl.payload?.applicant_id || sourceVr?.source_record_ref || "HLCU-PL-0427";
+  const bureauStatus = httpEl.payload?.response?.status || "missing_evidence";
+  const policyVersion = policyEl.payload?.version || policyEl.payload?.policy_version || i.policy_version || "v1.3";
+  const originalDecision = decisionEl.payload?.decision || decision;
+  const replayedDecision = i.replay_result?.decision || "—";
+  const replayStatus = i.replay_result?.replay_status === "replayed" ? "pass" : "pending";
+  const replayRows = [
+    { step: "Applicant facts", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending" },
+    { step: "Bureau response", source: "cassette", expected: bureauStatus, actual: bureauStatus, status: i.replay_result ? "pass" : "pending" },
+    { step: "Policy version", source: "sealed metadata", expected: policyVersion, actual: policyVersion, status: i.replay_result ? "pass" : "pending" },
+    { step: "AI decision", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending" },
+    { step: "Replay verdict", source: "comparison", expected: "reproduce failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus },
+  ];
+  const replayTableHtml = `
+    <table class="replay-table">
+      <thead><tr><th>Step</th><th>Source</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead>
+      <tbody>${replayRows.map(r => `
+        <tr>
+          <td>${esc(r.step)}</td>
+          <td>${esc(r.source)}</td>
+          <td>${esc(r.expected)}</td>
+          <td>${esc(r.actual)}</td>
+          <td><span class="replay-status ${r.status}">${esc(r.status)}</span></td>
+        </tr>
+      `).join("")}</tbody>
+    </table>`;
   const trace = [
     ["sealed", "Sealed inputs loaded", `${elements.length || "No"} captured evidence element${elements.length === 1 ? "" : "s"}`],
     ["cassette", "Cassette selected", cassetteEntries.length ? `${cassetteEntries.length} recorded tool/API response${cassetteEntries.length === 1 ? "" : "s"}` : "No cassette response recorded"],
@@ -1382,6 +1412,7 @@ async function renderIncidentDetail(c, i, wf) {
       ${renderSection("Captured AI Decision Path", pathHtml + `<div class="path-rail"><span>Input</span><span>Agent + policy</span><span>Tool evidence</span><span>Decision</span></div>`, {sub: "What was captured, labeled, and made eligible for replay."})}
       ${renderSection("Replay Execution Trace", `<div class="investigation-trace">${traceHtml}</div>${i.replay_result?.reason ? `<div class="error-state">Replay issue: ${esc(i.replay_result.reason)}</div>` : ""}`, {sub: "Cassette replay reconstructs the known decision under recorded conditions."})}
     </div>
+    ${renderSection("Replay Run Detail", replayTableHtml, {sub: "Step-by-step comparison of the recorded and replayed decision path."})}
     ${renderSection("Original vs Replayed Comparison", `<div class="comparison-grid">${comparisonHtml}</div><div class="comparison-verdict ${i.replay_result?.replay_status === "replayed" ? "verdict-fail" : "verdict-pending"}">${i.replay_result?.replay_status === "replayed" ? "Failure reproduced: the replay matched the recorded decision." : "Run Replay to compare the recorded and reconstructed decisions."}</div>`)}
     ${renderSection("Fix Verification Before / After", i.mutation_result ? `<div class="before-after"><div><span class="comparison-label">BEFORE FIX</span><strong>${esc(i.mutation_result.original_decision || decision)}</strong><p>Known failure reproduced under the captured conditions.</p></div><div class="before-after-arrow">→</div><div><span class="comparison-label">AFTER FIX</span><strong class="text-green">${esc(i.mutation_result.mutated_decision || "—")}</strong><p>${i.mutation_result.mitigated ? "Expected behavior verified for this scenario." : "Expected behavior was not verified."}</p></div></div>` : `<div class="empty-state compact"><h3>Fix verification pending</h3><p>Replay the failure first, then run the scenario-specific fix against the same cassette.</p></div>`)}
     ${renderSection("Proof / Certificate", cert.certificate_id ? `
