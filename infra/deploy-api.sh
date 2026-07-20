@@ -16,7 +16,31 @@
 #   4. Print verification commands.
 #
 # It does NOT touch DNS, secrets, KMS, CORS, or Terraform state.
+#
+# SAFETY: deploys MUST originate from a fresh origin/main — never a feature or PR
+# branch (it will be stale relative to main and can ship the wrong code). The
+# pre-flight below enforces this and refuses to run otherwise.
 set -euo pipefail
+
+# --- pre-flight: only deploy from a fresh, clean origin/main ---
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "REFUSING TO DEPLOY: current branch is '$CURRENT_BRANCH', not 'main'." >&2
+  echo "Run: git fetch origin --prune && git checkout main && git reset --hard origin/main" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "REFUSING TO DEPLOY: working tree is dirty. Commit or stash changes first." >&2
+  exit 1
+fi
+git fetch origin --prune >/dev/null 2>&1
+LOCAL="$(git rev-parse HEAD)"
+REMOTE="$(git rev-parse origin/main)"
+if [ "$LOCAL" != "$REMOTE" ]; then
+  echo "REFUSING TO DEPLOY: local main ($LOCAL) != origin/main ($REMOTE)." >&2
+  echo "Run: git fetch origin --prune && git reset --hard origin/main" >&2
+  exit 1
+fi
 
 REGION="${AWS_REGION:-us-east-2}"
 PROJECT_NAME="${PROJECT_NAME:-notary}"

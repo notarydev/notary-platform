@@ -30,6 +30,8 @@ The biggest mistakes last time were:
   5. Thinking `ecs update-service --force-new-deployment` swaps the image. It does
      NOT. The task def pins a tag; you must register a NEW task-def revision.
   6. ECR tags are IMMUTABLE — never reuse a tag; use a timestamped tag each deploy.
+  6b. NEVER deploy from a feature/PR branch — only from a fresh origin/main. The
+      deploy script refuses to run otherwise. A branch is stale relative to main.
   7. We test in LIVE. Platform's final destination is always api.getnotary.ai;
      website's is always getnotary.ai. Local runs are a pre-check only — the real
      gate is the live URL showing current main content. Never call a repo "ready"
@@ -58,6 +60,12 @@ git status --porcelain        # must be empty (clean tree)
 Then record the real SHA. Never trust a previously cached SHA — the `d15bbc8`
 vs `a01bd5c` mismatch happened because local state was not fully fresh.
 
+**Deploy only from a fresh `origin/main` — never a feature or PR branch.**
+A feature branch is, by definition, stale relative to main and can ship the wrong
+code. `infra/deploy-api.sh` enforces this: it refuses to run unless the current
+branch is `main`, the tree is clean, and local `main` == `origin/main`. If you
+are on a branch, switch and hard-reset first.
+
 ---
 
 ## 1b. Live is the test environment
@@ -83,6 +91,12 @@ Implications:
   live URLs show current main content.
 - Never report a repo as "ready" based on local checks alone. Report the live
   verification result.
+- **Live seed endpoint requires an API token.** Unauthenticated `POST` to the
+  Harborline seed correctly returns `{"detail":"invalid or missing API token"}`
+  (expected, not a bug). With the token set in Settings, the seed runs. If an
+  *authenticated* seed still 500s after a deploy, the cause is live
+  backend/storage/env behavior behind seed execution — **not** a stale frontend.
+  Diagnose server-side (logs, env, storage), not by re-deploying the UI.
 
 ## 2. Repository source-of-truth map
 
