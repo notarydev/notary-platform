@@ -37,6 +37,7 @@ def replay_snapshot(
     snapshot_dict: dict[str, Any],
     agent_fn: Callable[..., Any],
     agent_kwargs: Optional[dict[str, Any]] = None,
+    strict_order: bool = False,
 ) -> dict[str, Any]:
     """Replay an agent function using the snapshot's HTTP cassette.
 
@@ -46,10 +47,24 @@ def replay_snapshot(
     Returns a dict with ``{"decision": ..., "replay_status": ...}``.
     """
     elements = snapshot_dict.get("elements", [])
-    cassette = ResponseCassette(elements)
+    cassette = ResponseCassette(elements, strict_order=strict_order)
 
     try:
         result = agent_fn(cassette=cassette, **(agent_kwargs or {}))
+        if strict_order and cassette.misses:
+            return {
+                "decision": result,
+                "replay_status": "escalation_required",
+                "reason": "agent call did not match cassette order",
+                "misses": cassette.misses,
+            }
+        if strict_order and cassette.unconsumed_count:
+            return {
+                "decision": result,
+                "replay_status": "escalation_required",
+                "reason": "agent did not consume all cassette entries",
+                "unconsumed_entries": cassette.unconsumed_count,
+            }
         return {"decision": result, "replay_status": "replayed"}
     except Exception as exc:
         return {"decision": None, "replay_status": "error", "error": str(exc)}

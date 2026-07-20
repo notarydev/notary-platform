@@ -1,0 +1,41 @@
+{
+  "work_order": "PRG-006",
+  "repo": "notarydev/notary-platform",
+  "branch": "codex/prg-006-replay-evidence",
+  "status": "in_review",
+  "usage_visibility": "not_available",
+  "scope": "Deterministic cassette replay fails closed on changed, missing, out-of-order, or unconsumed calls.",
+  "changes": [
+    "ResponseCassette now supports strict ordered replay with consumed/miss tracking.",
+    "replay_snapshot exposes strict_order mode and returns escalation_required on mismatch.",
+    "Added regression tests for changed call URL, out-of-order call, missing call, and unconsumed recorded call."
+  ],
+  "checks": [
+    {
+      "command": "PYTHONPATH=src python3 -m pytest tests/test_replay.py",
+      "result": "passed",
+      "notes": "16 replay tests passed"
+    },
+    {
+      "command": "python3 -m ruff check src tests",
+      "result": "passed"
+    },
+    {
+      "command": "python3 -m mypy src",
+      "result": "passed"
+    },
+    {
+      "command": "PYTHONPATH=src python3 -m pytest tests/test_auth.py tests/test_certificates.py tests/test_ingestion.py tests/test_live_status.py tests/test_release_gate_vertical.py tests/test_replay.py tests/test_verification.py tests/test_viz.py",
+      "result": "passed",
+      "notes": "105 backend tests passed"
+    }
+  ],
+  "acceptance_criteria": [
+    "Replay reproduces the recorded decision when calls match the cassette.",
+    "Strict replay fails closed when the agent changes the external call.",
+    "Strict replay fails closed when calls happen out of recorded order.",
+    "Strict replay fails closed when the agent does not consume every recorded cassette call.",
+    "Replay does not make real network calls."
+  ],
+  "blockers": []
+}
