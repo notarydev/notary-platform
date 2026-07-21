@@ -85,7 +85,10 @@ class TestReleaseGateVertical:
         client.post(f"/v1/verification-records/{vr['id']}/replay-runs")
         resp = client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
+            json={
+                "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True},
+                "expected_correct_behavior": "ESCALATE_TO_HUMAN",
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["verdict"] == "verified"
@@ -115,7 +118,10 @@ class TestReleaseGateVertical:
         client.post(f"/v1/verification-records/{vr['id']}/replay-runs")
         client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
+            json={
+                "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True},
+                "expected_correct_behavior": "ESCALATE_TO_HUMAN",
+            },
         )
         resp = client.post(f"/v1/verification-records/{vr['id']}/proof-of-mitigation")
         assert resp.status_code == 200
@@ -315,7 +321,10 @@ class TestReleaseGateVertical:
         # Mutation
         mutation = client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
+            json={
+                "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True},
+                "expected_correct_behavior": "ESCALATE_TO_HUMAN",
+            },
         ).json()
         assert mutation["verdict"] == "verified"
 

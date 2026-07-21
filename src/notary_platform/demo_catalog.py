@@ -64,7 +64,10 @@ DEMO_CASES: list[DemoCase] = [
         replayability=ReplayabilityStatus.replayable,
         expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True, "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}},
+        sandbox_readiness={
+            "required": True, "system_id": "sys:bereavement-policy-api", "ready": True,
+            "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True},
+        },
         incident_state="certified",
         proof_state="issued",
         scenario_state="ready",
@@ -729,7 +732,9 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
                 last_run_status=(
                     "passed" if case.scenario_state == "ready" else "not_started" if case.scenario_state == "candidate" else "failed"
                 ),
-                release_gate_ids=["gate:high-risk-support-policy"] if case.scenario_id in {"vr-northstar-001", "api-timeout-fixed", "release-gate-blocked"} else [],
+                release_gate_ids=["gate:high-risk-support-policy"]
+                if case.scenario_id in {"vr-northstar-001", "api-timeout-fixed", "release-gate-blocked"}
+                else [],
                 next_action=(
                     "Promote to scenario library"
                     if case.scenario_state == "candidate"
