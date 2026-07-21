@@ -343,7 +343,7 @@ function chip(n, l, color, view) {
 
 // --- HOME ---
 
-const DEMO_ORG_NAME = "Meridian Credit Union";
+const DEMO_ORG_NAME = "Northstar Air";
 function friendlyOrg(orgId) {
   if (!orgId) return "Organization";
   if (String(orgId).toLowerCase().includes("harborline") || String(orgId).toLowerCase().includes("meridian") || String(orgId).includes("demo")) return DEMO_ORG_NAME;
@@ -451,25 +451,23 @@ function renderHarborlineJourney() {
   return `
     <section class="golden-path">
       <div class="golden-copy">
-        <div class="eyebrow">Meridian Credit Union · Member Lending Decision Assurance</div>
-        <h2>Release Gate golden path</h2>
-        <p>Thin-file applicant was denied when missing bureau evidence should have routed to underwriting review. The demo uses sealed cassette evidence and shows the release blocked before the fix, then passing after the scenario-scoped fix.</p>
+        <div class="eyebrow">Northstar Air · AI Support Bot Assurance</div>
+        <h2>From AI failure to release gate</h2>
+        <p>A support bot told a grieving customer they could get a retroactive bereavement refund — the airline's policy says the opposite. Notary captures the decision, replays it from sealed evidence, verifies the fix, and turns the failure into a release gate so the next bot release cannot repeat it.</p>
         <div class="golden-outcomes">
-          <div class="golden-outcome"><span class="go-label">Original decision</span><span class="go-val" style="color:var(--red)">DENY</span></div>
-          <div class="golden-outcome"><span class="go-label">Expected outcome</span><span class="go-val" style="color:var(--green)">REVIEW</span></div>
-          <div class="golden-outcome"><span class="go-label">Gate before fix</span><span class="go-val" style="color:var(--red)">${seeded ? "FAIL" : "—"}</span></div>
-          <div class="golden-outcome"><span class="go-label">Gate after fix</span><span class="go-val" style="color:var(--green)">${seeded ? "PASS" : "—"}</span></div>
+          <div class="golden-outcome"><span class="go-label">Original decision</span><span class="go-val" style="color:var(--red)">OFFER REFUND</span></div>
+          <div class="golden-outcome"><span class="go-label">Expected outcome</span><span class="go-val" style="color:var(--green)">ESCALATE</span></div>
+          <div class="golden-outcome"><span class="go-label">Gate before fix</span><span class="go-val" style="color:var(--red)">FAIL</span></div>
+          <div class="golden-outcome"><span class="go-label">Gate after fix</span><span class="go-val" style="color:var(--green)">PASS</span></div>
         </div>
         <div class="action-row">
-          <button class="btn btn-green" onclick="seedHarborlineGoldenPath()" data-testid="seed-demo-path-btn">Seed Demo Path</button>
-          ${seeded ? `<button class="btn btn-outline" onclick="openVRDetail('${seeded.verification_record_id}')">Open Record</button>
-          <button class="btn btn-outline" onclick="openReleaseGateDetail('${seeded.release_gate_before_fix_id}')">Blocked Gate</button>
-          <button class="btn" onclick="openReleaseGateDetail('${seeded.release_gate_after_fix_id}')">Passing Gate</button>` : `<button class="btn btn-outline" onclick="nav('setup')">Open Setup</button>`}
+          <button class="btn btn-green" onclick="nav('demo')" data-testid="home-watch-demo-btn">&#9656; Watch the full demo</button>
+          <button class="btn btn-outline" onclick="nav('setup')">Connect your systems</button>
         </div>
       </div>
       <div class="golden-panel">
         <div class="golden-panel-top">
-          <span>${seeded ? "Seeded" : "Ready to seed"}</span>
+          <span>${seeded ? "Seeded" : "The assurance loop"}</span>
           ${seeded ? `${statusBadge(seeded.release_gate_before_fix_status)} ${statusBadge(seeded.release_gate_after_fix_status)}` : badgeDemo()}
         </div>
         <div class="golden-steps">
@@ -548,54 +546,54 @@ const SETUP_STEPS = [
 
 const SETUP_SYSTEMS = [
   {
-    id: "loan-origination",
-    name: "Loan Origination System",
+    id: "support-tickets",
+    name: "Customer Support System",
     selected: true,
     tier: "required",
-    captures: "Applicant facts, application state, and requested product.",
-    why: "The AI decision is made about this applicant and application.",
-    proof: "Proves the inputs the AI actually saw.",
-    not: "Does not capture queue timing, employee assignments, or CRM history.",
+    captures: "Customer message, case metadata, and channel (e.g. Salesforce Service Cloud case).",
+    why: "The AI decision is made on this support case for this customer.",
+    proof: "Proves the exact request the bot actually saw.",
+    not: "Does not capture agent staffing, queue timing, or CRM history.",
   },
   {
-    id: "credit-bureau",
-    name: "Credit Bureau Evidence",
+    id: "policy-api",
+    name: "Policy Knowledge Source",
     selected: true,
     tier: "required",
-    captures: "External bureau response used by the AI.",
-    why: "A missing or borderline bureau response is the causal evidence for the adverse action.",
-    proof: "Enables cassette replay without live bureau calls.",
-    not: "Does not capture bureau latency SLA or third-party availability metrics.",
+    captures: "The official policy response the bot retrieved (e.g. Bereavement Policy API).",
+    why: "A policy mismatch is the causal evidence for the wrong answer.",
+    proof: "Enables cassette replay without live policy-service calls.",
+    not: "Does not capture policy authoring workflow or approvals.",
   },
   {
-    id: "policy-rules",
-    name: "Underwriting Policy Rules",
+    id: "prompt-config",
+    name: "Prompt / Policy Config",
     selected: true,
     tier: "required",
-    captures: "Policy/rules/config version that defined the correct route.",
-    why: "The AI must be evaluated against the policy version in force at the time.",
-    proof: "Proves the rule set that should have routed the case to underwriting review.",
-    not: "Does not capture policy drafting workflow or approval chains.",
+    captures: "Prompt version and policy version in force at decision time.",
+    why: "The bot must be evaluated against the config that was actually live.",
+    proof: "Proves which prompt and policy version produced the decision.",
+    not: "Does not capture unrelated config drafts or feature flags.",
   },
   {
     id: "ai-agent",
-    name: "AI Decision Agent",
+    name: "AI Support Agent",
     selected: true,
     tier: "required",
-    captures: "Model/prompt/output and final AI decision.",
+    captures: "Model, prompt, response, and final decision (escalate vs answer).",
     why: "This is the decision system whose behavior is under review.",
-    proof: "Shows exactly what the AI decided and on what basis.",
-    not: "Does not capture unrelated model training data or general model metrics.",
+    proof: "Shows exactly what the bot decided and on what basis.",
+    not: "Does not capture model training data or general model metrics.",
   },
   {
     id: "human-review",
-    name: "Human Review Queue",
+    name: "Support QA / Human Review",
     selected: false,
     tier: "optional",
     captures: "Expected correct outcome label or override.",
-    why: "A reviewer supplies the ground-truth outcome the AI should have produced.",
-    proof: "Provides customer-approved expected outcome for replay and fix verification.",
-    not: "Does not capture queue wait time, reviewer productivity, or case assignment.",
+    why: "A QA reviewer supplies the ground-truth outcome the bot should have produced.",
+    proof: "Provides the human-approved expected outcome for replay and fix verification.",
+    not: "Does not capture reviewer productivity or case assignment.",
   },
   {
     id: "crm",
@@ -799,9 +797,9 @@ function renderCaptureSnippet(method) {
   const base = "https://api.getnotary.ai/v1";
   let code = "";
   if (method === "sdk") {
-    code = `pip install notary-sdk\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_llm(prompt="loan app #1234", response="decision: DENY")\ncapture.capture_tool(method="POST", url="/credit-bureau", response={"tradelines": 0})\ncapture.capture_decision(decision="DENY")\ncapture.finalize()  # -> sealed Verification Record`;
+    code = `pip install notary-sdk\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_input(text="Can I get a bereavement refund after booking?")\ncapture.capture_tool(method="GET", url="/policy-service/bereavement", response={"retroactive_refund_allowed": False, "human_review_required": True})\ncapture.capture_decision(decision="ESCALATE_TO_HUMAN")\ncapture.finalize()  # -> sealed Verification Record`;
   } else if (method === "api") {
-    code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:lending","business_function":"loan_underwriting"}'`;
+    code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:support-bot","business_function":"customer_support"}'`;
   } else if (method === "webhook") {
     code = `POST ${base}/verification-records/webhook\nAuthorization: Bearer ${tok}\n\n{\n  "source_id": "TKT-1234",\n  "events": [{"kind": "decision", "payload": {"decision": "DENY"}}]\n}`;
   } else {
@@ -864,7 +862,7 @@ function renderOnbRegisterStep() {
       <div class="onb-register-grid">
         <div class="ic-form-card">
           <div class="np-form">
-            <div class="np-field"><label>System name *</label><input id="onb-name" placeholder="e.g. Lending Decision Agent" data-testid="onb-name-input"></div>
+            <div class="np-field"><label>System name *</label><input id="onb-name" placeholder="e.g. Bereavement Support Bot" data-testid="onb-name-input"></div>
             <div class="integ-form-row">
               <div class="np-field" style="flex:1"><label>Type</label>
                 <select id="onb-type" data-testid="onb-type-select">

@@ -81,3 +81,18 @@ Generalized the replay player to play any scenario (events + verdict). Client-si
 - Update onboarding Setup examples to the support-bot systems (Salesforce/Bereavement Policy API/
   GitHub Actions) so Setup and Demo tell one coherent story.
 - Optionally retire/rework the Meridian lending golden-path on Home in favor of Northstar.
+
+## Iteration 4 — Standardized entire app on Northstar Air (2026-07-21)
+- Topbar org → "Northstar Air" (DEMO_ORG_NAME); friendlyOrg maps demo org_id accordingly.
+- Home hero rewritten to the support-bot story ("From AI failure to release gate", OFFER REFUND →
+  ESCALATE, gate FAIL→PASS); primary CTA now "Watch the full demo" (nav demo) + "Connect your systems".
+  Removed the Meridian "Seed Demo Path" button from Home.
+- Setup evidence sources rewritten to support-bot systems (Customer Support System, Policy Knowledge
+  Source, Prompt/Policy Config, AI Support Agent, Support QA). Register placeholder + SDK/API snippets
+  now support-bot flavored.
+- Backend demo org name → "Northstar Air"; demo_preflight presenter anchor + static-app test updated
+  to Northstar strings. test_platform_static_app: 3/3 pass.
+- Verified: 12 views render + full demo walk, 0 JS errors. List screens show empty states (backend
+  seeding is the deferred wiring task in docs/FRONTEND_HANDOFF.md).
+- NOTE: unused legacy fns (renderSetupWorkflowStep, sendHarborlineTestCapture, seeded golden-path
+  branch) still contain "Meridian" strings but are not reachable in the current flow.
