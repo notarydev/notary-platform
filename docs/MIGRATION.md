@@ -108,7 +108,7 @@ aws secretsmanager get-secret-value --secret-id notary-dev/signing  --region us-
 #    NOTARY_DATABASE_URL=postgresql+psycopg2://<user>:<pass>@<host>:5432/notary_dev
 #    NOTARY_EVIDENCE_BUCKET=notary-evidence-447633181871-dev
 #    NOTARY_KMS_KEY_ARN=arn:aws:kms:us-east-2:447633181871:key/2cd36ab8-979c-409b-ab97-70a0a6b7073a
-#    NOTARY_SIGNING_KEY_ID=2cd36ab8-979c-409b-ab97-70a0a6b7073a
+#    NOTARY_SIGNING_KEY_ID=platform-workability
 #    NOTARY_API_AUTH_TOKEN=      # empty = auth disabled locally
 
 # 6. Verify
