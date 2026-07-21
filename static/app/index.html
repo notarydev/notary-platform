@@ -8,20 +8,23 @@
 </head>
 <body>
 <div class="side">
-  <div class="side-brand">◈ Notary <span>Platform</span></div>
+  <div class="side-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+    Notary <span>Platform</span>
+  </div>
   <div class="side-nav">
-    <button class="nav-item active" data-view="home">⌂ Home</button>
-    <button class="nav-item" data-view="integrations">Integrations</button>
-    <button class="nav-item" data-view="setup">Demo</button>
-    <button class="nav-item" data-view="verification-records">Verification Records</button>
-    <button class="nav-item" data-view="incidents">Incidents</button>
-    <button class="nav-item" data-view="proofs">Proofs</button>
-    <button class="nav-item" data-view="scenarios">Scenarios</button>
-    <button class="nav-item" data-view="readiness">Readiness</button>
-    <button class="nav-item" data-view="governance">Governance</button>
-    <button class="nav-item" data-view="evidence">Evidence</button>
-    <button class="nav-item" data-view="settings">Settings</button>
-    <button class="nav-item" data-view="about">About</button>
+    <button class="nav-item active" data-view="home" data-testid="nav-home">Home</button>
+    <button class="nav-item" data-view="integrations" data-testid="nav-integrations">Integrations</button>
+    <button class="nav-item" data-view="setup" data-testid="nav-setup">Demo</button>
+    <button class="nav-item" data-view="verification-records" data-testid="nav-verification-records">Verification Records</button>
+    <button class="nav-item" data-view="incidents" data-testid="nav-incidents">Incidents</button>
+    <button class="nav-item" data-view="proofs" data-testid="nav-proofs">Proofs</button>
+    <button class="nav-item" data-view="scenarios" data-testid="nav-scenarios">Scenarios</button>
+    <button class="nav-item" data-view="readiness" data-testid="nav-readiness">Readiness</button>
+    <button class="nav-item" data-view="governance" data-testid="nav-governance">Governance</button>
+    <button class="nav-item" data-view="evidence" data-testid="nav-evidence">Evidence</button>
+    <button class="nav-item" data-view="settings" data-testid="nav-settings">Settings</button>
+    <button class="nav-item" data-view="about" data-testid="nav-about">About</button>
   </div>
 </div>
 <div class="main">
@@ -32,7 +35,7 @@
     </select>
     <input class="env-select" id="agent-version" value="1.2.0" placeholder="Agent version" style="width:120px" onchange="switchAgentVersion(this.value)">
     <span class="badge badge-demo hidden" id="global-demo">DEMO</span>
-    <span style="margin-left:auto;font-size:11px;color:var(--dim)" id="org-name"></span>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted);font-weight:500" id="org-name"></span>
   </div>
   <div class="demo-banner hidden" id="demo-banner">Fictional demo data — no production or customer data.</div>
   <div class="content" id="content">

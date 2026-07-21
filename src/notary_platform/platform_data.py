@@ -16,7 +16,7 @@ from notary_platform.models import (
 
 DEMO_ORG = Organization(
     id="org:harborline-demo",
-    name="Harborline Credit Union Demo",
+    name="Meridian Credit Union",
     environments=["env:demo", "env:staging", "env:production"],
 )
 

@@ -135,7 +135,7 @@ def run_harborline_preflight(reset: bool = True) -> dict[str, Any]:
         _check(
             "presenter_ui",
             app_js_response.status_code == 200
-            and "Harborline Credit Union" in app_js_response.text
+            and "Meridian Credit Union" in app_js_response.text
             and "Blocked Gate" in app_js_response.text
             and "Passing Gate" in app_js_response.text,
             "Platform app contains the Harborline presenter path",

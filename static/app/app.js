@@ -301,7 +301,8 @@ async function R() {
   function viewTitle(v) {
   const titles = {
     home: "Home",
-    setup: "Setup",
+    integrations: "Integrations",
+    setup: "Demo",
     "verification-records": "Verification Records",
     "vr-detail": "Verification Record Detail",
     incidents: "Incidents",
@@ -335,8 +336,15 @@ function chip(n, l, color, view) {
 
 // --- HOME ---
 
+const DEMO_ORG_NAME = "Meridian Credit Union";
+function friendlyOrg(orgId) {
+  if (!orgId) return "Organization";
+  if (String(orgId).toLowerCase().includes("harborline") || String(orgId).toLowerCase().includes("meridian") || String(orgId).includes("demo")) return DEMO_ORG_NAME;
+  return orgId;
+}
+
 function renderHome(c, h) {
-  q("#org-name").textContent = h.org_id || "Organization";
+  q("#org-name").textContent = friendlyOrg(h.org_id);
   const sh = h.setup_health || {};
   const qu = h.queues || {};
   const pf = h.recent_proofs || [];
@@ -394,7 +402,7 @@ function renderHome(c, h) {
 function renderHarborlineJourney() {
   const seeded = S.harborlineSeed;
   const steps = seeded ? [
-    { name: "Capture", detail: "Sealed Harborline loan decision", data: [
+    { name: "Capture", detail: "Sealed Meridian loan decision", data: [
       ["Applicant", "HLCU-PL-0427"],
       ["Original decision", "DENY"],
       ["Expected outcome", "UNDERWRITING_REVIEW"],
@@ -436,11 +444,17 @@ function renderHarborlineJourney() {
   return `
     <section class="golden-path">
       <div class="golden-copy">
-        <div class="eyebrow">Harborline Credit Union · Member Lending Decision Assurance</div>
+        <div class="eyebrow">Meridian Credit Union · Member Lending Decision Assurance</div>
         <h2>Release Gate golden path</h2>
         <p>Thin-file applicant was denied when missing bureau evidence should have routed to underwriting review. The demo uses sealed cassette evidence and shows the release blocked before the fix, then passing after the scenario-scoped fix.</p>
+        <div class="golden-outcomes">
+          <div class="golden-outcome"><span class="go-label">Original decision</span><span class="go-val" style="color:var(--red)">DENY</span></div>
+          <div class="golden-outcome"><span class="go-label">Expected outcome</span><span class="go-val" style="color:var(--green)">REVIEW</span></div>
+          <div class="golden-outcome"><span class="go-label">Gate before fix</span><span class="go-val" style="color:var(--red)">${seeded ? "FAIL" : "—"}</span></div>
+          <div class="golden-outcome"><span class="go-label">Gate after fix</span><span class="go-val" style="color:var(--green)">${seeded ? "PASS" : "—"}</span></div>
+        </div>
         <div class="action-row">
-          <button class="btn btn-green" onclick="seedHarborlineGoldenPath()">Seed Harborline Path</button>
+          <button class="btn btn-green" onclick="seedHarborlineGoldenPath()" data-testid="seed-demo-path-btn">Seed Demo Path</button>
           ${seeded ? `<button class="btn btn-outline" onclick="openVRDetail('${seeded.verification_record_id}')">Open Record</button>
           <button class="btn btn-outline" onclick="openReleaseGateDetail('${seeded.release_gate_before_fix_id}')">Blocked Gate</button>
           <button class="btn" onclick="openReleaseGateDetail('${seeded.release_gate_after_fix_id}')">Passing Gate</button>` : `<button class="btn btn-outline" onclick="nav('setup')">Open Setup</button>`}
@@ -474,10 +488,10 @@ async function seedHarborlineGoldenPath() {
   try {
     const r = await apiPost("/v1/demo/harborline-release-gate/seed");
     S.harborlineSeed = r;
-    notify("Harborline path ready: gate " + r.release_gate_before_fix_status + " -> " + r.release_gate_after_fix_status, "success");
+    notify("Demo path ready: gate " + r.release_gate_before_fix_status + " -> " + r.release_gate_after_fix_status, "success");
     R();
   } catch (e) {
-    notify("Harborline seed failed: " + e.message, "error");
+    notify("Demo seed failed: " + e.message, "error");
   }
 }
 
@@ -522,12 +536,12 @@ function confirmWorkflow() {
 }
 
 const SETUP_STEPS = [
-  { id: "workflow", label: "Decision Workflow" },
-  { id: "boundary", label: "AI Decision Boundary" },
-  { id: "systems", label: "Evidence Systems" },
-  { id: "capture", label: "Capture Method" },
-  { id: "test", label: "Test Capture" },
-  { id: "readiness", label: "Replay Readiness" },
+  { id: "workflow", label: "Decision Workflow", desc: "Pick the high-stakes AI decision to assure" },
+  { id: "boundary", label: "Decision Boundary", desc: "Define what evidence is in and out of scope" },
+  { id: "systems", label: "Evidence Systems", desc: "Connect the systems that hold the evidence" },
+  { id: "capture", label: "Capture Method", desc: "Choose how decisions reach Notary" },
+  { id: "test", label: "Test Capture", desc: "Send one sealed capture end-to-end" },
+  { id: "readiness", label: "Replay Readiness", desc: "Confirm the record can be replayed" },
 ];
 
 const SETUP_SYSTEMS = [
@@ -653,10 +667,39 @@ function renderSetupStepIndicator(step) {
 
 function renderSetupNav(step) {
   const canNext = setupCanNext(step);
+  const isLast = step === SETUP_STEPS.length - 1;
   return `
     <div class="setup-nav">
-      ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})">Back</button>` : "<span></span>"}
-      ${step < SETUP_STEPS.length - 1 ? `<button class="btn" onclick="renderSetupStep(${step + 1})" ${canNext ? "" : "disabled"}>Next</button>` : ""}
+      ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})" data-testid="setup-back-btn">Back</button>` : "<span></span>"}
+      ${isLast
+        ? `<button class="btn btn-green" onclick="nav('verification-records')" data-testid="setup-finish-btn">Finish — View Records</button>`
+        : `<button class="btn" onclick="renderSetupStep(${step + 1})" ${canNext ? "" : "disabled"} data-testid="setup-next-btn">Continue</button>`}
+    </div>`;
+}
+
+function renderSetupTrackerInner(step) {
+  S.setupMaxStep = Math.max(S.setupMaxStep || 0, step);
+  const items = SETUP_STEPS.map((s, i) => {
+    const state = i === step ? "active" : i < step ? "done" : "";
+    const clickable = i <= S.setupMaxStep;
+    return `
+      <button class="setup-tstep ${state}" ${clickable ? `onclick="renderSetupStep(${i})"` : "disabled"} data-testid="setup-step-${s.id}">
+        <span class="setup-tnum">${i < step ? "&#10003;" : i + 1}</span>
+        <span class="setup-tbody">
+          <span class="setup-tlabel">${esc(s.label)}</span>
+          <span class="setup-tdesc">${esc(s.desc)}</span>
+        </span>
+      </button>`;
+  }).join("");
+  const pct = Math.round((step / (SETUP_STEPS.length - 1)) * 100);
+  return `
+    <div class="setup-progress-label">Step ${step + 1} of ${SETUP_STEPS.length} · ${pct}% complete</div>
+    <div class="setup-progress"><div class="setup-progress-bar" style="width:${pct}%"></div></div>
+    <div class="setup-tsteps">${items}</div>
+    <div class="setup-token">
+      <div class="setup-token-top"><span>API Token</span><span class="badge badge-built">ACTIVE</span></div>
+      ${renderCodeBlock(S.token || "ntry-demo-...", {mask: true})}
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Sent automatically in headers. Manage in <span class="link" onclick="nav('settings')">Settings</span>.</div>
     </div>`;
 }
 
@@ -668,7 +711,7 @@ function renderSetupWorkflowStep() {
       <p class="setup-lead">Notary turns a captured AI failure into sealed, replayable evidence. Start with one high-stakes decision workflow.</p>
       <div class="workflow-grid">
         <div class="workflow-card selected">
-          <div class="workflow-org">Harborline Credit Union</div>
+          <div class="workflow-org">Meridian Credit Union</div>
           <h3>Thin-file personal loan adverse-action</h3>
           <p>A thin-file applicant was denied when missing bureau evidence should have routed the case to underwriting review.</p>
           <div class="workflow-meta">
@@ -680,7 +723,7 @@ function renderSetupWorkflowStep() {
         </div>
         <div class="workflow-card planned">
           <h3>Other workflows</h3>
-          <p>Additional decision workflows can be added once the Harborline demo path is proven.</p>
+          <p>Additional decision workflows can be added once the Meridian demo path is proven.</p>
           <span class="badge badge-planned">Planned</span>
         </div>
       </div>
@@ -791,7 +834,7 @@ async function sendHarborlineTestCapture() {
       root_hash: vr.root_hash || "",
       replayability: vr.replayability || "Pending assessment",
     };
-    notify("Harborline test capture created", "success");
+    notify("Meridian test capture created", "success");
     renderSetupStep(5); // jump to readiness
   } catch (e) {
     notify("Test capture failed: " + e.message, "error");
@@ -805,7 +848,7 @@ function renderSetupTestStep() {
   return `
     <div class="setup-step-content">
       <h2>Send a test capture</h2>
-      <p class="setup-lead">Create a sample Harborline capture packet and confirm the evidence is sealed and replayable.</p>
+      <p class="setup-lead">Create a sample Meridian capture packet and confirm the evidence is sealed and replayable.</p>
       ${cap ? `
         <div class="test-capture-packet">
           <h3>Captured packet</h3>
@@ -825,7 +868,7 @@ function renderSetupTestStep() {
         </div>
       ` : `
         <div class="empty-state compact">
-          <h3>Harborline test capture</h3>
+          <h3>Meridian test capture</h3>
           <p>This will create one Verification Record for applicant HLCU-PL-0427 with a sealed cassette and root hash.</p>
           <button id="harborline-test-capture-btn" class="btn" onclick="sendHarborlineTestCapture()">Send Test Capture</button>
         </div>
@@ -871,8 +914,8 @@ function renderSetupReadinessStep() {
 
 function renderSetupStep(step) {
   S.setupStep = step;
-  const c = q("#setup-container");
-  if (!c) return;
+  const contentEl = q("#setup-step-content");
+  if (!contentEl) return;
   let content = "";
   switch (SETUP_STEPS[step].id) {
     case "workflow": content = renderSetupWorkflowStep(); break;
@@ -882,7 +925,11 @@ function renderSetupStep(step) {
     case "test": content = renderSetupTestStep(); break;
     case "readiness": content = renderSetupReadinessStep(); break;
   }
-  c.innerHTML = renderSetupStepIndicator(step) + content + renderSetupNav(step);
+  contentEl.innerHTML = content;
+  const navSlot = q("#setup-nav-slot");
+  if (navSlot) navSlot.innerHTML = renderSetupNav(step);
+  const tracker = q("#setup-tracker");
+  if (tracker) tracker.innerHTML = renderSetupTrackerInner(step);
 }
 
 async function renderSetup(c) {
@@ -893,18 +940,19 @@ async function renderSetup(c) {
   const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
   const step = typeof S.setupStep === "number" ? S.setupStep : 0;
   c.innerHTML = `
-    <div class="int-card" style="margin-bottom:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><h4>API Token</h4><p style="font-size:12px;color:var(--muted)">Sent automatically in headers. Copy for CLI/curl use.</p></div>
-        <span class="badge badge-built">ACTIVE</span>
+    <div class="setup-hero">
+      <div class="setup-hero-copy">
+        <div class="eyebrow">Onboarding · Meridian Credit Union</div>
+        <h2>Set up AI Decision Assurance</h2>
+        <p>Follow the guided path to capture one high-stakes AI decision, seal it as replayable evidence, and gate releases on it — the same way a regulated lender would onboard a real decision workflow.</p>
       </div>
-      ${renderCodeBlock(S.token || "ntry-demo-...", {mask: true})}
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Change or view in <span class="link" onclick="nav('settings')">Settings</span></div>
     </div>
-    <div id="setup-container" class="setup-wizard">
-      ${renderSetupStepIndicator(step)}
-      <div id="setup-step-content"></div>
-      ${renderSetupNav(step)}
+    <div class="setup-shell">
+      <aside class="setup-tracker" id="setup-tracker"></aside>
+      <div class="setup-pane">
+        <div id="setup-step-content"></div>
+        <div id="setup-nav-slot"></div>
+      </div>
     </div>
     <div class="section-title" style="margin-top:32px">Capture Adapter Registry</div>
     <div class="section-sub">What capture methods are available today vs planned</div>
@@ -1109,19 +1157,19 @@ function renderIntegrationsChooseExperience() {
     <p style="font-size:14px;color:var(--muted);margin-bottom:24px;max-width:600px">Choose how you want to get started with AI Decision Assurance.</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:720px">
       <div class="ic-experience-card" onclick="nav('setup')" style="cursor:pointer">
-        <div class="ic-experience-icon">▶</div>
-        <h3>Explore Harborline Demo</h3>
-        <p>See Notary in action with our preconfigured lending scenario. Walk through the full assurance loop — capture, replay, fix, proof, and release gate.</p>
+        <div class="ic-experience-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>
+        <h3>Explore the Demo</h3>
+        <p>See Notary in action with a preconfigured Meridian Credit Union lending scenario. Walk through the full assurance loop — capture, replay, fix, proof, and release gate.</p>
         <span class="badge badge-demo" style="margin-top:12px">GUIDED DEMO</span>
       </div>
       <div class="ic-experience-card ic-experience-primary" onclick="S._ic_experience_chosen=true;renderIntegrations(q('#main-content'))" style="cursor:pointer">
-        <div class="ic-experience-icon">⚙</div>
+        <div class="ic-experience-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
         <h3>Set Up Your Organization</h3>
         <p>Register your AI systems, connect capture sources, and configure evidence handling. No assumptions about your industry or workflow.</p>
         <span class="badge badge-built" style="margin-top:12px">GET STARTED</span>
       </div>
     </div>
-    <p style="font-size:11px;color:var(--dim);margin-top:20px">Harborline demo is a guided walkthrough. Customer onboarding starts with zero assumptions.</p>`;
+    <p style="font-size:11px;color:var(--dim);margin-top:20px">The demo is a guided walkthrough. Customer onboarding starts with zero assumptions.</p>`;
 }
 
 function renderIntegrationsStats(status) {

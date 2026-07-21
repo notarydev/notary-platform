@@ -95,8 +95,10 @@ function renderCodeBlock(code, opts = {}) {
   return `
     <div class="code-block">
       <pre id="${id}">${esc(display)}</pre>
-      ${opts.mask ? `<button class="btn btn-sm btn-outline" onclick="toggleCodeReveal('${id}', '${esc(code)}', this)">Reveal</button>` : ""}
-      ${opts.copy !== false ? `<button class="btn btn-sm btn-outline" onclick="copyToClipboard('${id}', this)">Copy</button>` : ""}
+      <div class="code-actions">
+        ${opts.mask ? `<button class="btn btn-sm btn-outline" onclick="toggleCodeReveal('${id}', '${esc(code)}', this)">Reveal</button>` : ""}
+        ${opts.copy !== false ? `<button class="btn btn-sm btn-outline" onclick="copyToClipboard('${id}', this)">Copy</button>` : ""}
+      </div>
     </div>`;
 }
 
