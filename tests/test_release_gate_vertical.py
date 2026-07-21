@@ -85,16 +85,16 @@ class TestReleaseGateVertical:
         client.post(f"/v1/verification-records/{vr['id']}/replay-runs")
         resp = client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
+            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
         )
         assert resp.status_code == 200
         assert resp.json()["verdict"] == "verified"
         assert resp.json()["decision_changed"] is True
 
-        # Same record, failing fix config.
+        # Same record, failing fix config (no fix applied).
         resp = client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"threshold": 900}, "expected_correct_behavior": "APPROVE"},
+            json={"fix_config": {}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
         )
         assert resp.status_code == 200
         assert resp.json()["verdict"] == "not_verified"
@@ -115,7 +115,7 @@ class TestReleaseGateVertical:
         client.post(f"/v1/verification-records/{vr['id']}/replay-runs")
         client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
+            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
         )
         resp = client.post(f"/v1/verification-records/{vr['id']}/proof-of-mitigation")
         assert resp.status_code == 200
@@ -202,37 +202,37 @@ class TestReleaseGateVertical:
         assert resp.json()["status"] == "error"
 
     def test_harborline_release_gate_fails_before_fix_and_passes_after_fix(self) -> None:
-        resp = client.post("/v1/demo/harborline-release-gate/seed")
+        resp = client.post("/v1/demo/northstar/seed")
         assert resp.status_code == 200
         seeded = resp.json()
-        assert seeded["demo_org"] == "Harborline Credit Union"
-        assert seeded["scenario_contract"]["scenario_id"] == "harborline-personal-loan-adverse-action"
-        assert seeded["scenario_contract"]["original_captured_decision"] == "DENY"
-        assert seeded["scenario_contract"]["expected_correct_behavior"] == "UNDERWRITING_REVIEW"
+        assert seeded["demo_org"] == "Northstar Air"
+        assert seeded["scenario_contract"]["scenario_id"] == "vr-northstar-001"
+        assert seeded["scenario_contract"]["original_captured_decision"] == "OFFER_RETROACTIVE_REFUND"
+        assert seeded["scenario_contract"]["expected_correct_behavior"] == "ESCALATE_TO_HUMAN"
 
         vr = client.get(f"/v1/verification-records/{seeded['verification_record_id']}").json()
-        assert vr["source_record_ref"] == "HLCU-PL-0427"
-        assert vr["agent_id"] == "agent:harborline-personal-loan-adverse-action"
+        assert vr["source_record_ref"] == "50093821"
+        assert vr["agent_id"] == "agent:support-bot-v42"
         assert vr["replayability"] == "replayable"
         assert vr["current_label_id"] == seeded["label_id"]
-        assert vr["expected_outcome"] == "UNDERWRITING_REVIEW"
+        assert vr["expected_outcome"] == "ESCALATE_TO_HUMAN"
 
         replay = client.get(f"/v1/replay-runs/{seeded['replay_run_id']}").json()
         assert replay["status"] == "replayed"
-        assert replay["original_decision"] == "DENY"
-        assert replay["replayed_decision"] == "DENY"
+        assert replay["original_decision"] == "OFFER_RETROACTIVE_REFUND"
+        assert replay["replayed_decision"] == "OFFER_RETROACTIVE_REFUND"
 
         mutation = client.get(f"/v1/mutation-tests/{seeded['mutation_test_id']}").json()
         assert mutation["verdict"] == "verified"
-        assert mutation["original_decision"] == "DENY"
-        assert mutation["mutated_decision"] == "UNDERWRITING_REVIEW"
+        assert mutation["original_decision"] == "OFFER_RETROACTIVE_REFUND"
+        assert mutation["mutated_decision"] == "ESCALATE_TO_HUMAN"
         assert mutation["decision_changed"] is True
 
         scenario = client.get(f"/v1/scenarios/{seeded['scenario_id']}").json()
         assert scenario["source_vr_id"] == seeded["verification_record_id"]
         assert scenario["source_incident_id"] == seeded["incident_id"]
         assert scenario["approved_label_id"] == seeded["label_id"]
-        assert scenario["expected_outcome"] == "UNDERWRITING_REVIEW"
+        assert scenario["expected_outcome"] == "ESCALATE_TO_HUMAN"
         assert f"vr:{seeded['verification_record_id']}" in scenario["evidence_refs"]
         assert f"incident:{seeded['incident_id']}" in scenario["evidence_refs"]
 
@@ -245,9 +245,9 @@ class TestReleaseGateVertical:
         assert f"scenario_run:{before_gate['scenario_run_id']}" in before_gate["evidence_refs"]
         before_result = next(r for r in before_gate["scenario_results"] if r["scenario_id"] == seeded["scenario_id"])
         assert before_result["status"] == "failed"
-        assert before_result["expected_decision"] == "UNDERWRITING_REVIEW"
-        assert before_result["actual_decision"] == "DENY"
-        assert before_result["reason"] == "Expected UNDERWRITING_REVIEW, got DENY"
+        assert before_result["expected_decision"] == "ESCALATE_TO_HUMAN"
+        assert before_result["actual_decision"] == "OFFER_RETROACTIVE_REFUND"
+        assert before_result["reason"] == "Expected ESCALATE_TO_HUMAN, got OFFER_RETROACTIVE_REFUND"
 
         after_gate = client.get(f"/v1/release-gate/checks/{seeded['release_gate_after_fix_id']}").json()
         assert after_gate["status"] == "pass"
@@ -257,8 +257,8 @@ class TestReleaseGateVertical:
         assert f"certificate:{after_gate['certificate_id']}" in after_gate["evidence_refs"]
         after_result = next(r for r in after_gate["scenario_results"] if r["scenario_id"] == seeded["scenario_id"])
         assert after_result["status"] == "passed"
-        assert after_result["expected_decision"] == "UNDERWRITING_REVIEW"
-        assert after_result["actual_decision"] == "UNDERWRITING_REVIEW"
+        assert after_result["expected_decision"] == "ESCALATE_TO_HUMAN"
+        assert after_result["actual_decision"] == "ESCALATE_TO_HUMAN"
         assert after_result["reason"] == ""
 
         cert = client.get(f"/v1/certificates/{after_gate['certificate_id']}").json()
@@ -315,7 +315,7 @@ class TestReleaseGateVertical:
         # Mutation
         mutation = client.post(
             f"/v1/verification-records/{vr['id']}/mutation-tests",
-            json={"fix_config": {"threshold": 620}, "expected_correct_behavior": "APPROVE"},
+            json={"fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}, "expected_correct_behavior": "ESCALATE_TO_HUMAN"},
         ).json()
         assert mutation["verdict"] == "verified"
 

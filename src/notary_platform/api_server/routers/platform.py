@@ -161,7 +161,7 @@ def get_home(
         if inc.certificate and inc.status.value == "certified":
             recent_proofs.append({
                 "incident_id": inc.incident_id,
-                "agent": "Lending Decision Agent" if "lending" in str(inc.incident_id).lower() else "Support Handoff Agent",
+                "agent": "Bereavement Support Bot",
                 "status": "certified",
                 "date": inc.certificate.get("timestamp", ""),
             })

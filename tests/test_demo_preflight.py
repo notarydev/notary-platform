@@ -20,11 +20,14 @@ def test_preflight_text_report_is_presenter_ready() -> None:
     result = run_harborline_preflight()
     report = format_text_report(result)
 
-    assert "Harborline demo preflight: PASS" in report
+    assert "Northstar demo preflight: PASS" in report
     assert "Verification Record:" in report
     assert "Blocked Gate:" in report
     assert "Passing Gate:" in report
     assert "Claim scope:" in report
+
+    # Verify the report references Northstar data, not Harborline.
+    assert "Harborline demo preflight" not in report
 
 
 def test_preflight_cli_json_mode_returns_success() -> None:

@@ -116,31 +116,6 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
 
     def agent(cassette: ResponseCassette, **kwargs: Any) -> str:
         mode = kwargs.get("mode", "default")
-        if scenario.scenario_id == "harborline-personal-loan-adverse-action":
-            recorded = dict(scenario.cassette_response)
-            result = cassette.lookup("POST", "https://demo.notary.local/credit-bureau")
-            if result is not None and isinstance(result.get("response"), dict):
-                recorded.update(result["response"])
-
-            evidence_status = str(recorded.get("bureau_evidence_status", "")).lower()
-            policy_band = str(recorded.get("policy_band", "")).lower()
-            score = int(recorded.get("credit_score", recorded.get("score", 0)) or 0)
-            review_worthy = (
-                recorded.get("income_verified") is True
-                and (
-                    evidence_status.startswith("missing")
-                    or policy_band == "borderline_review"
-                    or 660 <= score <= 700
-                )
-            )
-            fix_enabled = bool(
-                kwargs.get("route_missing_or_borderline_bureau_to_underwriting_review")
-                or mode == "fixed"
-            )
-            if fix_enabled and review_worthy:
-                return "UNDERWRITING_REVIEW"
-            return "DENY"
-
         if scenario.scenario_id == "lending-denial":
             threshold = int(kwargs.get("threshold", 700))
             result = cassette.lookup("POST", "https://demo.notary.local/credit-api")
@@ -158,6 +133,25 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
             if kwargs.get("remove_age_proxy") or mode == "fixed":
                 return "ADVANCE_TO_REVIEW"
             return "REJECT"
+
+        if scenario.scenario_id == "vr-northstar-001":
+            recorded = dict(scenario.cassette_response)
+            try:
+                policy_lookup = cassette.lookup("POST", "https://demo.notary.local/bereavement-policy-api")
+                if policy_lookup is not None and isinstance(policy_lookup.get("response"), dict):
+                    recorded.update(policy_lookup["response"])
+            except Exception:
+                pass
+            retroactive_allowed = bool(recorded.get("retroactive_refund_allowed", False))
+            human_review_required = bool(recorded.get("human_review_required", False))
+            enforce = bool(
+                kwargs.get("require_policy_match_for_refund_claims")
+                or kwargs.get("escalate_when_policy_requires_human_review")
+                or mode == "fixed"
+            )
+            if enforce and (not retroactive_allowed or human_review_required):
+                return "ESCALATE_TO_HUMAN"
+            return "OFFER_RETROACTIVE_REFUND"
 
         if scenario.scenario_id == "customer-service-handoff":
             recorded = dict(scenario.cassette_response)
@@ -607,10 +601,20 @@ class ReplayService:
         for sid in SCENARIOS:
             if sid in vr.source_system_id or sid in vr.agent_id:
                 return sid
-        # Try to match by business title or source record ref
+        ctx = (vr.business_function or "").lower()
         for sid, scenario in SCENARIOS.items():
-            if scenario.title.lower() in (vr.business_function or "").lower():
+            title_lower = scenario.title.lower()
+            if title_lower in ctx:
                 return sid
+            if ctx and any(word in ctx for word in title_lower.split() if len(word) > 5):
+                return sid
+        # Fallback: check if any VR field partially matches a scenario title
+        for sid, scenario in SCENARIOS.items():
+            title_lower = scenario.title.lower()
+            vr_text = (vr.agent_id + " " + vr.source_system_id + " " + ctx).lower()
+            for word in title_lower.split():
+                if len(word) > 3 and word in vr_text:
+                    return sid
         return "lending-denial"
 
     def run_replay(self, vr_id: str, org_id: str) -> ReplayRun:
@@ -1270,10 +1274,27 @@ class ScenarioRunService:
 
         # Determine scenario id from source.
         scenario_id = "lending-denial"
-        for sid in SCENARIOS:
-            if sid in scenario.source_system_id or sid in vr.agent_id or sid in scenario.business_title.lower():
+        ctx = (scenario.business_title or "").lower()
+        for sid, sc in SCENARIOS.items():
+            if sid in scenario.source_system_id or sid in vr.agent_id or sid in ctx:
                 scenario_id = sid
                 break
+            if sc.title.lower() in ctx:
+                scenario_id = sid
+                break
+            if ctx and any(word in ctx for word in sc.title.lower().split() if len(word) > 5):
+                scenario_id = sid
+                break
+        else:
+            # Fallback: partial word match across VR fields
+            vr_text = (vr.agent_id + " " + scenario.source_system_id + " " + ctx).lower()
+            for sid, sc in SCENARIOS.items():
+                for word in sc.title.lower().split():
+                    if len(word) > 3 and word in vr_text:
+                        scenario_id = sid
+                        break
+                if scenario_id != "lending-denial":
+                    break
 
         agent_fn = self.registry.get_agent(scenario_id)
         try:

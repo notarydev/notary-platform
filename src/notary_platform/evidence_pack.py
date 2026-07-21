@@ -1,4 +1,4 @@
-"""Build a local final rehearsal evidence pack for the Harborline pilot demo."""
+"""Build a local final rehearsal evidence pack for the Northstar Air pilot demo."""
 
 from __future__ import annotations
 
@@ -56,15 +56,15 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
             "Release Gate",
         ],
         "surfaces": {
-            "platform": "Customer-facing Harborline demo and proof workflow",
-            "website": "Public Harborline positioning and design-partner pilot offer",
+            "platform": "Customer-facing Northstar Air demo and proof workflow",
+            "website": "Public Northstar Air positioning and design-partner pilot offer",
             "command_center": "Internal program control and live status",
         },
     }
     limitations = {
         "generated_at": generated_at,
         "limitations": [
-            "Harborline evidence is a demo scenario, not real customer data.",
+            "Northstar Air evidence is a demo scenario, not real customer data.",
             "Local evidence pack uses dev/local settings unless shared/pilot readiness passes.",
             "Security readiness blocks shared/pilot claims until auth, CORS, remote storage, and KMS are configured.",
             "Proof is scoped to the tested scenario and does not certify general AI safety, fairness, or compliance.",
@@ -74,7 +74,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
     rehearsal = {
         "generated_at": generated_at,
         "status": "pass" if preflight["status"] == "pass" else "blocked",
-        "demo": "Harborline Credit Union personal-loan adverse-action workflow",
+        "demo": "Northstar Air bereavement support-bot refund case",
         "required_recordings": [
             "Open platform app home Harborline path",
             "Open Verification Record",
@@ -83,7 +83,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
             "Open readiness certificate verification",
         ],
         "artifacts": {
-            "preflight": "harborline-preflight.json",
+            "preflight": "northstar-preflight.json",
             "security_readiness": "security-readiness.json",
             "blocked_gate": "blocked-gate.json",
             "passing_gate": "passing-gate.json",
@@ -94,7 +94,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
         },
     }
 
-    _write_json(output_dir / "harborline-preflight.json", preflight)
+    _write_json(output_dir / "northstar-preflight.json", preflight)
     _write_json(output_dir / "security-readiness.json", security)
     _write_json(output_dir / "blocked-gate.json", blocked_gate)
     _write_json(output_dir / "passing-gate.json", passing_gate)
@@ -107,7 +107,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build the local Harborline final rehearsal evidence pack.")
+    parser = argparse.ArgumentParser(description="Build the local Northstar Air final rehearsal evidence pack.")
     parser.add_argument("--output-dir", default="artifacts/final-evidence-pack", help="Directory to write JSON evidence artifacts.")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     manifest = build_evidence_pack(Path(args.output_dir))

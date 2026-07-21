@@ -49,13 +49,19 @@ def seed_demo_catalog(org_id: str = Depends(require_auth)) -> dict[str, Any]:
     return result
 
 
-@router.post("/demo/harborline-release-gate/seed")
-def seed_harborline_release_gate(org_id: str = Depends(require_auth)) -> dict[str, Any]:
-    """Seed the Harborline Credit Union flagship fail/pass Release Gate path."""
-    from notary_platform.demo_catalog import seed_harborline_release_gate_demo
+@router.post("/demo/northstar/seed")
+def seed_northstar_release_gate(org_id: str = Depends(require_auth)) -> dict[str, Any]:
+    """Seed the Northstar Air flagship fail/pass Release Gate path."""
+    from notary_platform.demo_catalog import seed_northstar_release_gate_demo
 
     registry = _registry()
-    return seed_harborline_release_gate_demo(registry, org_id=org_id)
+    return seed_northstar_release_gate_demo(registry, org_id=org_id)
+
+
+@router.post("/demo/harborline-release-gate/seed")
+def seed_harborline_release_gate(org_id: str = Depends(require_auth)) -> dict[str, Any]:
+    """Legacy alias: delegates to the Northstar seed."""
+    return seed_northstar_release_gate(org_id)
 
 
 # ---------------------------------------------------------------------------

@@ -54,61 +54,61 @@ class DemoCase:
 
 DEMO_CASES: list[DemoCase] = [
     DemoCase(
-        scenario_id="lending-denial",
-        business_title="Lending denial fixed",
-        domain="Lending / Fintech",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-1027",
-        agent_id="agent:lending",
+        scenario_id="vr-northstar-001",
+        business_title="Bereavement refund misrepresentation fixed",
+        domain="Airline / Customer Support",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50093821",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.replayable,
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True, "fix_config": {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True}},
         incident_state="certified",
         proof_state="issued",
         scenario_state="ready",
         next_action="View proof and export certificate",
     ),
     DemoCase(
-        scenario_id="lending-denial-missing-label",
-        business_title="Lending denial missing label",
-        domain="Lending / Fintech",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-2048",
-        agent_id="agent:lending",
+        scenario_id="northstar-missing-label",
+        business_title="Refund misrepresentation missing label",
+        domain="Airline / Customer Support",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50093822",
+        agent_id="agent:support-bot-v42",
         capture_source="api_submission",
         replayability=ReplayabilityStatus.requires_human_label,
         missing_prerequisites=["human_label"],
         expected_outcome="",
         label_state="none",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="none",
         next_action="Add or approve expected outcome label",
     ),
     DemoCase(
-        scenario_id="lending-denial-missing-cassette",
-        business_title="Lending denial missing cassette",
-        domain="Lending / Fintech",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-3091",
-        agent_id="agent:lending",
+        scenario_id="northstar-missing-cassette",
+        business_title="Refund misrepresentation missing cassette",
+        domain="Airline / Customer Support",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50093823",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.missing_context,
         missing_prerequisites=["cassette_data"],
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": False},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": False},
         incident_state="none",
-        next_action="Capture credit-bureau response cassette",
+        next_action="Capture bereavement-policy-api response cassette",
     ),
     DemoCase(
         scenario_id="support-handoff-ignored",
         business_title="Support handoff ignored",
         domain="Customer Support",
-        source_system_id="sys:support-ticketing",
+        source_system_id="sys:nri-ticketing",
         source_record_ref="TKT-8842",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="manual_submission",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["full_cassette"],
@@ -122,9 +122,9 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="support-escalation-webhook",
         business_title="Support escalation webhook",
         domain="Customer Support",
-        source_system_id="sys:support-ticketing",
+        source_system_id="sys:nri-ticketing",
         source_record_ref="TKT-9912",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="webhook",
         replayability=ReplayabilityStatus.requires_human_label,
         missing_prerequisites=["human_label"],
@@ -138,31 +138,31 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="prior-auth-denial",
         business_title="Prior authorization denial",
         domain="Healthcare / Insurance",
-        source_system_id="sys:prior-auth",
+        source_system_id="sys:bereavement-policy-api",
         source_record_ref="PA-M-4481",
-        agent_id="agent:prior-auth",
+        agent_id="agent:support-bot-v43",
         capture_source="api_submission",
         replayability=ReplayabilityStatus.requires_sandbox,
         missing_prerequisites=["sandbox"],
         expected_outcome="ESCALATE_TO_HUMAN_REVIEW",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:prior-auth", "ready": False},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": False},
         incident_state="none",
-        next_action="Configure prior-auth sandbox",
+        next_action="Configure policy API sandbox",
     ),
     DemoCase(
         scenario_id="prior-auth-timeout",
         business_title="Prior authorization timeout",
         domain="Healthcare / Insurance",
-        source_system_id="sys:prior-auth",
+        source_system_id="sys:bereavement-policy-api",
         source_record_ref="PA-M-5512",
-        agent_id="agent:prior-auth",
+        agent_id="agent:support-bot-v43",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["stable_tool_api"],
         expected_outcome="ESCALATE_TO_HUMAN_REVIEW",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:prior-auth", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="replayed",
         next_action="Verify fix handles timeout gracefully",
     ),
@@ -170,9 +170,9 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="hiring-screen-rejection",
         business_title="Hiring screen rejection",
         domain="Hiring / HR Compliance",
-        source_system_id="sys:hiring-ats",
+        source_system_id="sys:bereavement-policy-api",
         source_record_ref="C-9021",
-        agent_id="agent:hiring-screen",
+        agent_id="agent:support-bot-dev",
         capture_source="manual_submission",
         replayability=ReplayabilityStatus.evidence_only,
         missing_prerequisites=["deterministic_model"],
@@ -186,14 +186,14 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="refund-denial-policy-breach",
         business_title="Refund denial policy breach",
         domain="Payments / Support",
-        source_system_id="sys:payment-api",
+        source_system_id="sys:payment-gateway",
         source_record_ref="REF-7712",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="webhook",
         replayability=ReplayabilityStatus.replayable,
-        expected_outcome="APPROVE_REFUND",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:payment-api", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:payment-gateway", "ready": True},
         incident_state="mitigated",
         next_action="Issue proof for verified policy fix",
     ),
@@ -201,33 +201,33 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="chargeback-mishandled",
         business_title="Chargeback mishandled",
         domain="Payments",
-        source_system_id="sys:payment-api",
+        source_system_id="sys:payment-gateway",
         source_record_ref="CB-3321",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="source_system_adapter",
         replayability=ReplayabilityStatus.missing_context,
         missing_prerequisites=["source_system_connector", "cassette_data"],
         expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:payment-api", "ready": False},
+        sandbox_readiness={"required": True, "system_id": "sys:payment-gateway", "ready": False},
         incident_state="none",
         next_action="Build payment-source connector",
     ),
     DemoCase(
-        scenario_id="claims-denial-missing-db",
-        business_title="Claims denial missing DB state",
-        domain="Insurance",
-        source_system_id="sys:claims-db",
-        source_record_ref="CL-11029",
-        agent_id="agent:prior-auth",
+        scenario_id="booking-refund-missing-db",
+        business_title="Booking refund missing DB state",
+        domain="Airline / Passenger Services",
+        source_system_id="sys:passenger-booking",
+        source_record_ref="BK-11029",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["db_snapshot"],
-        expected_outcome="ESCALATE_TO_HUMAN_REVIEW",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:claims-db", "ready": False},
+        sandbox_readiness={"required": True, "system_id": "sys:passenger-booking", "ready": False},
         incident_state="replayed",
-        next_action="Provide claims DB snapshot for full replay",
+        next_action="Provide booking DB snapshot for full replay",
     ),
     DemoCase(
         scenario_id="retrieval-mismatch",
@@ -235,7 +235,7 @@ DEMO_CASES: list[DemoCase] = [
         domain="Knowledge / RAG",
         source_system_id="sys:knowledge-base",
         source_record_ref="DOC-4412",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="trace_import",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["retrieval_snapshot"],
@@ -251,7 +251,7 @@ DEMO_CASES: list[DemoCase] = [
         domain="Knowledge / RAG",
         source_system_id="sys:knowledge-base",
         source_record_ref="DOC-9981",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="manual_submission",
         replayability=ReplayabilityStatus.evidence_only,
         missing_prerequisites=["deterministic_model"],
@@ -265,15 +265,15 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="model-drift",
         business_title="Model drift case",
         domain="Model Provider",
-        source_system_id="sys:model-provider",
+        source_system_id="sys:azure-openai",
         source_record_ref="RUN-2234",
-        agent_id="agent:lending",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["model_version_match"],
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:model-provider", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:azure-openai", "ready": True},
         incident_state="replayed",
         next_action="Disclose model drift in proof limitations",
     ),
@@ -281,15 +281,15 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="random-uuid",
         business_title="Random UUID dependency",
         domain="Internal Service",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-5512",
-        agent_id="agent:lending",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50093999",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.partially_replayable,
         missing_prerequisites=["rng_seed"],
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="replayed",
         next_action="Seal RNG seed or use deterministic IDs",
     ),
@@ -297,15 +297,15 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="timestamp-dependency",
         business_title="Timestamp dependency",
         domain="Internal Service",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-6621",
-        agent_id="agent:lending",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50094000",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.replayable,
         missing_prerequisites=[],
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="replayed",
         next_action="Timestamp sealed; run preflight",
     ),
@@ -313,14 +313,14 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="api-timeout-fixed",
         business_title="API timeout fixed",
         domain="Tool / API",
-        source_system_id="sys:payment-api",
+        source_system_id="sys:payment-gateway",
         source_record_ref="API-T-1123",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.replayable,
-        expected_outcome="APPROVE_REFUND",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:payment-api", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:payment-gateway", "ready": True},
         incident_state="certified",
         proof_state="issued",
         scenario_state="candidate",
@@ -330,9 +330,9 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="webhook-complaint",
         business_title="Webhook complaint",
         domain="Customer Support",
-        source_system_id="sys:support-ticketing",
+        source_system_id="sys:nri-ticketing",
         source_record_ref="TKT-2231",
-        agent_id="agent:support-handoff",
+        agent_id="agent:support-bot-v42",
         capture_source="webhook",
         replayability=ReplayabilityStatus.requires_human_label,
         missing_prerequisites=["human_label"],
@@ -346,14 +346,14 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="scenario-candidate-ready",
         business_title="Scenario candidate ready",
         domain="General",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-7701",
-        agent_id="agent:lending",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50094001",
+        agent_id="agent:support-bot-v42",
         capture_source="sdk_snapshot",
         replayability=ReplayabilityStatus.replayable,
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="mitigated",
         scenario_state="candidate",
         next_action="Issue proof then promote to scenario",
@@ -362,31 +362,31 @@ DEMO_CASES: list[DemoCase] = [
         scenario_id="release-gate-blocked",
         business_title="Release gate blocked",
         domain="CI/CD",
-        source_system_id="sys:cicd",
+        source_system_id="sys:github-actions",
         source_record_ref="REL-001",
-        agent_id="agent:lending",
+        agent_id="agent:support-bot-v42",
         capture_source="eval_adapter",
         replayability=ReplayabilityStatus.replayable,
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="approved",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="mitigated",
         scenario_state="blocked",
         next_action="Fix scenario run and re-run release gate",
     ),
     DemoCase(
-        scenario_id="lending-denial-webhook",
-        business_title="Lending denial webhook",
-        domain="Lending / Fintech",
-        source_system_id="sys:lending",
-        source_record_ref="APP-A-8821",
-        agent_id="agent:lending",
+        scenario_id="northstar-webhook",
+        business_title="Northstar refund webhook",
+        domain="Airline / Customer Support",
+        source_system_id="sys:salesforce-service-cloud",
+        source_record_ref="CASE-50094002",
+        agent_id="agent:support-bot-v42",
         capture_source="webhook",
         replayability=ReplayabilityStatus.requires_human_label,
         missing_prerequisites=["human_label"],
-        expected_outcome="APPROVE",
+        expected_outcome="ESCALATE_TO_HUMAN",
         label_state="suggested",
-        sandbox_readiness={"required": True, "system_id": "sys:credit-bureau", "ready": True},
+        sandbox_readiness={"required": True, "system_id": "sys:bereavement-policy-api", "ready": True},
         incident_state="none",
         next_action="Review suggested label",
     ),
@@ -442,8 +442,8 @@ def _base_events_for_case(case: DemoCase) -> list[AIExecutionEvent]:
         resp: dict[str, Any] = {"status": "ok"}
         if case.scenario_id.startswith("prior-auth"):
             resp = {"risk_score": "high", "physician_note": "continued skilled care required"}
-        elif case.scenario_id.startswith("lending"):
-            resp = {"score": 650}
+        elif case.scenario_id.startswith(("vr-northstar", "northstar")):
+            resp = {"retroactive_refund_allowed": False, "human_review_required": True, "policy_version": "bereavement-policy-v7"}
         elif case.scenario_id.startswith("api-timeout"):
             resp = {"status": "ok", "latency_ms": 120}
         elif case.scenario_id.startswith("refund"):
@@ -463,7 +463,7 @@ def _base_events_for_case(case: DemoCase) -> list[AIExecutionEvent]:
 
     # Decision
     decisions = {
-        "lending-denial": "DENY",
+        "vr-northstar-001": "OFFER_RETROACTIVE_REFUND",
         "prior-auth-denial": "DENY",
         "support-handoff-ignored": "CONTINUE_BOT",
         "hiring-screen-rejection": "REJECT",
@@ -510,13 +510,17 @@ def _base_events_for_case(case: DemoCase) -> list[AIExecutionEvent]:
 def _snapshot_for_case(case: DemoCase) -> dict[str, Any] | None:
     if case.capture_source != "sdk_snapshot":
         return None
-    base = SCENARIOS.get("lending-denial") or list(SCENARIOS.values())[0]
+    base = SCENARIOS.get("vr-northstar-001") or list(SCENARIOS.values())[0]
     return build_snapshot(base)
 
 
 def _run_full_proof_loop(incident: Any, snapshot: dict[str, Any], agent_fn: Callable[..., Any]) -> None:
     run_replay(incident, snapshot, agent_fn)
-    result = run_mutation(snapshot, agent_fn, {"threshold": 620}, expected_correct_behavior="UNDERWRITING_REVIEW")
+    result = run_mutation(
+        snapshot, agent_fn,
+        {"require_policy_match_for_refund_claims": True, "escalate_when_policy_requires_human_review": True},
+        expected_correct_behavior="ESCALATE_TO_HUMAN",
+    )
     incident.mutation_result = result
     if result.get("mitigated"):
         incident.status = IncidentStatus.mitigated
@@ -528,7 +532,7 @@ def _run_full_proof_loop(incident: Any, snapshot: dict[str, Any], agent_fn: Call
         original_decision=result.get("original_decision"),
         mutated_decision=result.get("mutated_decision"),
         fix_config=result.get("fix_config", {}),
-        expected_correct_behavior="UNDERWRITING_REVIEW",
+        expected_correct_behavior="ESCALATE_TO_HUMAN",
         timestamp=incident.snapshot_summary.get("timestamp", ""),
     )
     incident.certificate = cert
@@ -578,6 +582,7 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
             model_name="demo-model",
             policy_version="v1",
             expected_outcome=case.expected_outcome,
+            business_function=f"Demo {case.domain}: {case.business_title}",
             is_demo=True,
             events=_base_events_for_case(case),
             sandbox_readiness=case.sandbox_readiness,
@@ -724,7 +729,7 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
                 last_run_status=(
                     "passed" if case.scenario_state == "ready" else "not_started" if case.scenario_state == "candidate" else "failed"
                 ),
-                release_gate_ids=["gate:lending-v1"] if case.scenario_id in {"lending-denial", "api-timeout-fixed", "release-gate-blocked"} else [],
+                release_gate_ids=["gate:high-risk-support-policy"] if case.scenario_id in {"vr-northstar-001", "api-timeout-fixed", "release-gate-blocked"} else [],
                 next_action=(
                     "Promote to scenario library"
                     if case.scenario_state == "candidate"
@@ -774,8 +779,8 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
     }
 
 
-def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, Any]:
-    """Create the deterministic Harborline flagship Release Gate demo path."""
+def seed_northstar_release_gate_demo(registry: Any, org_id: str) -> dict[str, Any]:
+    """Create the deterministic Northstar Air flagship Release Gate demo path."""
     from notary_platform.services import (
         CertificateService,
         IngestionService,
@@ -787,7 +792,7 @@ def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, A
         ScenarioLibraryService,
     )
 
-    scenario = SCENARIOS["harborline-personal-loan-adverse-action"]
+    scenario = SCENARIOS["vr-northstar-001"]
     snapshot = build_snapshot(scenario)
     ingestion = IngestionService(registry)
     labels = LabelProvenanceService(registry)
@@ -801,38 +806,38 @@ def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, A
     vr = ingestion.create_from_sdk_snapshot(
         snapshot,
         org_id=org_id,
-        agent_id="agent:harborline-personal-loan-adverse-action",
+        agent_id="agent:support-bot-v42",
         environment_id="env:demo",
     )
-    vr.business_function = "Harborline Credit Union personal-loan adverse-action workflow"
-    vr.source_system_id = "sys:harborline-credit-bureau"
-    vr.source_record_ref = "HLCU-PL-0427"
-    vr.external_ref = "HLCU-PL-0427"
+    vr.business_function = "Northstar Air bereavement refund policy misrepresentation support-bot workflow"
+    vr.source_system_id = "sys:salesforce-service-cloud"
+    vr.source_record_ref = "50093821"
+    vr.external_ref = "CASE-50093821"
     vr.agent_version = scenario.model_version
-    vr.model_provider = "Harborline Demo Model Provider"
+    vr.model_provider = "Azure OpenAI"
     vr.model_name = scenario.model_name
     vr.policy_version = scenario.policy_version
     vr.expected_outcome = scenario.expected_correct_behavior
     vr.is_demo = True
     vr.sandbox_readiness = {
         "required": True,
-        "system_id": "sys:harborline-credit-bureau",
+        "system_id": "sys:bereavement-policy-api",
         "ready": True,
         "cassette": "sealed",
         "fix_config": scenario.fix_config,
     }
-    vr.next_action = "Replay original denial, verify underwriting-review fix, and run Release Gate"
+    vr.next_action = "Replay original refund offer, verify escalate-to-human fix, and run Release Gate"
     registry.storage.update_vr(vr)
 
     label = labels.create_label(
         vr.id,
         org_id,
         expected_outcome=scenario.expected_correct_behavior,
-        reviewer="Harborline Fair Lending Review",
+        reviewer="Northstar Legal Review",
         role="Consumer Compliance",
         reason=(
-            "Applicant is qualified or review-worthy; missing/borderline bureau evidence"
-            " must route to underwriting review instead of hard denial."
+            "Customer asked about bereavement refund. Policy requires escalation to human"
+            " but bot offered a retroactive refund anyway."
         ),
     )
     incident = ingestion.create_incident_from_vr(vr)
@@ -850,32 +855,32 @@ def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, A
     policy = readiness.create_policy(
         org_id,
         "env:demo",
-        "Harborline Credit Union Release Gate",
+        "High-risk support policy gate",
         [promoted_scenario.id],
     )
     gate_before_fix = release_gate.check(
         policy.id,
-        agent_version="harborline-loan-assist-before-fix",
+        agent_version="support-bot-v42",
         org_id=org_id,
         environment_id="env:demo",
     )
     readiness_after_fix = readiness.run_check(
         policy.id,
-        agent_version="harborline-loan-assist-fixed",
+        agent_version="support-bot-v43",
         org_id=org_id,
         environment_id="env:demo",
         fix_config=scenario.fix_config,
     )
     gate_after_fix = release_gate.check(
         policy.id,
-        agent_version="harborline-loan-assist-fixed",
+        agent_version="support-bot-v43",
         org_id=org_id,
         environment_id="env:demo",
         fix_config=scenario.fix_config,
     )
 
     return {
-        "demo_org": "Harborline Credit Union",
+        "demo_org": "Northstar Air",
         "scenario_contract": {
             "scenario_id": scenario.scenario_id,
             "title": scenario.title,
@@ -883,11 +888,12 @@ def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, A
             "original_captured_decision": scenario.original_decision,
             "expected_correct_behavior": scenario.expected_correct_behavior,
             "failure": (
-                "Missing or borderline credit-bureau evidence was treated as a hard denial"
-                " instead of routing to underwriting review."
+                "The support bot offered a retroactive bereavement refund despite the policy"
+                " API response indicating retroactive refunds are not allowed and human review"
+                " is required."
             ),
             "scope": (
-                "This proof is scoped to the sealed Harborline personal-loan cassette and"
+                "This proof is scoped to the sealed Northstar Air bereavement-policy cassette and"
                 " does not certify general AI safety, transparent capture, or active GRC integrations."
             ),
         },
@@ -917,6 +923,10 @@ def seed_harborline_release_gate_demo(registry: Any, org_id: str) -> dict[str, A
             "Release Gate fail before fix and pass after fix",
         ],
     }
+
+
+# Legacy alias for backward compatibility
+seed_harborline_release_gate_demo = seed_northstar_release_gate_demo
 
 
 def build_catalog_legacy(

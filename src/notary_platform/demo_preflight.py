@@ -16,7 +16,7 @@ from typing import Any, Sequence, TextIO
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
-from notary_platform.api_server.routers.ingestion import storage
+from notary_platform.api_server.routers.ingestion import set_replay_runner, storage
 from notary_platform.storage import MemoryStorage
 
 PASS_EXIT_CODE = 0
@@ -36,8 +36,9 @@ class PreflightCheck:
 def _clear_storage() -> None:
     """Reset the local demo backend for repeatable dry runs."""
     if not isinstance(storage, MemoryStorage):
-        raise RuntimeError("Harborline preflight reset is only supported for local demo storage")
+        raise RuntimeError("Northstar preflight reset is only supported for local demo storage")
     storage.reset()
+    set_replay_runner(None)
 
 
 def _check(name: str, condition: bool, detail: str) -> PreflightCheck:
@@ -64,19 +65,19 @@ def run_harborline_preflight(reset: bool = True) -> dict[str, Any]:
     health = _get(client, "/health")
     checks.append(_check("api_health", health.get("status") == "ok", "FastAPI app health endpoint returned ok"))
 
-    seed_response = client.post("/v1/demo/harborline-release-gate/seed")
+    seed_response = client.post("/v1/demo/northstar/seed")
     seed_ok = seed_response.status_code == 200
     seeded = seed_response.json() if seed_ok else {"error": seed_response.text}
-    checks.append(_check("harborline_seed", seed_ok, "Harborline demo seed endpoint completed"))
+    checks.append(_check("northstar_seed", seed_ok, "Northstar demo seed endpoint completed"))
     if not seed_ok or not isinstance(seeded, dict):
         return _result(checks, seeded if isinstance(seeded, dict) else {"error": str(seeded)})
 
     checks.append(
         _check(
             "scenario_contract",
-            seeded.get("scenario_contract", {}).get("scenario_id") == "harborline-personal-loan-adverse-action"
-            and seeded.get("scenario_contract", {}).get("expected_correct_behavior") == "UNDERWRITING_REVIEW",
-            "Scenario contract is the Harborline adverse-action case with underwriting-review expected behavior",
+            seeded.get("scenario_contract", {}).get("scenario_id") == "vr-northstar-001"
+            and seeded.get("scenario_contract", {}).get("expected_correct_behavior") == "ESCALATE_TO_HUMAN",
+            "Scenario contract is the Northstar bereavement case with escalate-to-human expected behavior",
         )
     )
 
@@ -93,18 +94,18 @@ def run_harborline_preflight(reset: bool = True) -> dict[str, Any]:
     checks.extend([
         _check(
             "verification_record",
-            vr.get("source_record_ref") == "HLCU-PL-0427" and vr.get("replayability") == "replayable",
-            "Seed created a replayable Harborline Verification Record",
+            vr.get("source_record_ref") == "50093821" and vr.get("replayability") == "replayable",
+            "Seed created a replayable Northstar Verification Record",
         ),
         _check(
             "replay",
-            replay.get("original_decision") == "DENY" and replay.get("replayed_decision") == "DENY",
-            "Replay reproduces the original denied decision",
+            replay.get("original_decision") == "OFFER_RETROACTIVE_REFUND" and replay.get("replayed_decision") == "OFFER_RETROACTIVE_REFUND",
+            "Replay reproduces the original refund-offer decision",
         ),
         _check(
             "mutation",
-            mutation.get("verdict") == "verified" and mutation.get("mutated_decision") == "UNDERWRITING_REVIEW",
-            "Fix changes the decision to underwriting review",
+            mutation.get("verdict") == "verified" and mutation.get("mutated_decision") == "ESCALATE_TO_HUMAN",
+            "Fix changes the decision to escalate to human",
         ),
         _check(
             "scenario",
@@ -154,7 +155,7 @@ def _result(
     passed = all(check.passed for check in checks)
     return {
         "status": "pass" if passed else "fail",
-        "demo": "harborline-release-gate",
+        "demo": "northstar-release-gate",
         "checks": [check.to_dict() for check in checks],
         "summary": {
             "verification_record_id": seeded.get("verification_record_id", ""),
@@ -171,7 +172,7 @@ def _result(
 
 def format_text_report(result: dict[str, Any]) -> str:
     lines = [
-        f"Harborline demo preflight: {result['status'].upper()}",
+        f"Northstar demo preflight: {result['status'].upper()}",
         "",
         "Checks:",
     ]
@@ -195,7 +196,7 @@ def format_text_report(result: dict[str, Any]) -> str:
 
 
 def main(argv: Sequence[str] | None = None, stdout: TextIO | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the local Harborline demo preflight.")
+    parser = argparse.ArgumentParser(description="Run the local Northstar Air demo preflight.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON instead of a text report.")
     parser.add_argument("--no-reset", action="store_true", help="Do not clear in-memory demo state before running.")
     args = parser.parse_args(argv)

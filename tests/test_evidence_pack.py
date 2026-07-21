@@ -14,7 +14,7 @@ def test_evidence_pack_writes_rehearsal_artifacts(tmp_path) -> None:
         assert path.exists(), filename
         assert json.loads(path.read_text(encoding="utf-8"))
 
-    preflight = json.loads((tmp_path / "harborline-preflight.json").read_text(encoding="utf-8"))
+    preflight = json.loads((tmp_path / "northstar-preflight.json").read_text(encoding="utf-8"))
     security = json.loads((tmp_path / "security-readiness.json").read_text(encoding="utf-8"))
     passing_gate = json.loads((tmp_path / "passing-gate.json").read_text(encoding="utf-8"))
     verify = json.loads((tmp_path / "readiness-certificate-verification.json").read_text(encoding="utf-8"))
