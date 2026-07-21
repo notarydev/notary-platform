@@ -40,3 +40,44 @@ demo company. Build the workflow first; backend fit figured out later. Destinati
   (pytest-playwright `page` fixture not installed). 2 static-app + preflight tests updated to
   new naming/breakpoint.
 - Consider real org display name from backend `/v1/platform/home` (currently mapped client-side).
+
+## Iteration 2 — System-first onboarding + Replay player (2026-07-21)
+Research-backed (Sentry/Datadog/Arize/Langfuse/Fiddler): onboarding is system-first, SDK-driven,
+with a live "first event" state; demo is a shortcut, not a separate product.
+
+Built (skeleton + flow, placeholder data; backend fit deferred per user):
+- Rebuilt Setup into ONE unified system-first onboarding (removed "select workflow"):
+  1) Register AI System (name/type/env → issues ingest token) 2) Select Evidence Sources
+  3) Instrument & Collect (SDK/API/Webhook with token-prefilled snippet) 4) Send First Record
+  (live "waiting → received" radar animation + Send test record) 5) Replay Readiness.
+- Merged Integrations + Demo nav into single "Setup"; removed the demo/non-demo fork.
+- Demo decoupled → global "Load sample data" button in topbar (seeds catalog, refreshes).
+- Replay Player (drawer): autoplay step-through of sealed cassette events (input→llm→http→policy
+  →decision) with Play/Pause/Step/Restart, progress bar, and Original-vs-Replayed verdict.
+  Opened from Send-step "Watch it replay" and Readiness step.
+- Verified full flow via Playwright: register→sources→instrument→send→received→replay, 0 JS errors.
+
+## Next
+- Wire onboarding to real /v1 endpoints (register system, real from-snapshot capture, poll for
+  first record) — currently simulated client-side.
+- Attach Replay Player to real Verification Record / Incident detail (use record's actual events).
+- Reconsider always-on DEMO banner now that demo is decoupled (currently backend home is_demo=true).
+- Then: layer the Meridian demo tour on top of the real skeleton.
+
+## Iteration 3 — Guided demo: Northstar Air (2026-07-21)
+Per user spec (inspired by Moffatt v. Air Canada, 2024): support bot invents a retroactive
+bereavement-refund policy. Built a dedicated guided "Demo" view (new nav item + topbar "Run demo").
+10 chaptered scenes, clickable chip progress, Back/Next:
+Setup → The failure (VR + decision evidence graph + policy/bot contradiction) → Replay (autoplay
+player, reproduces OFFER_RETROACTIVE_REFUND) → Answer key (human label ESCALATE_TO_HUMAN) →
+Verify fix (before/after) → Proof of Mitigation cert → Promote to Scenario → Gate blocked (v42 FAIL)
+→ Gate passed (v43 PASS + Proof of Readiness + CI curl) → Assured end-state (6 green tiles + CTA).
+Generalized the replay player to play any scenario (events + verdict). Client-side/self-contained
+(no backend), kept minimal per user's "don't show" list. Verified full walkthrough, 0 JS errors.
+
+## Next
+- Wire demo artifacts to real /v1 (or a seeded Northstar dataset) so VRs/Proofs/Scenarios/Gate
+  screens show the same Northstar story when opened from nav.
+- Update onboarding Setup examples to the support-bot systems (Salesforce/Bereavement Policy API/
+  GitHub Actions) so Setup and Demo tell one coherent story.
+- Optionally retire/rework the Meridian lending golden-path on Home in favor of Northstar.

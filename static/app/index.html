@@ -14,8 +14,8 @@
   </div>
   <div class="side-nav">
     <button class="nav-item active" data-view="home" data-testid="nav-home">Home</button>
-    <button class="nav-item" data-view="integrations" data-testid="nav-integrations">Integrations</button>
-    <button class="nav-item" data-view="setup" data-testid="nav-setup">Demo</button>
+    <button class="nav-item" data-view="demo" data-testid="nav-demo">Demo</button>
+    <button class="nav-item" data-view="setup" data-testid="nav-setup">Setup</button>
     <button class="nav-item" data-view="verification-records" data-testid="nav-verification-records">Verification Records</button>
     <button class="nav-item" data-view="incidents" data-testid="nav-incidents">Incidents</button>
     <button class="nav-item" data-view="proofs" data-testid="nav-proofs">Proofs</button>
@@ -35,6 +35,7 @@
     </select>
     <input class="env-select" id="agent-version" value="1.2.0" placeholder="Agent version" style="width:120px" onchange="switchAgentVersion(this.value)">
     <span class="badge badge-demo hidden" id="global-demo">DEMO</span>
+    <button class="btn btn-sm" onclick="nav('demo')" data-testid="run-demo-btn" title="Watch the 90-second Northstar Air story">&#9656; Run demo</button>
     <span style="margin-left:auto;font-size:12px;color:var(--muted);font-weight:500" id="org-name"></span>
   </div>
   <div class="demo-banner hidden" id="demo-banner">Fictional demo data — no production or customer data.</div>

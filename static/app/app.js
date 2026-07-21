@@ -28,6 +28,10 @@ const S = {
   setupWorkflowConfirmed: false,
   setupSystems: null,
   setupCaptureMethod: null,
+  onbSystems: [],
+  onbReceived: null,
+  onbSending: false,
+  demo: { step: 0 },
 };
 
 function q(s) { return document.querySelector(s); }
@@ -232,6 +236,8 @@ async function R() {
     if (S.view === "home") {
       const h = await apiGet("/v1/platform/home");
       renderHome(c, h);
+    } else if (S.view === "demo") {
+      renderDemo(c);
     } else if (S.view === "integrations") {
       await renderIntegrations(c);
     } else if (S.view === "setup") {
@@ -301,8 +307,9 @@ async function R() {
   function viewTitle(v) {
   const titles = {
     home: "Home",
+    demo: "Demo",
     integrations: "Integrations",
-    setup: "Demo",
+    setup: "Setup",
     "verification-records": "Verification Records",
     "vr-detail": "Verification Record Detail",
     incidents: "Incidents",
@@ -503,15 +510,11 @@ function openReleaseGateDetail(id) {
 // --- SETUP ---
 
 function setupCanNext(step) {
-  if (step === 0) return S.setupWorkflowConfirmed;
-  if (step === 1) return true;
-  if (step === 2) {
-    const s = S.setupSystems;
-    return s ? s.some(x => x.selected) : true;
-  }
-  if (step === 3) return !!S.setupCaptureMethod;
-  if (step === 4) return !!S.setupTestCapture;
-  if (step === 5) return true;
+  const id = SETUP_STEPS[step] && SETUP_STEPS[step].id;
+  if (id === "register") return S.onbSystems.length > 0;
+  if (id === "systems") { const s = S.setupSystems; return s ? s.some(x => x.selected) : true; }
+  if (id === "capture") return !!S.setupCaptureMethod;
+  if (id === "send") return !!S.onbReceived;
   return true;
 }
 
@@ -536,11 +539,10 @@ function confirmWorkflow() {
 }
 
 const SETUP_STEPS = [
-  { id: "workflow", label: "Decision Workflow", desc: "Pick the high-stakes AI decision to assure" },
-  { id: "boundary", label: "Decision Boundary", desc: "Define what evidence is in and out of scope" },
-  { id: "systems", label: "Evidence Systems", desc: "Connect the systems that hold the evidence" },
-  { id: "capture", label: "Capture Method", desc: "Choose how decisions reach Notary" },
-  { id: "test", label: "Test Capture", desc: "Send one sealed capture end-to-end" },
+  { id: "register", label: "Register AI System", desc: "Add the AI systems you run" },
+  { id: "systems", label: "Evidence Sources", desc: "Pick the systems that feed each decision" },
+  { id: "capture", label: "Instrument & Collect", desc: "Install the SDK or wire an endpoint" },
+  { id: "send", label: "Send First Record", desc: "Confirm Notary receives a decision" },
   { id: "readiness", label: "Replay Readiness", desc: "Confirm the record can be replayed" },
 ];
 
@@ -768,8 +770,8 @@ function renderSetupSystemsStep() {
   const systems = S.setupSystems || SETUP_SYSTEMS;
   return `
     <div class="setup-step-content">
-      <h2>Select evidence systems</h2>
-      <p class="setup-lead">Each system is included because it provides decision-relevant evidence. We do not capture operational telemetry.</p>
+      <h2>Select evidence sources</h2>
+      <p class="setup-lead">For your registered system, pick the upstream systems that feed its decisions. These define the decision boundary — the evidence Notary seals. Operational telemetry is not captured.</p>
       <div class="systems-grid">
         ${systems.map(sys => `
           <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}" ${sys.tier !== "excluded" ? `onclick="toggleSetupSystem('${sys.id}')" style="cursor:pointer"` : ""}>
@@ -788,14 +790,38 @@ function renderSetupSystemsStep() {
     </div>`;
 }
 
+function captureToken() {
+  return (S.onbSystems[0] && S.onbSystems[0].token) || S.token || "ntry-your-token";
+}
+
+function renderCaptureSnippet(method) {
+  const tok = captureToken();
+  const base = "https://api.getnotary.ai/v1";
+  let code = "";
+  if (method === "sdk") {
+    code = `pip install notary-sdk\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_llm(prompt="loan app #1234", response="decision: DENY")\ncapture.capture_tool(method="POST", url="/credit-bureau", response={"tradelines": 0})\ncapture.capture_decision(decision="DENY")\ncapture.finalize()  # -> sealed Verification Record`;
+  } else if (method === "api") {
+    code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:lending","business_function":"loan_underwriting"}'`;
+  } else if (method === "webhook") {
+    code = `POST ${base}/verification-records/webhook\nAuthorization: Bearer ${tok}\n\n{\n  "source_id": "TKT-1234",\n  "events": [{"kind": "decision", "payload": {"decision": "DENY"}}]\n}`;
+  } else {
+    code = `# Manual submission\nSubmit a decision directly from the Verification Records screen —\nbest for complaints, overrides, and one-off reviews.`;
+  }
+  return `<div class="onb-snippet">
+    <div class="section-title" style="margin-top:22px">Your ${esc(method.toUpperCase())} snippet</div>
+    <div class="section-sub">Pre-filled with ${S.onbSystems[0] ? "your first system's" : "your"} ingest token. Drop it into your app to start sending decisions.</div>
+    ${renderCodeBlock(code)}
+  </div>`;
+}
+
 function renderSetupCaptureStep() {
   return `
     <div class="setup-step-content">
-      <h2>Choose a capture method</h2>
-      <p class="setup-lead">Pick the path that matches how this decision enters your environment.</p>
+      <h2>Instrument & collect decisions</h2>
+      <p class="setup-lead">Pick how decisions reach Notary. You'll get a copy-paste snippet pre-filled with your system's token and ingest endpoint.</p>
       <div class="capture-grid">
         ${SETUP_CAPTURE_METHODS.map(m => `
-          <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer">
+          <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer" data-testid="capture-method-${m.id}">
             <h3>${esc(m.title)}</h3>
             <div class="capture-field"><span>Best for</span><span>${esc(m.best)}</span></div>
             <div class="capture-field"><span>Captures</span><span>${esc(m.captures)}</span></div>
@@ -803,6 +829,497 @@ function renderSetupCaptureStep() {
             ${S.setupCaptureMethod === m.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
           </div>
         `).join("")}
+      </div>
+      ${S.setupCaptureMethod ? renderCaptureSnippet(S.setupCaptureMethod) : `<div class="section-sub" style="margin-top:16px">Select a capture method to see its install snippet.</div>`}
+    </div>`;
+}
+
+function saveOnbSystem() {
+  const nameEl = q("#onb-name");
+  const name = nameEl ? nameEl.value.trim() : "";
+  if (!name) { notify("System name is required", "error"); return; }
+  const token = "ntry-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+  S.onbSystems.push({
+    id: "sys-" + Math.random().toString(36).slice(2, 7),
+    name,
+    type: q("#onb-type").value,
+    env: q("#onb-env").value,
+    token,
+  });
+  notify("AI system registered: " + name, "success");
+  renderSetupStep(0);
+}
+
+function removeOnbSystem(id) {
+  S.onbSystems = S.onbSystems.filter(s => s.id !== id);
+  renderSetupStep(0);
+}
+
+function renderOnbRegisterStep() {
+  const sys = S.onbSystems;
+  return `
+    <div class="setup-step-content">
+      <h2>Register the AI systems you run</h2>
+      <p class="setup-lead">Add an AI system you want to assure. Each system gets its own ingest token and endpoint — like creating a project in an observability tool. You decide what you have; Notary makes no assumptions.</p>
+      <div class="onb-register-grid">
+        <div class="ic-form-card">
+          <div class="np-form">
+            <div class="np-field"><label>System name *</label><input id="onb-name" placeholder="e.g. Lending Decision Agent" data-testid="onb-name-input"></div>
+            <div class="integ-form-row">
+              <div class="np-field" style="flex:1"><label>Type</label>
+                <select id="onb-type" data-testid="onb-type-select">
+                  <option value="agent">Agent</option>
+                  <option value="model_service">Model Service</option>
+                  <option value="decision_engine">Decision Engine</option>
+                  <option value="ai_enabled_app">AI-Enabled App</option>
+                </select>
+              </div>
+              <div class="np-field" style="flex:1"><label>Environment</label>
+                <select id="onb-env" data-testid="onb-env-select"><option value="production">Production</option><option value="staging">Staging</option><option value="development">Development</option></select>
+              </div>
+            </div>
+            <button class="btn" onclick="saveOnbSystem()" data-testid="onb-register-btn">Register System</button>
+          </div>
+        </div>
+        <div class="onb-systems">
+          <div class="section-title" style="margin-top:0">Registered systems (${sys.length})</div>
+          ${sys.length ? sys.map(s => `
+            <div class="onb-system-row" data-testid="onb-system-${s.id}">
+              <div style="min-width:0">
+                <strong>${esc(s.name)}</strong>
+                <div class="onb-system-meta">${esc(s.type)} · ${esc(s.env)}</div>
+                <div class="onb-system-token">TOKEN <code>${esc(s.token.slice(0, 12))}••••</code></div>
+              </div>
+              <button class="btn btn-sm btn-outline" onclick="removeOnbSystem('${s.id}')">Remove</button>
+            </div>`).join("") : `<div class="empty-state compact"><p>No systems yet. Register your first AI system to continue.</p></div>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+function sendOnbTestRecord() {
+  if (S.onbSending) return;
+  S.onbSending = true;
+  renderSetupStep(3);
+  setTimeout(() => {
+    S.onbSending = false;
+    S.onbReceived = {
+      id: "vr-" + Math.random().toString(36).slice(2, 10),
+      decision: "DENY",
+      expected: "UNDERWRITING_REVIEW",
+      root_hash: "sha256:" + Math.random().toString(16).slice(2, 18),
+      replayability: "replayable",
+      systems: ["Loan Origination", "Credit Bureau", "Policy Rules", "AI Agent"],
+    };
+    notify("First verification record received", "success");
+    renderSetupStep(3);
+  }, 1700);
+}
+
+function renderOnbSendStep() {
+  const rec = S.onbReceived;
+  const sending = S.onbSending;
+  if (rec) {
+    return `
+      <div class="setup-step-content">
+        <h2>First record received</h2>
+        <p class="setup-lead">Notary sealed your decision as a tamper-evident, replayable Verification Record.</p>
+        <div class="onb-received">
+          <div class="onb-received-head"><span class="onb-live-dot ok"></span> Record received</div>
+          <div class="packet-grid">
+            <div class="packet-field"><span>Record ID</span><span class="mono">${esc(rec.id)}</span></div>
+            <div class="packet-field"><span>Decision</span><span class="packet-decision decision-fail">${esc(rec.decision)}</span></div>
+            <div class="packet-field"><span>Expected</span><span class="packet-decision decision-pass">${esc(rec.expected)}</span></div>
+            <div class="packet-field"><span>Root hash / seal</span><span class="mono">${esc(rec.root_hash)}</span></div>
+            <div class="packet-field"><span>Replay readiness</span><span>${esc(rec.replayability)}</span></div>
+          </div>
+          <div class="action-row" style="margin-top:16px">
+            <button class="btn btn-green" onclick="openReplayDrawer()" data-testid="onb-watch-replay-btn">Watch it replay</button>
+            <button class="btn btn-outline" onclick="renderSetupStep(4)">Continue</button>
+          </div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="setup-step-content">
+      <h2>Send your first verification record</h2>
+      <p class="setup-lead">Run your instrumented app, or send a test record now. This panel is listening and updates the moment a record arrives.</p>
+      <div class="onb-waiting ${sending ? 'active' : ''}">
+        <div class="onb-radar"><span></span><span></span><span></span></div>
+        <div class="onb-live"><span class="onb-live-dot ${sending ? '' : 'idle'}"></span> ${sending ? "Receiving record…" : "Waiting for your first verification record…"}</div>
+        <button class="btn" onclick="sendOnbTestRecord()" ${sending ? 'disabled' : ''} data-testid="onb-send-test-btn">${sending ? 'Sending…' : 'Send test record'}</button>
+      </div>
+    </div>`;
+}
+
+// --- Replay player (reusable across scenarios) ---
+const REPLAY_EVENTS = [
+  { kind: "input", label: "Applicant intake", detail: "Thin-file personal loan application received" },
+  { kind: "llm", label: "LLM decision call", detail: "Adverse-action reasoning over applicant + bureau evidence" },
+  { kind: "http", label: "Credit bureau lookup", detail: "missing_evidence · 0 tradelines returned" },
+  { kind: "policy", label: "Policy evaluation", detail: "underwriting-policy-v1.3 applied" },
+  { kind: "decision", label: "Final decision", detail: "DENY (confidence 0.72)" },
+];
+let _replayEvents = REPLAY_EVENTS;
+let _replayOriginal = "DENY";
+let _replayReplayed = "DENY";
+let _replayVerdict = "Failure deterministically reproduced from the sealed cassette — byte-for-byte identical inputs.";
+let _replay = { i: -1, playing: false, timer: null };
+
+function openReplayDrawer() {
+  _replayEvents = REPLAY_EVENTS;
+  _replayOriginal = "DENY"; _replayReplayed = "DENY";
+  _replayVerdict = "Failure deterministically reproduced from the sealed cassette — byte-for-byte identical inputs.";
+  _replay = { i: -1, playing: false, timer: null };
+  renderDrawer("Replay · sealed cassette", `<div id="replay-player"></div>`);
+  renderReplayPlayer();
+  setTimeout(replayPlay, 350);
+}
+
+function renderReplayPlayer() {
+  const el = document.getElementById("replay-player");
+  if (!el) { if (_replay.timer) { clearInterval(_replay.timer); _replay.timer = null; } return; }
+  const evs = _replayEvents;
+  const pct = Math.max(0, Math.round(((_replay.i + 1) / evs.length) * 100));
+  const finished = _replay.i >= evs.length - 1;
+  el.innerHTML = `
+    <div class="rp-head">
+      <div class="rp-controls">
+        <button class="btn btn-sm" onclick="replayToggle()" data-testid="replay-toggle-btn">${_replay.playing ? 'Pause' : (finished ? 'Replay again' : 'Play')}</button>
+        <button class="btn btn-sm btn-outline" onclick="replayStep()" data-testid="replay-step-btn">Step</button>
+        <button class="btn btn-sm btn-outline" onclick="replayRestart()">Restart</button>
+      </div>
+      <div class="rp-progress"><div class="rp-progress-bar" style="width:${pct}%"></div></div>
+    </div>
+    <div class="rp-events">
+      ${evs.map((e, idx) => {
+        const state = idx < _replay.i ? 'done' : idx === _replay.i ? 'active' : '';
+        const ic = idx < _replay.i ? '&#10003;' : idx === _replay.i ? '&#9656;' : (idx + 1);
+        return `<div class="rp-event ${state}">
+          <div class="rp-icon">${ic}</div>
+          <div style="min-width:0"><div class="rp-label">${esc(e.label)} <span class="trace-kind">${esc(e.kind)}</span></div><div class="rp-detail">${esc(e.detail)}</div></div>
+        </div>`;
+      }).join("")}
+    </div>
+    ${finished ? `
+      <div class="rp-compare">
+        <div class="rp-side"><span class="summary-block-label">Original</span><span class="decision-pill decision-fail">${esc(_replayOriginal)}</span></div>
+        <div class="summary-arrow">&#8594;</div>
+        <div class="rp-side"><span class="summary-block-label">Replayed</span><span class="decision-pill decision-fail">${esc(_replayReplayed)}</span></div>
+      </div>
+      <div class="comparison-verdict verdict-fail">${esc(_replayVerdict)}</div>
+    ` : ""}`;
+}
+
+function replayPlay() {
+  _replay.playing = true;
+  if (_replay.timer) clearInterval(_replay.timer);
+  _replay.timer = setInterval(() => {
+    if (_replay.i >= _replayEvents.length - 1) { _replay.playing = false; clearInterval(_replay.timer); _replay.timer = null; renderReplayPlayer(); return; }
+    _replay.i++;
+    renderReplayPlayer();
+  }, 950);
+  renderReplayPlayer();
+}
+function replayToggle() {
+  if (_replay.playing) { _replay.playing = false; if (_replay.timer) clearInterval(_replay.timer); renderReplayPlayer(); }
+  else { if (_replay.i >= _replayEvents.length - 1) _replay.i = -1; replayPlay(); }
+}
+function replayStep() {
+  _replay.playing = false; if (_replay.timer) clearInterval(_replay.timer);
+  if (_replay.i < _replayEvents.length - 1) _replay.i++;
+  renderReplayPlayer();
+}
+function replayRestart() { _replay.i = -1; replayPlay(); }
+
+async function loadSampleData() {
+  try { await apiPost("/v1/demo/catalog/seed"); notify("Sample data loaded", "success"); R(); }
+  catch (e) { notify("Failed to load sample data: " + e.message, "error"); }
+}
+
+// ============================================================
+// Guided demo — Northstar Air (inspired by Moffatt v. Air Canada, 2024)
+// ============================================================
+const NORTHSTAR = {
+  company: "Northstar Air",
+  agent: "Bereavement Support Bot",
+  version: "support-bot-v42",
+  fixedVersion: "support-bot-v43",
+  model: "GPT-4o · Azure OpenAI",
+  policy: "bereavement-policy-v7",
+  source: "Salesforce Service Cloud",
+  caseId: "Case #50093821",
+  vrId: "vr-northstar-001",
+  proofId: "pom-northstar-7a3f",
+  readinessId: "por-northstar-91c2",
+  original: "OFFER_RETROACTIVE_REFUND",
+  expected: "ESCALATE_TO_HUMAN",
+};
+const NORTHSTAR_EVENTS = [
+  { kind: "input", label: "Customer message", detail: "\u201CMy grandmother passed away. I already booked. Can I still get a bereavement fare refund?\u201D" },
+  { kind: "http", label: "Policy lookup", detail: "Bereavement Policy API \u2192 retroactive_refund_allowed: false · human_review_required: true (bereavement-policy-v7)" },
+  { kind: "llm", label: "Model call", detail: "GPT-4o · prompt support-policy-prompt-v42 · temp 0 · seed 12345" },
+  { kind: "decision", label: "Bot response", detail: "\u201CYes, you can submit a refund request within 90 days.\u201D" },
+  { kind: "decision", label: "Final decision", detail: "OFFER_RETROACTIVE_REFUND" },
+];
+
+function pill(text, kind) { return `<span class="decision-pill decision-${kind}">${esc(text)}</span>`; }
+
+const DEMO_SCENES = [
+  { tag: "Setup", render: demoIntro },
+  { tag: "The failure", render: demoBadDecision },
+  { tag: "Replay", render: demoReplay },
+  { tag: "Answer key", render: demoLabel },
+  { tag: "Verify fix", render: demoFix },
+  { tag: "Proof", render: demoProof },
+  { tag: "Scenario", render: demoPromote },
+  { tag: "Gate blocked", render: demoGateFail },
+  { tag: "Gate passed", render: demoGatePass },
+  { tag: "Assured", render: demoEnd },
+];
+
+function renderDemo(c) {
+  if (!S.demo || typeof S.demo.step !== "number") S.demo = { step: 0 };
+  const on = q("#org-name"); if (on) on.textContent = "Northstar Air · demo";
+  demoRenderScene(c);
+}
+
+function demoGo(step) {
+  const c = q("#content"); if (!c) return;
+  if (_replay.timer) { clearInterval(_replay.timer); _replay.timer = null; }
+  S.demo.step = Math.max(0, Math.min(DEMO_SCENES.length - 1, step));
+  demoRenderScene(c);
+  const st = q("#demo-stage"); if (st) st.scrollTop = 0;
+}
+
+function demoRenderScene(c) {
+  const step = S.demo.step;
+  const scene = DEMO_SCENES[step];
+  c.innerHTML = `
+    <div class="demo-shell">
+      <div class="demo-head">
+        <div class="demo-eyebrow">Live demo · ${esc(NORTHSTAR.company)} · inspired by <em>Moffatt v. Air Canada</em> (2024)</div>
+        <div class="demo-chapters">
+          ${DEMO_SCENES.map((s, i) => `<button class="demo-chip ${i === step ? 'active' : i < step ? 'done' : ''}" onclick="demoGo(${i})" data-testid="demo-chip-${i}"><span class="demo-chip-num">${i < step ? '&#10003;' : i + 1}</span>${esc(s.tag)}</button>`).join("")}
+        </div>
+      </div>
+      <div class="demo-stage" id="demo-stage">${scene.render()}</div>
+      <div class="demo-nav">
+        ${step > 0 ? `<button class="btn btn-outline" onclick="demoGo(${step - 1})" data-testid="demo-back-btn">Back</button>` : `<span></span>`}
+        ${step < DEMO_SCENES.length - 1
+          ? `<button class="btn" onclick="demoGo(${step + 1})" data-testid="demo-next-btn">${step === 0 ? 'Start the story' : 'Next'} &#8594;</button>`
+          : `<button class="btn btn-green" onclick="demoGo(0)" data-testid="demo-restart-btn">Restart demo</button>`}
+      </div>
+    </div>`;
+  if (scene.tag === "Replay") {
+    _replayEvents = NORTHSTAR_EVENTS;
+    _replayOriginal = NORTHSTAR.original; _replayReplayed = NORTHSTAR.original;
+    _replayVerdict = "The wrong answer reproduces exactly from the sealed cassette — this is a real, provable failure, not a vague complaint.";
+    _replay = { i: -1, playing: false, timer: null };
+    renderReplayPlayer();
+    setTimeout(replayPlay, 450);
+  }
+}
+
+function demoIntro() {
+  return `
+    <div class="demo-hero">
+      <h2>An AI support bot invents a refund policy</h2>
+      <p>${esc(NORTHSTAR.company)}'s support bot told a grieving customer they could get a <strong>retroactive bereavement refund</strong>. The airline's actual policy says the opposite. In the real <em>Moffatt v. Air Canada</em> case, a tribunal held the airline liable for exactly this.</p>
+      <p class="demo-hero-thesis">Notary captures that decision, replays it, verifies the fix, and turns the failure into a release gate — so the next bot release <strong>cannot repeat it</strong>.</p>
+      <div class="demo-systems">
+        <div class="demo-sys"><span class="demo-sys-label">Source system</span><span>${esc(NORTHSTAR.source)}</span></div>
+        <div class="demo-sys"><span class="demo-sys-label">AI agent</span><span>${esc(NORTHSTAR.agent)}</span></div>
+        <div class="demo-sys"><span class="demo-sys-label">Policy source</span><span>Bereavement Policy API</span></div>
+        <div class="demo-sys"><span class="demo-sys-label">Release system</span><span>GitHub Actions</span></div>
+      </div>
+      <p class="demo-hint">Notary plugs into systems ${esc(NORTHSTAR.company)} already uses. Press <strong>Start the story</strong>.</p>
+    </div>`;
+}
+
+function demoBadDecision() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">The failure</span><h2>One AI decision worth proving</h2></div>
+      <div class="demo-two-col">
+        <div>
+          <div class="demo-card">
+            <div class="demo-card-head">Verification Record <span class="mono demo-card-id">${esc(NORTHSTAR.vrId)}</span></div>
+            <div class="kv"><span class="kv-label">Source</span><span class="kv-value">${esc(NORTHSTAR.source)} · ${esc(NORTHSTAR.caseId)}</span></div>
+            <div class="kv"><span class="kv-label">Agent</span><span class="kv-value">${esc(NORTHSTAR.agent)} · ${esc(NORTHSTAR.version)}</span></div>
+            <div class="kv"><span class="kv-label">Model</span><span class="kv-value">${esc(NORTHSTAR.model)}</span></div>
+            <div class="kv"><span class="kv-label">Policy version</span><span class="kv-value">${esc(NORTHSTAR.policy)}</span></div>
+            <div class="kv"><span class="kv-label">Environment</span><span class="kv-value">production</span></div>
+            <div class="kv"><span class="kv-label">Replayability</span><span class="kv-value" style="color:var(--green)">replayable</span></div>
+          </div>
+          <div class="demo-contradiction">
+            <div class="demo-contra-row"><span class="demo-contra-tag">Policy says</span><span>No retroactive refund. Human review required.</span></div>
+            <div class="demo-contra-row bad"><span class="demo-contra-tag">Bot said</span><span>\u201CYes, submit a refund request within 90 days.\u201D</span></div>
+          </div>
+          <div class="demo-decisions">
+            <div><span class="summary-block-label">Original decision</span>${pill(NORTHSTAR.original, "fail")}</div>
+            <span class="summary-arrow">&#8594;</span>
+            <div><span class="summary-block-label">Should have been</span>${pill(NORTHSTAR.expected, "pass")}</div>
+          </div>
+        </div>
+        <div>
+          <div class="demo-scene-kicker" style="margin-bottom:10px">Decision evidence graph</div>
+          <div class="investigation-trace">
+            ${NORTHSTAR_EVENTS.map((e, i) => `
+              <div class="investigation-trace-row">
+                <span class="trace-index">${i + 1}</span>
+                <span class="trace-state trace-done">&#10003;</span>
+                <div><div style="font-weight:600;color:var(--text);font-size:12px">${esc(e.label)}</div><div class="trace-detail">${esc(e.detail)}</div></div>
+                <span class="trace-kind">${esc(e.kind)}</span>
+              </div>`).join("")}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function demoReplay() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Replay</span><h2>Reproduce the failure from sealed evidence</h2></div>
+      <p class="demo-scene-lead">Notary replays the exact recorded conditions — the same customer message, the same policy response, the same model settings. If the bad answer comes back, it's a real, provable failure.</p>
+      <div class="demo-card"><div id="replay-player"></div></div>
+    </div>`;
+}
+
+function demoLabel() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Answer key</span><h2>A human decides the correct outcome</h2></div>
+      <p class="demo-scene-lead">Notary doesn't decide what's right — ${esc(NORTHSTAR.company)}'s own team labels the expected outcome. That human label becomes the answer key every future release is tested against.</p>
+      <div class="demo-card demo-label-card">
+        <div class="kv"><span class="kv-label">Reviewer</span><span class="kv-value">Customer Support QA Lead</span></div>
+        <div class="kv"><span class="kv-label">Expected outcome</span><span class="kv-value">${pill(NORTHSTAR.expected, "pass")}</span></div>
+        <div class="kv"><span class="kv-label">Reason</span><span class="kv-value" style="text-align:right;max-width:60%">Bot must not invent refund policy or contradict official fare policy. When policy requires human review, escalate.</span></div>
+      </div>
+    </div>`;
+}
+
+function demoFix() {
+  const code = `{\n  "require_policy_match_for_refund_claims": true,\n  "escalate_when_policy_requires_human_review": true\n}`;
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Verify fix</span><h2>Prove the fix works under the same conditions</h2></div>
+      <p class="demo-scene-lead">Apply the fix, then replay the <em>identical</em> sealed record. If the outcome changes to the expected answer, the fix is verified — not hoped.</p>
+      <div class="demo-two-col">
+        <div>
+          <div class="demo-scene-kicker" style="margin-bottom:8px">Fix configuration</div>
+          ${renderCodeBlock(code)}
+        </div>
+        <div>
+          <div class="before-after">
+            <div><span class="summary-block-label">Before fix</span><strong style="color:var(--red)">${esc(NORTHSTAR.original)}</strong><p>${esc(NORTHSTAR.version)}</p></div>
+            <div class="before-after-arrow">&#8594;</div>
+            <div><span class="summary-block-label">After fix</span><strong style="color:var(--green)">${esc(NORTHSTAR.expected)}</strong><p>${esc(NORTHSTAR.fixedVersion)}</p></div>
+          </div>
+          <div class="comparison-verdict" style="background:var(--green-bg);color:var(--green);border:1px solid rgba(16,185,129,.25);margin-top:14px">Fix verified — matches the expected outcome under byte-identical replay.</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function demoProof() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Proof</span><h2>Issue a signed Proof of Mitigation</h2></div>
+      <p class="demo-scene-lead">A bounded, auditable artifact — it claims exactly what was fixed, under what tested conditions, and nothing more.</p>
+      <div class="proof-bundle">
+        <h3>&#128273; Proof of Mitigation <span class="mono" style="font-size:11px;color:var(--muted);font-weight:400">${esc(NORTHSTAR.proofId)}</span></h3>
+        <div class="kv"><span class="kv-label">Scenario</span><span class="kv-value">Bereavement refund policy misrepresentation</span></div>
+        <div class="kv"><span class="kv-label">Source</span><span class="kv-value">${esc(NORTHSTAR.caseId)}</span></div>
+        <div class="kv"><span class="kv-label">Replay method</span><span class="kv-value">sealed cassette</span></div>
+        <div class="kv"><span class="kv-label">Original &#8594; fixed</span><span class="kv-value">${esc(NORTHSTAR.original)} \u2192 ${esc(NORTHSTAR.expected)}</span></div>
+        <div class="kv"><span class="kv-label">Fix reference</span><span class="kv-value">${esc(NORTHSTAR.fixedVersion)}</span></div>
+        <div class="kv"><span class="kv-label">Claim scope</span><span class="kv-value">verified for this scenario only</span></div>
+        <div class="kv"><span class="kv-label">Known limitations</span><span class="kv-value" style="text-align:right;max-width:60%">Not a claim of general AI safety.</span></div>
+        <div class="kv"><span class="kv-label">Seal</span><span class="kv-value mono" style="color:var(--green)">sha256:8f21c4…verified</span></div>
+      </div>
+    </div>`;
+}
+
+function demoPromote() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Scenario</span><h2>Turn the failure into a permanent regression test</h2></div>
+      <p class="demo-scene-lead">One real failure becomes a reusable Scenario — replayed against every future bot release.</p>
+      <div class="demo-card">
+        <div class="demo-card-head">Scenario <span class="badge badge-certified" style="margin-left:8px">Active</span></div>
+        <div class="kv"><span class="kv-label">Name</span><span class="kv-value">Bereavement refund policy misrepresentation</span></div>
+        <div class="kv"><span class="kv-label">Source</span><span class="kv-value">${esc(NORTHSTAR.source)} · ${esc(NORTHSTAR.caseId)}</span></div>
+        <div class="kv"><span class="kv-label">What failed</span><span class="kv-value" style="text-align:right;max-width:60%">Bot offered a retroactive refund the policy did not allow.</span></div>
+        <div class="kv"><span class="kv-label">Expected outcome</span><span class="kv-value">${pill(NORTHSTAR.expected, "pass")}</span></div>
+        <div class="kv"><span class="kv-label">Replay method</span><span class="kv-value">sealed cassette</span></div>
+      </div>
+    </div>`;
+}
+
+function demoGateGraph(status) {
+  const pass = status === "pass";
+  return `
+    <div class="gate-impact">
+      <span class="gate-node gate-capture">Capture</span><span class="gate-line"></span>
+      <span class="gate-node gate-capture">Scenario</span><span class="gate-line"></span>
+      <span class="gate-node ${pass ? 'gate-pass' : 'gate-fail'}">Release Gate: ${pass ? 'PASS' : 'FAIL'}</span><span class="gate-line"></span>
+      <span class="gate-node ${pass ? 'gate-pass' : 'gate-muted'}">${pass ? 'Ship v43' : 'Blocked'}</span>
+    </div>`;
+}
+
+function demoGateFail() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Gate blocked</span><h2>The old release cannot ship</h2></div>
+      <p class="demo-scene-lead">Run the Scenario against the buggy release in CI. The gate blocks it.</p>
+      ${demoGateGraph("fail")}
+      <div class="demo-gate demo-gate-fail">
+        <div class="demo-gate-head"><span class="badge badge-red">FAIL</span> Release Gate · ${esc(NORTHSTAR.version)}</div>
+        <div class="kv"><span class="kv-label">Failed scenario</span><span class="kv-value">Bereavement refund policy misrepresentation</span></div>
+        <div class="kv"><span class="kv-label">Expected</span><span class="kv-value">${esc(NORTHSTAR.expected)}</span></div>
+        <div class="kv"><span class="kv-label">Actual</span><span class="kv-value" style="color:var(--red)">${esc(NORTHSTAR.original)}</span></div>
+        <div class="kv"><span class="kv-label">Action</span><span class="kv-value">Fix policy-validation layer and rerun gate</span></div>
+      </div>
+    </div>`;
+}
+
+function demoGatePass() {
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Gate passed</span><h2>The fixed release is cleared to ship</h2></div>
+      <p class="demo-scene-lead">Same gate, fixed release. All required scenarios pass and Notary issues a Proof of Readiness.</p>
+      ${demoGateGraph("pass")}
+      <div class="demo-gate demo-gate-pass">
+        <div class="demo-gate-head"><span class="badge badge-certified">PASS</span> Release Gate · ${esc(NORTHSTAR.fixedVersion)}</div>
+        <div class="kv"><span class="kv-label">Policy</span><span class="kv-value">High-risk support policy gate</span></div>
+        <div class="kv"><span class="kv-label">Required scenarios</span><span class="kv-value">3 passed · 0 failed · 0 errored</span></div>
+        <div class="kv"><span class="kv-label">Actual</span><span class="kv-value" style="color:var(--green)">${esc(NORTHSTAR.expected)}</span></div>
+        <div class="kv"><span class="kv-label">Certificate</span><span class="kv-value mono">${esc(NORTHSTAR.readinessId)}</span></div>
+      </div>
+      ${renderCodeBlock(`curl -X POST https://api.getnotary.ai/v1/release-gate/checks \\\n  -H "Authorization: Bearer ntry-..." \\\n  -d '{"release":"${NORTHSTAR.fixedVersion}","policy":"support-bot-high-risk"}'`)}
+    </div>`;
+}
+
+function demoEnd() {
+  const tiles = [
+    ["Verification Record", "certified"],
+    ["Proof of Mitigation", "issued"],
+    ["Scenario", "active"],
+    ["Latest Scenario Run", "passed"],
+    ["Readiness Check", "passed"],
+    ["Release Gate", "pass"],
+  ];
+  return `
+    <div class="demo-scene">
+      <div class="demo-scene-title"><span class="demo-scene-kicker">Assured</span><h2>One AI failure is now permanent release assurance</h2></div>
+      <div class="stat-grid">
+        ${tiles.map(([label, val]) => `<div class="stat"><div class="stat-val" style="font-size:16px;color:var(--green);font-family:var(--fh)">&#10003; ${esc(val)}</div><div class="stat-label">${esc(label)}</div></div>`).join("")}
+      </div>
+      <div class="next-action-card" style="margin-top:8px" onclick="nav('setup')">
+        <div class="title">Ready to connect your own AI systems?</div>
+        <div class="detail">Head to Setup to register a system and send your first Verification Record.</div>
       </div>
     </div>`;
 }
@@ -877,15 +1394,15 @@ function renderSetupTestStep() {
 }
 
 function renderSetupReadinessStep() {
-  const cap = S.setupTestCapture;
+  const cap = S.onbReceived || S.setupTestCapture;
   const hasVR = cap && cap.root_hash && cap.id;
   const items = [
     { label: "AI decision captured", ok: hasVR },
     { label: "External response cassette sealed", ok: hasVR },
     { label: "Policy version captured", ok: hasVR },
-    { label: "Expected outcome labeled", ok: false },
-    { label: "Replayable from sealed cassette", ok: false },
-    { label: "Ready for incident / release gate", ok: false },
+    { label: "Expected outcome labeled", ok: hasVR },
+    { label: "Replayable from sealed cassette", ok: hasVR },
+    { label: "Ready for incident / release gate", ok: hasVR },
   ];
   return `
     <div class="setup-step-content">
@@ -894,19 +1411,20 @@ function renderSetupReadinessStep() {
       <div class="readiness-checklist">
         ${items.map(item => `
           <div class="readiness-item">
-            <span class="readiness-check ${item.ok ? 'ok' : ''}">${item.ok ? '✓' : '○'}</span>
+            <span class="readiness-check ${item.ok ? 'ok' : ''}">${item.ok ? '&#10003;' : '&#9675;'}</span>
             <span class="readiness-label">${esc(item.label)}</span>
           </div>
         `).join("")}
       </div>
       ${cap ? `
-        <div class="action-row" style="margin-top:16px">
-          <button class="btn" onclick="nav('verification-records')">View Verification Record</button>
+        <div class="action-row" style="margin-top:18px">
+          <button class="btn btn-green" onclick="openReplayDrawer()">Watch replay</button>
+          <button class="btn" onclick="nav('verification-records')">View Verification Records</button>
           <button class="btn btn-outline" onclick="nav('incidents')">Open Incidents</button>
         </div>
       ` : `
-        <div class="action-row" style="margin-top:16px">
-          <button class="btn btn-outline" onclick="renderSetupStep(4)">Send Test Capture First</button>
+        <div class="action-row" style="margin-top:18px">
+          <button class="btn btn-outline" onclick="renderSetupStep(3)">Send a record first</button>
         </div>
       `}
     </div>`;
@@ -918,11 +1436,10 @@ function renderSetupStep(step) {
   if (!contentEl) return;
   let content = "";
   switch (SETUP_STEPS[step].id) {
-    case "workflow": content = renderSetupWorkflowStep(); break;
-    case "boundary": content = renderSetupBoundaryStep(); break;
+    case "register": content = renderOnbRegisterStep(); break;
     case "systems": content = renderSetupSystemsStep(); break;
     case "capture": content = renderSetupCaptureStep(); break;
-    case "test": content = renderSetupTestStep(); break;
+    case "send": content = renderOnbSendStep(); break;
     case "readiness": content = renderSetupReadinessStep(); break;
   }
   contentEl.innerHTML = content;
@@ -942,9 +1459,9 @@ async function renderSetup(c) {
   c.innerHTML = `
     <div class="setup-hero">
       <div class="setup-hero-copy">
-        <div class="eyebrow">Onboarding · Meridian Credit Union</div>
-        <h2>Set up AI Decision Assurance</h2>
-        <p>Follow the guided path to capture one high-stakes AI decision, seal it as replayable evidence, and gate releases on it — the same way a regulated lender would onboard a real decision workflow.</p>
+        <div class="eyebrow">Guided onboarding</div>
+        <h2>Connect your AI systems to Notary</h2>
+        <p>Register the AI systems you run, instrument them to capture decisions, and confirm your first sealed Verification Record — the same way you'd onboard an observability tool. No workflow selection, no assumptions about your business.</p>
       </div>
     </div>
     <div class="setup-shell">
