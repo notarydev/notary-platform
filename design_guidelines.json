@@ -1,0 +1,145 @@
+{
+  "typography": {
+    "font_imports": "@import url('https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');",
+    "primary_heading_font": "'Chivo', sans-serif",
+    "body_font": "'IBM Plex Sans', sans-serif",
+    "monospace_font": "'JetBrains Mono', monospace",
+    "scale": {
+      "xs": "0.75rem",
+      "sm": "0.875rem",
+      "base": "1rem",
+      "lg": "1.125rem",
+      "xl": "1.25rem",
+      "2xl": "1.5rem",
+      "3xl": "2rem",
+      "4xl": "2.5rem"
+    },
+    "rules": [
+      "Use Chivo for all headings (H1-H4). Apply negative tracking (letter-spacing: -0.02em) to H1 and H2 for a dense, technical feel.",
+      "Use IBM Plex Sans for body text, inputs, and standard UI elements.",
+      "Use JetBrains Mono for hashes, IDs, code blocks, metrics, and data table numerical columns.",
+      "Never use Inter or Roboto."
+    ]
+  },
+  "colors": {
+    "theme": "Dark-first (Forensic/Audit style)",
+    "css_variables": {
+      "--bg-base": "#0A0A0C",
+      "--bg-surface": "#121215",
+      "--bg-elevated": "#1A1A1E",
+      "--bg-glass": "rgba(18, 18, 21, 0.7)",
+      "--text-primary": "#F4F4F5",
+      "--text-secondary": "#A1A1AA",
+      "--text-muted": "#71717A",
+      "--border-subtle": "#27272A",
+      "--border-strong": "#3F3F46",
+      "--border-highlight": "rgba(255, 255, 255, 0.1)",
+      "--accent-primary": "#0066FF",
+      "--accent-hover": "#3385FF",
+      "--accent-glow": "rgba(0, 102, 255, 0.15)",
+      "--semantic-pass": "#10B981",
+      "--semantic-fail": "#EF4444",
+      "--semantic-warn": "#F59E0B",
+      "--semantic-info": "#3B82F6",
+      "--semantic-pass-bg": "rgba(16, 185, 129, 0.1)",
+      "--semantic-fail-bg": "rgba(239, 68, 68, 0.1)",
+      "--semantic-warn-bg": "rgba(245, 158, 11, 0.1)",
+      "--semantic-info-bg": "rgba(59, 130, 246, 0.1)"
+    },
+    "rules": [
+      "No purple-on-white gradients. Stick to functional high-contrast colors.",
+      "True grey base surfaces (not pure black) to reduce eye fatigue.",
+      "Use a single saturated accent (Blueprint Blue) in a desaturated system.",
+      "Semantic colors must remain legible in dark mode. Use colored background with 10% opacity for badges."
+    ]
+  },
+  "spacing_and_layout": {
+    "scale": {
+      "xs": "0.25rem",
+      "sm": "0.5rem",
+      "md": "1rem",
+      "lg": "1.5rem",
+      "xl": "2rem",
+      "2xl": "3rem",
+      "3xl": "4rem"
+    },
+    "grid": {
+      "bento_density": "Use CSS Grid with gap-md or gap-lg. For dashboards, utilize high-density grids (e.g., grid-template-columns: repeat(4, 1fr)).",
+      "data_tables": "Use border-collapse. Keep density high but add padding-sm to td and th."
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "--shadow-sm": "0 1px 2px rgba(0,0,0,0.4)",
+      "--shadow-md": "0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -1px rgba(0,0,0,0.4)",
+      "--shadow-glow": "0 0 15px var(--accent-glow)"
+    },
+    "borders_and_radius": {
+      "--radius-sm": "4px",
+      "--radius-md": "8px",
+      "--radius-lg": "12px",
+      "--radius-full": "9999px"
+    },
+    "textures": {
+      "noise": "Apply a subtle SVG noise filter or repeating background-image (CSS grain) over the main app shell with opacity 0.02 to break digital flatness.",
+      "glassmorphism": "Use backdrop-filter: blur(16px) with var(--bg-glass) for top bars, sticky headers, and modals. Add a 1px top inner border (box-shadow: inset 0 1px 0 rgba(255,255,255,0.05)) to glass surfaces."
+    }
+  },
+  "motion_and_micro_interactions": {
+    "transitions": {
+      "default": "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+      "transform_only": "transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease",
+      "slow": "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)"
+    },
+    "interactions": [
+      "Buttons: Translate Y by -1px on hover, active state translate Y by 0px. Scale down slightly on active (0.98).",
+      "Table Rows: Apply a subtle background shift (var(--bg-elevated)) on hover and a 2px left border highlight (var(--accent-primary)).",
+      "Entrance: Use CSS keyframes for staggered fade-in-up animations for dashboard tiles and list items."
+    ]
+  },
+  "component_specific_guidelines": {
+    "app_shell": {
+      "sidebar": "Fixed width (240px). Surface color var(--bg-surface) with a right border var(--border-subtle). Navigation items should have subtle rounded corners, an SVG icon on the left, and a pronounced active state (solid subtle background with accent text color).",
+      "topbar": "Sticky, glassmorphic (var(--bg-glass) + blur). Contains page title and environment tools. Add a bottom border of var(--border-subtle). No fully transparent background.",
+      "brand": "Replace 'Harborline' with 'GlobalBank' or 'Acme Corp' (generic demo company). Ensure brand text feels premium and distinct using Chivo font."
+    },
+    "golden_path_hero": {
+      "description": "A 6-step visual journey for the Home overview (Capture -> Replay -> Fix -> Proof -> Scenario -> Gate).",
+      "style": "Use a horizontal flex or grid layout with CSS animated dashed lines connecting nodes. Nodes should be circular with monospace step numbers.",
+      "active_state": "The 'current' step should glow with var(--shadow-glow) and use var(--accent-primary) border/background.",
+      "animations": "Use CSS @keyframes to move the background-position of the dashed line gradient, simulating data flowing from left to right."
+    },
+    "stat_tiles": {
+      "style": "Cards using var(--bg-surface), 1px solid var(--border-subtle), border-radius var(--radius-md). Padding var(--spacing-lg).",
+      "content": "Large primary metric in JetBrains Mono. Subtext in IBM Plex Sans (var(--text-secondary)). Subtle SVG icon in the top right.",
+      "hover": "Slight lift (-2px translate-Y) with var(--shadow-md) and border color shift."
+    },
+    "setup_wizard_stepper": {
+      "style": "A multi-step layout. Left side: Vertical progress tracker with line connectors. Right side: The active form step content.",
+      "forms": "Inputs should have var(--bg-base) background, 1px var(--border-strong) border, changing to var(--accent-primary) on focus with a subtle box-shadow glow.",
+      "feeling": "Should feel like a serious enterprise setup. Dense form fields, clear descriptions, monospace IDs where applicable."
+    },
+    "data_tables": {
+      "style": "Forensic-grade tables. Clean, dense. Row borders var(--border-subtle). No alternating row colors, rely on hover states.",
+      "badges": "Use semantic pill-shaped badges (border-radius: var(--radius-full)) for statuses (Pass, Fail, Warn, Replayable, Certified, Planned, Ingested). Text size xs, JetBrains Mono font. Background uses semantic-bg variables."
+    }
+  },
+  "universal_guidelines_for_main_agent": {
+    "tech_stack_rules": [
+      "CRITICAL: The target stack is VANILLA HTML/CSS/JS. DO NOT use React, JSX, Tailwind, or Shadcn UI.",
+      "Write all styles in standard CSS using the CSS variables defined in this guideline.",
+      "Use JavaScript to handle interactions, DOM manipulation, and view switching.",
+      "Ensure all CSS uses native features (CSS Variables, Flexbox, Grid, nested if supported by target standard or just flat). No build step required."
+    ],
+    "design_rules": [
+      "NO AI SLOP. Avoid generic centered layouts, simplistic purple/blue gradients, and uniform mushy styling.",
+      "Ensure depth through layering (bg-base -> bg-surface -> bg-elevated) and crisp 1px borders, NOT heavy drop shadows.",
+      "Optical clarity: Always maintain high contrast. Avoid pure transparent backgrounds for text-bearing surfaces (especially headers/dropdowns).",
+      "Use data-testid attributes on all interactive elements (buttons, inputs, links, tabs) for testing. Example: data-testid='login-submit-button'.",
+      "Use inline SVG icons. Do NOT use emojis as icons.",
+      "Use a 'generic demo company' name instead of Harborline.",
+      "Don't cram elements. Even in high density, ensure padding scales proportionally (padding inside bordered containers is mandatory).",
+      "Add micro-interactions (hover, active, focus) to all clickable elements. Provide visual feedback."
+    ]
+  }
+}

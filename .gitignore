@@ -37,3 +37,7 @@ terraform.tfstate.*
 tfplan
 *.tfplan
 *.lock.info
+
+# Emergent preview-only shims (not part of the real repo)
+/frontend/
+/backend/
