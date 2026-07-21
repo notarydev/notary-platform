@@ -34,12 +34,12 @@ app.include_router(platform.router, prefix="/v1")
 app.include_router(release_gate.router, prefix="/v1")
 app.include_router(viz.router, prefix="/v1")
 app.include_router(setup.router, prefix="/v1")
-app.include_router(dashboard.router)
-
-# Redirect root to the platform SPA.
-@app.get("/")
+# Redirect root to the platform SPA (must be before dashboard router).
+@app.get("/", include_in_schema=False)
 def root_redirect() -> RedirectResponse:
     return RedirectResponse(url="/app/", status_code=302)
+
+app.include_router(dashboard.router)
 
 # Serve the internal Command Center SPA (static build from notary-viz) at /cc.
 _static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "cc"
