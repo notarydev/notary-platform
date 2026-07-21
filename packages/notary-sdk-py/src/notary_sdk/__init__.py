@@ -154,26 +154,42 @@ class Snapshot:
             "policy_version": self.policy_version,
         }
 
-    def verify(self) -> bool:
-        """Verify the snapshot's internal integrity."""
-        prev_hash = b"\x00" * 32
-        elem_hashes: list[bytes] = []
-        for e in self.elements:
-            ce = CapturedElement(kind=e["kind"], payload=e["payload"])
-            h = _seal_element(prev_hash, ce.canonical_bytes(), self.secret_key)
-            elem_hashes.append(h)
-            if h.hex() != e.get("element_hash"):
-                return False
-            prev_hash = h
-        return _compute_root_hash(elem_hashes) == self.root_hash
-
-    def submit(self) -> dict[str, Any]:
-        """Best-effort submit to the configured API URL."""
+    def submit(
+        self,
+        source_system_id: str = "",
+        source_record_ref: str = "",
+        agent_id: str = "",
+        business_function: str = "",
+        environment_id: str = "env:demo",
+        model_provider: str = "",
+        model_name: str = "",
+        label_source: str = "",
+        expected_outcome: str = "",
+    ) -> dict[str, Any]:
+        """Submit snapshot to the Verification Record endpoint with metadata."""
         import requests
 
-        url = (self.api_url or "http://localhost:8000").rstrip("/") + "/v1/incidents/ingest"
+        snapshot = self.to_dict()
+        # Attach metadata into the snapshot for the ingestion endpoint
+        snapshot["source_system_id"] = source_system_id
+        snapshot["source_record_ref"] = source_record_ref
+        snapshot["agent_id"] = agent_id
+        snapshot["business_function"] = business_function
+        snapshot["environment_id"] = environment_id
+        snapshot["model_provider"] = model_provider
+        snapshot["model_name"] = model_name
+        snapshot["label_source"] = label_source
+        snapshot["expected_outcome"] = expected_outcome
+
+        base_url = (self.api_url or "http://localhost:8000").rstrip("/")
+        # Primary: submit to Verification Record endpoint
+        url = base_url + "/v1/verification-records/from-snapshot"
         headers = {"Authorization": f"Bearer {self.api_token}", "Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json={"snapshot": self.to_dict()})
+        response = requests.post(url, headers=headers, json=snapshot)
+        if response.status_code == 404:
+            # Fallback to legacy incidents endpoint
+            url = base_url + "/v1/incidents/ingest"
+            response = requests.post(url, headers=headers, json={"snapshot": self.to_dict()})
         response.raise_for_status()
         return response.json()
 

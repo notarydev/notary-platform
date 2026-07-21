@@ -1,114 +1,49 @@
-# Development Setup — Notary SDK (PUBLIC)
+# Notary Platform — Setup
 
-## Prerequisites
+## Deployed Demo Setup
 
-Before starting, ensure the following are completed **outside this repository**:
+```bash
+git clone https://github.com/notarydev/notary-platform.git
+cd notary-platform
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e packages/notary-sdk-py
+export NOTARY_API_URL=https://api.getnotary.ai
+export NOTARY_API_TOKEN=<your-demo-token>
+```
 
-1. **Repository Creation** — The `notarydev/notary-sdk` repository exists on GitHub
-2. **PyPI Name Reservation** — The name `notary-sdk` is reserved on PyPI
-3. **npm Name Reservation** — The name `@notary/sdk` is reserved on npm
-4. **Project Integration** — The repository is connected to the GitHub Project (WO-20)
-5. **Trusted Publishing** — Set up PyPI and npm trusted publishing (OIDC) for automated releases
-   - [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
-   - [npm Trusted Publishing](https://docs.npmjs.com/creating-and-viewing-access-tokens)
+## Local Development Setup
 
-## Local Development
+```bash
+git clone https://github.com/notarydev/notary-platform.git
+cd notary-platform
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e packages/notary-sdk-py
+make run
+export NOTARY_API_URL=http://localhost:8000
+export NOTARY_API_TOKEN=<local-token-if-auth-enabled>
+```
 
-### Python SDK
+### SDK Snippet (runnable)
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/notarydev/notary-sdk.git
-   cd notary-sdk
-   ```
+```python
+from notary_sdk import RunCapture
 
-2. **Create a virtual environment**
-   ```bash
-   python3.9+ -m venv venv
-   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-   ```
+capture = RunCapture(
+    secret_key=b"demo-secret",
+    api_url="http://localhost:8000",
+    api_token="",
+)
 
-3. **Install dependencies**
-   ```bash
-   pip install -e ".[dev]"
-   ```
+capture.capture_human_action(source_record_ref="APP-1234", domain="Lending")
+capture.capture_llm(prompt="Loan application", response="Need credit score", model="demo-model", temperature=0.0, seed=12345)
+capture.capture_tool(method="POST", url="https://demo.notary.local/credit-bureau", response={"score": 650}, status=200)
+capture.capture_decision(decision="DENY", expected_correct_behavior="APPROVE")
 
-4. **Run tests**
-   ```bash
-   pytest tests/
-   ```
+snapshot = capture.finalize(agent_version="loan-agent@candidate", policy_version="credit-policy-v1")
+result = snapshot.submit(source_system_id="sys:lending", source_record_ref="APP-1234", agent_id="agent:lending", business_function="Personal loan underwriting")
+print(f"Created Verification Record: {result.get('id')}")
+```
 
-5. **Lint and type-check**
-   ```bash
-   ruff check src/ tests/
-   mypy src/
-   ```
-
-### TypeScript SDK
-
-1. **Navigate to the TypeScript package**
-   ```bash
-   cd packages/notary-sdk-ts
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Build and test**
-   ```bash
-   npm run build
-   npm test
-   ```
-
-## CI/CD Workflows
-
-Three GitHub Actions workflows are configured:
-
-### 1. `python.yml` — Python Linting, Type-Check, and Tests
-- Triggers: push, pull request
-- Runs: Ruff lint, mypy type-check, pytest
-
-### 2. `typescript.yml` — TypeScript Linting, Build, and Tests
-- Triggers: push, pull request
-- Runs: ESLint, tsc compile, npm test
-
-### 3. `publish.yml` — Publish to PyPI and npm
-- Triggers: GitHub release / tag
-- **Requires**: Trusted publishing configured on PyPI and npm
-- **Requires**: GitHub environment secrets (see below)
-
-## Secrets and Configuration
-
-No secrets are hardcoded. The `publish.yml` workflow uses **trusted publishing** (OIDC).
-
-### For Manual Token-Based Publishing (if needed)
-
-If you prefer token-based authentication, configure these repository secrets:
-
-- `PYPI_API_TOKEN` — PyPI API token (get from https://pypi.org/account/tokens/)
-- `NPM_TOKEN` — npm automation token (get from https://npmjs.com/settings/~/tokens)
-
-These are optional and are documented in the workflow as placeholders.
-
-## Merging and Releasing
-
-1. **Merge to main** — All tests must pass on the `scaffold/initial-setup` branch
-2. **Tag a release** — Create a GitHub release with a semantic version tag (e.g., `v0.1.0`)
-3. **Automated publishing** — The `publish.yml` workflow triggers automatically and publishes to PyPI and npm
-
-## Troubleshooting
-
-### Tests fail locally but pass in CI
-- Ensure Python version matches CI (3.9+)
-- Clear cache: `rm -rf .pytest_cache __pycache__`
-- Reinstall: `pip install -e ".[dev]" --force-reinstall`
-
-### Type-checking fails
-- Ensure all code has type hints
-- Run `mypy src/ --show-error-codes` for detailed diagnostics
-
-### npm/pip not found
-- Activate venv: `source venv/bin/activate`
-- Verify installation: `pip --version`, `npm --version`
+See also [README.md](../README.md) for the full API reference.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from notary_platform.services.services import (
     ActionEligibilityService,
     CertificateService,
+    DemoReplayRunner,
     IngestionService,
     KnownLimitationService,
     LabelProvenanceService,
@@ -13,6 +14,8 @@ from notary_platform.services.services import (
     ReadinessService,
     ReleaseGateService,
     ReplayabilityService,
+    ReplayExecutionResult,
+    ReplayRunner,
     ReplayService,
     ScenarioLibraryService,
     ScenarioRunService,
@@ -34,4 +37,7 @@ __all__ = [
     "ReadinessService",
     "ReleaseGateService",
     "ActionEligibilityService",
+    "ReplayRunner",
+    "DemoReplayRunner",
+    "ReplayExecutionResult",
 ]

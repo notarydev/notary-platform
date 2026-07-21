@@ -33,16 +33,23 @@ if not os.getenv("NOTARY_KMS_KEY_ARN") and not os.getenv("NOTARY_DEV_SIGNING_KEY
 
 
 def _signing_algorithm() -> str:
-    return "AWS_KMS_ENCRYPT_DECRYPT" if os.getenv("NOTARY_KMS_KEY_ARN") else "HMAC-SHA256-DEV"
+    kms_arn = os.getenv("NOTARY_KMS_KEY_ARN")
+    if kms_arn:
+        return "KMS_ENCRYPT_DECRYPT"  # KMS-sealed, not publicly verifiable
+    return "HMAC-SHA256-DEV"  # Dev-only, not production-grade
 
 
 def _sign(cert: dict[str, Any]) -> str:
     """Return a tamper-evident seal over the certificate content (excluding signature).
 
-    Production uses AWS KMS with a SYMMETRIC key (key usage ENCRYPT_DECRYPT):
-    the canonical payload is encrypted under KMS, producing a seal only KMS can
-    reproduce. This satisfies the "sealed by KMS" requirement without requiring an
-    asymmetric SIGN_VERIFY key. Local/prototype falls back to an HMAC dev key.
+    ⚠️ Known limitation: This is NOT a public-key independent signature.
+    Production uses AWS KMS symmetric ENCRYPT_DECRYPT which produces a KMS-sealed
+    artifact — it is verifiable only by the same KMS key (server-side). Local/prototype
+    uses an HMAC dev key. Neither mode produces an independently verifiable
+    public-key signature.
+
+    For public-key verification (SIGN_VERIFY), a future version will use KMS asymmetric
+    keys or a customer-managed signing key.
     """
     payload = {k: v for k, v in cert.items() if k != "signature"}
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -78,6 +85,13 @@ def generate_certificate(
     claim_scope: str = "",
 ) -> dict[str, Any]:
     """Create a Proof of Mitigation certificate and sign it."""
+    signing_alg = _signing_algorithm()
+    is_kms = signing_alg == "KMS_ENCRYPT_DECRYPT"
+    signing_note = (
+        "KMS-sealed (ENCRYPT_DECRYPT): verifiable server-side only, not a public-key signature"
+        if is_kms
+        else "Dev HMAC-SHA256: not production-grade, not independently verifiable"
+    )
     cert: dict[str, Any] = {
         "certificate_id": certificate_id or f"proof-{uuid.uuid4().hex}",
         "certificate_type": "proof_of_mitigation",
@@ -93,13 +107,15 @@ def generate_certificate(
         "expected_correct_behavior": expected_correct_behavior,
         "verified_outcome": verified_outcome,
         "timestamp": timestamp,
-        "signing_algorithm": _signing_algorithm(),
-        "known_limitations": "demo data / dev-or-KMS signing; not a general AI safety certificate",
+        "signing_algorithm": signing_alg,
+        "signing_note": signing_note,
+        "known_limitations": "dev-or-KMS signing; not a general AI safety certificate",
         "claim_scope": (
             claim_scope
             or "Verified fix for this tested scenario under recorded conditions. "
             "Does not certify general AI safety, fairness, "
-            "regulatory compliance, or performance."
+            "regulatory compliance, or outside tested scenario."
+        ),
         ),
         "certificate_uuid": uuid.uuid4().hex,
     }

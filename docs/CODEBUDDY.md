@@ -1,6 +1,8 @@
+> Status: Partially out of date. See README.md for current test count, auth status, and release gate status.
+
 # notary-platform — AI Decision Assurance Backend + Platform SPA
 
-**GitHub:** `notarydev/notary-platform` | **Latest:** `9ba9196` | **Branch:** `main`
+**GitHub:** `notarydev/notary-platform`
 
 ## What this is
 
@@ -12,10 +14,12 @@ The central Notary Platform repo. Contains the FastAPI backend (ingestion, repla
 Capture Source (SDK/API/Manual/Webhook)
 → Verification Record (canonical intake)
 → Replayability Assessment (8 states)
-→ Incident / Investigation (Postgres-backed)
-→ Replay / Fix Verification (cassette-backed)
-→ Proof / Certificate (KMS-signed)
-→ Scenario / Release Gate (planned)
+→ Replay Run
+→ Mutation Test (fix verification)
+→ Proof of Mitigation (signed certificate)
+→ Scenario / Scenario Run
+→ Readiness Policy / Readiness Check
+→ Release Gate
 ```
 
 ## Key files
@@ -30,43 +34,27 @@ Capture Source (SDK/API/Manual/Webhook)
 | Certificates | `src/notary_platform/certificates.py` |
 | SDK snapshot/verify | `src/notary_platform/snapshot.py` |
 | Demo scenarios | `src/notary_platform/demo_scenarios.py` |
+| Service layer | `src/notary_platform/services/services.py` |
 | Notary Platform SPA | `static/app/index.html` (single-file SPA) |
 | Command Center (embedded) | `static/cc/` (built from notary-viz) |
 | Terraform/AWS | `infra/terraform/*.tf` |
 | Docker | `Dockerfile` |
-| Docs | `docs/notary-platform-architecture-systems-progress.md` |
 
 ## Build/Run
 
 ```bash
 # Install
-pip install -e ".[dev]"
-pip install -e ".[cloud]"  # for Postgres/S3/KMS
+make install
 
-# Test
-pytest -q                    # 86 tests
-ruff check .                 # lint
-mypy src                     # typecheck
-
-# Run locally
-uvicorn notary_platform.api_server.main:app --host 0.0.0.0 --port 8001
-
-# Docker build
-docker buildx build --platform linux/amd64 --build-arg INSTALL_CLOUD=1 -t REPO:TAG .
+# Test (see README for current count)
+make test
+make lint
 ```
-
-## Deploy
-
-- AWS ECS/Fargate: `notary-dev-api` service, cluster `notary-dev`
-- Postgres: `notary-dev-db.cnoy4iaqgnpz.us-east-2.rds.amazonaws.com`
-- ALB: `notary-dev-alb-216871116.us-east-2.elb.amazonaws.com`
-- Domain: `api.getnotary.ai` (HTTP + HTTPS)
 
 ## Current state
 
-- 86 tests passing, CI green
 - Proof loop works (capture→ingest→replay→fix→certify→verify)
-- Postgres persistence for incidents, in-memory for V.R.s and labels
-- ALB/HTTPS deployed, Stable domain
-- `/app` and `/cc` served from same origin
-- Auth still public on `/v1`
+- Release Gate path works (scenario → readiness policy → readiness check → gate)
+- Full golden path works for both demo and non-demo SDK/API records
+- ReplayRunner abstraction separates demo runner from customer contract
+- Auth is enforced when NOTARY_API_AUTH_TOKEN is set

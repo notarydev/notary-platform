@@ -441,6 +441,11 @@ class VerificationRecord:
     sandbox_readiness: dict = field(default_factory=dict)
     next_action: str = ""
     suggested_labels: List[dict] = field(default_factory=list)
+    # Part 4: Separate computed vs demo-forced replayability
+    computed_replayability: ReplayabilityStatus = ReplayabilityStatus.unknown
+    demo_replayability: ReplayabilityStatus = ReplayabilityStatus.unknown
+    demo_replayability_reason: str = ""
+    replayability_source: str = "computed"  # "computed" | "demo_seed"
 
     def to_dict(self) -> dict:
         return {
@@ -475,6 +480,10 @@ class VerificationRecord:
             "sandbox_readiness": self.sandbox_readiness,
             "next_action": self.next_action,
             "suggested_labels": self.suggested_labels,
+            "computed_replayability": self.computed_replayability.value,
+            "demo_replayability": self.demo_replayability.value,
+            "demo_replayability_reason": self.demo_replayability_reason,
+            "replayability_source": self.replayability_source,
         }
 
 

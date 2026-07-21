@@ -15,13 +15,28 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from notary_platform.api_server.auth import require_auth
-from notary_platform.services import ServiceRegistry
 from notary_platform.snapshot import ForensicSnapshot, verify_snapshot
 from notary_platform.storage import get_storage
 
 router = APIRouter(tags=["incidents"])
 storage = get_storage()
-_registry = ServiceRegistry(storage)
+
+# Lazy import to avoid circular dependency with services → certificates
+_registry = None
+
+
+def get_registry():  # type: ignore[no-untyped-def]
+    """Get or create the service registry singleton."""
+    global _registry  # noqa: PLW0603
+    if _registry is None:
+        from notary_platform.services import ServiceRegistry
+        _registry = ServiceRegistry(storage)
+    return _registry
+
+
+def set_replay_runner(runner) -> None:  # type: ignore[no-untyped-def]
+    reg = get_registry()
+    reg.set_replay_runner(runner)
 
 
 class SnapshotIngestRequest(BaseModel):
@@ -75,7 +90,7 @@ def ingest_snapshot(body: SnapshotIngestRequest, org_id: str = Depends(require_a
     try:
         from notary_platform.services import IngestionService
 
-        ingestion_service = IngestionService(_registry)
+        ingestion_service = IngestionService(get_registry())
         ingestion_service.create_from_sdk_snapshot(
             snapshot_dict,
             org_id=acting_org,

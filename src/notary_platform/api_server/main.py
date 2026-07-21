@@ -47,13 +47,18 @@ if _platform_root.exists() and (_platform_root / "index.html").exists():
 
 @app.on_event("startup")
 def _register_demo_agent() -> None:
-    """Register the demo agent function and seed demo org into storage."""
+    """Register the demo replay runner and seed demo org into storage."""
     from notary_platform.api_server.routers.dashboard import _scenario_agent_factory
     from notary_platform.api_server.routers.incidents import set_demo_agent
-    from notary_platform.api_server.routers.ingestion import storage
+    from notary_platform.api_server.routers.ingestion import set_replay_runner, storage
+    from notary_platform.services import DemoReplayRunner
 
     agent = _scenario_agent_factory("lending-denial")
     set_demo_agent(agent)
+
+    # Register DemoReplayRunner for the service registry
+    _demo_runner = DemoReplayRunner(scenario_id="lending-denial")
+    set_replay_runner(_demo_runner)
 
     # Seed demo organization into storage
     from notary_platform.platform_data import seed as get_seed

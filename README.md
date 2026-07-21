@@ -249,25 +249,32 @@ Provisioned: VPC + subnets, ECR repos, ECS/Fargate cluster + API service, RDS Po
 IAM roles, CloudWatch log group. Replay is **synchronous** for now (no SQS worker); the
 code documents the seam for an async worker.
 
-## Known limitations
-
-- **Signing**: local/dev uses an HMAC key (`NOTARY_DEV_SIGNING_KEY`); production must set
-  `NOTARY_KMS_KEY_ARN`. The certificate proves the fix resolved *this tested scenario*, not
-  a general AI-safety claim.
-- **Persistence**: in-memory by default (great for demos/tests); set
-  `NOTARY_USE_REMOTE_STORAGE` for Postgres + S3.
-- **Replay**: cassette-first; missing cassette entries return `escalation_required` rather
-  than pretending success.
-- **Production systems**: capture sources only — the platform never replays or mutates
-  against production.
-- **Dashboard**: a forensic proof UI, not observability/APM (no latency graphs, alerts, traces).
-- **Postgres/S3 stores**: the service layer is storage-agnostic, but the Postgres/S3 storage
-  methods for the new WO-28 objects are intentionally minimal; the in-memory store is the
-  fully exercised path for demos and tests.
-
 ## Testing
 
 ```bash
-make test     # 99 tests: ingestion, replay, certificates, dashboard, auth, release gate vertical slice
+make test     # pytest suite: ingestion, replay, certificates, golden path, replay runner contract, auth, release gate
 make lint     # ruff + mypy
 ```
+
+## Known limitations
+
+- **Signing**: local/dev uses HMAC-SHA256 (`NOTARY_DEV_SIGNING_KEY`); production uses KMS
+  ENCRYPT_DECRYPT (symmetric, server-verifiable only). Neither mode is a public-key
+  independent signature. Certificates are tamper-evident but not independently verifiable
+  by third parties without access to the same KMS key or dev key.
+- **Replay**: cassette-first; demo records replay via the built-in `DemoReplayRunner`.
+  Non-demo customer records require a configured `ReplayRunner` — without one, replay
+  returns `unsupported_runner`. The ServiceRegistry accepts a custom ReplayRunner
+  implementation.
+- **Persistence**: in-memory by default (great for demos/tests); set
+  `NOTARY_USE_REMOTE_STORAGE` for Postgres + S3.
+- **Dashboard**: a forensic proof UI, not observability/APM (no latency graphs, alerts, traces).
+- **Demo data**: demo records from `demo_catalog.py` are marked `is_demo=True` and their
+  replayability may be demo-forced for storytelling. Computed replayability is always
+  stored separately in `computed_replayability`. Proof and release gate decisions use
+  actual ReplayRun/MutationTest/ScenarioRun results, not demo-forced state.
+- **Release Gate**: covers only scenarios in the readiness policy. Does not certify
+  general AI safety or behavior outside tested conditions.
+- **Postgres/S3 stores**: the service layer is storage-agnostic, but the Postgres/S3 storage
+  methods for product objects are intentionally minimal; the in-memory store is the
+  fully exercised path for demos and tests.

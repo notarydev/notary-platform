@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from notary_platform.api_server.auth import require_auth
+from notary_platform.api_server.routers.ingestion import get_registry as _get_registry
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.services import (
     ActionEligibilityService,
@@ -30,7 +31,7 @@ router = APIRouter(tags=["release_gate"])
 
 
 def _registry() -> ServiceRegistry:
-    return ServiceRegistry(storage)
+    return _get_registry()
 
 
 # ---------------------------------------------------------------------------

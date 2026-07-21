@@ -45,6 +45,67 @@ from notary_platform.storage import StorageBackend
 from notary_platform.storage import get_storage as _get_storage
 
 # ---------------------------------------------------------------------------
+# ReplayRunner abstraction
+# ---------------------------------------------------------------------------
+
+
+class ReplayExecutionResult:
+    """Result of a replay execution."""
+
+    def __init__(self, decision: str = "", status: str = "replayed", error: str = ""):
+        self.decision = decision
+        self.status = status
+        self.error = error
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"decision": self.decision, "replay_status": self.status, "error": self.error}
+
+
+class ReplayRunner:
+    """Abstract contract for running a replay against a snapshot.
+
+    Customer integrations implement this to hook their own agent logic.
+    """
+
+    def run(self, snapshot: dict[str, Any], agent_version: str = "", fix_config: dict[str, Any] | None = None) -> ReplayExecutionResult:
+        raise NotImplementedError("ReplayRunner.run must be overridden")
+
+
+class DemoReplayRunner(ReplayRunner):
+    """Demo replay runner using the built-in scenario agent factory.
+
+    This is the demo/development implementation. Customer integrations
+    should implement their own ReplayRunner via the ReplayRunner interface.
+    """
+
+    def __init__(self, scenario_id: str = "lending-denial") -> None:
+        self.scenario_id = scenario_id
+
+    def run(self, snapshot: dict[str, Any], agent_version: str = "", fix_config: dict[str, Any] | None = None) -> ReplayExecutionResult:
+        from notary_platform.demo_scenarios import SCENARIOS
+        from notary_platform.replay_engine.replay import replay_snapshot
+
+        # Determine the best scenario match for demo replay
+        sid = self.scenario_id
+        if sid not in SCENARIOS:
+            for key in SCENARIOS:
+                sid = key
+                break
+
+        agent_fn = _scenario_agent_factory(sid)
+        agent_kwargs = dict(fix_config or {})
+        try:
+            result = replay_snapshot(snapshot, agent_fn, agent_kwargs=agent_kwargs)
+            return ReplayExecutionResult(
+                decision=result.get("decision") or "",
+                status=result.get("replay_status", "error"),
+                error=result.get("error", ""),
+            )
+        except Exception as exc:
+            return ReplayExecutionResult(decision="", status="error", error=str(exc))
+
+
+# ---------------------------------------------------------------------------
 # Agent factory registry
 # ---------------------------------------------------------------------------
 
@@ -124,14 +185,21 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
 
 
 class ServiceRegistry:
-    """Holds the shared storage backend and agent factory for services."""
+    """Holds the shared storage backend, agent factory, and replay runner for services."""
 
-    def __init__(self, storage: StorageBackend | None = None) -> None:
+    def __init__(self, storage: StorageBackend | None = None, replay_runner: ReplayRunner | None = None) -> None:
         self.storage = storage or _get_storage()
         self._agent_factory: Callable[[str], Callable[..., str]] = _scenario_agent_factory
+        self._replay_runner: ReplayRunner | None = replay_runner
 
     def get_agent(self, scenario_id: str) -> Callable[..., str]:
         return self._agent_factory(scenario_id)
+
+    def set_replay_runner(self, runner: ReplayRunner | None) -> None:
+        self._replay_runner = runner
+
+    def get_replay_runner(self) -> ReplayRunner | None:
+        return self._replay_runner
 
 
 # ---------------------------------------------------------------------------
@@ -196,23 +264,44 @@ class IngestionService:
 
         vr_id = self._next_vr_id()
         events = [sdk_element_to_event(e, i) for i, e in enumerate(snapshot.get("elements", []))]
+
+        # Extract metadata from snapshot body (SDK submit may include these fields)
+        source_system_id = snapshot.get("source_system_id", "")
+        source_record_ref = snapshot.get("source_record_ref", "")
+        business_function = snapshot.get("business_function", "")
+        model_provider = snapshot.get("model_provider", "") or snapshot.get("model_provider", "")
+        model_name = snapshot.get("model_name", "") or snapshot.get("model_name", "")
+        label_source = snapshot.get("label_source", "")
+        expected_outcome = snapshot.get("expected_outcome", "")
+        sdk_agent_id = snapshot.get("agent_id", "") or agent_id
+
         vr = VerificationRecord(
             id=vr_id,
             org_id=org_id,
-            environment_id=environment_id,
+            environment_id=snapshot.get("environment_id", environment_id),
             source_type=DataSourceType.sdk_snapshot,
-            agent_id=agent_id,
+            source_system_id=source_system_id,
+            source_record_ref=source_record_ref,
+            agent_id=sdk_agent_id,
+            business_function=business_function,
             events=events,
             root_hash=snapshot.get("root_hash", ""),
             agent_version=snapshot.get("agent_version", ""),
-            model_provider=snapshot.get("model_provider", ""),
-            model_name=snapshot.get("model_name", ""),
+            model_provider=model_provider,
+            model_name=model_name,
             policy_version=snapshot.get("policy_version", ""),
+            label_source=label_source,
+            expected_outcome=expected_outcome,
             promoted_to_incident=promoted_to_incident,
         )
         self._create_evidence(vr, "snapshot", snapshot)
         replayability = ReplayabilityService(self.registry)
-        vr.replayability, vr.replayability_reason, vr.missing_prerequisites = replayability.assess(vr)
+        state, reason, missing = replayability.assess(vr)
+        vr.replayability = state
+        vr.replayability_reason = reason
+        vr.missing_prerequisites = missing
+        vr.computed_replayability = state
+        vr.replayability_source = "computed"
         return self.storage.create_vr(vr)
 
     def create_from_api_submission(
@@ -239,7 +328,12 @@ class IngestionService:
             expected_outcome=expected_outcome,
         )
         replayability = ReplayabilityService(self.registry)
-        vr.replayability, vr.replayability_reason, vr.missing_prerequisites = replayability.assess(vr)
+        state, reason, missing = replayability.assess(vr)
+        vr.replayability = state
+        vr.replayability_reason = reason
+        vr.missing_prerequisites = missing
+        vr.computed_replayability = state
+        vr.replayability_source = "computed"
         return self.storage.create_vr(vr)
 
     def create_manual(
@@ -547,10 +641,7 @@ class ReplayService:
             self.storage.create_replay_run(run)
             return run
 
-        scenario_id = self._find_scenario(vr)
-        agent_fn = self.registry.get_agent(scenario_id)
         snapshot = self._snapshot_from_vr(vr)
-
         run = ReplayRun(
             id=f"rr-{uuid.uuid4().hex[:8]}",
             org_id=vr.org_id,
@@ -560,25 +651,55 @@ class ReplayService:
             replay_method="cassette",
         )
 
-        try:
-            result = replay_snapshot(snapshot, agent_fn)
-            run.replayed_decision = result.get("decision") or ""
-            status = result.get("replay_status", "error")
-            if status == "replayed":
+        # Use configured ReplayRunner if available, otherwise check for demo runner
+        runner = self.registry.get_replay_runner()
+
+        if runner is not None:
+            # Explicit runner configured — use it (could be DemoReplayRunner or future CustomerReplayRunner)
+            result = runner.run(snapshot, agent_version=vr.agent_version)
+            run.replayed_decision = result.decision
+            if result.status == "replayed":
                 run.status = "replayed"
             else:
-                run.status = status
-                if run.status == "escalation_required":
+                run.status = result.status
+                if result.status == "escalation_required":
                     run.missing_calls.append("cassette_lookup_failed")
-        except Exception as exc:
-            run.status = "error"
+        elif vr.is_demo:
+            # Demo records fall back to the built-in scenario agent factory
+            scenario_id = self._find_scenario(vr)
+            agent_fn = self.registry.get_agent(scenario_id)
+            try:
+                snap_result = replay_snapshot(snapshot, agent_fn)
+                run.replayed_decision = snap_result.get("decision") or ""
+                snap_status = snap_result.get("replay_status", "error")
+                if snap_status == "replayed":
+                    run.status = "replayed"
+                else:
+                    run.status = snap_status
+                    if run.status == "escalation_required":
+                        run.missing_calls.append("cassette_lookup_failed")
+            except Exception as exc:
+                run.status = "error"
+                run.known_limitations.append(
+                    KnownLimitation(
+                        code="replay_error",
+                        severity="NON_DETERMINISTIC_CORE",
+                        message=str(exc),
+                        subject="replay_engine",
+                        certificate_blocking=True,
+                    )
+                )
+        else:
+            # Non-demo record with no runner configured — unsupported
+            run.status = "unsupported_runner"
             run.known_limitations.append(
                 KnownLimitation(
-                    code="replay_error",
+                    code="replay_runner_not_configured",
                     severity="NON_DETERMINISTIC_CORE",
-                    message=str(exc),
-                    subject="replay_engine",
+                    message="No replay runner configured. Demo runner is only for demo records. Implement a CustomerReplayRunner for non-demo replay.",
+                    subject="replay",
                     certificate_blocking=True,
+                    remediation="Configure a ReplayRunner via ServiceRegistry.set_replay_runner() or mark the record as is_demo.",
                 )
             )
 

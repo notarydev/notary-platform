@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from notary_platform.api_server.auth import require_auth
+from notary_platform.api_server.routers.ingestion import get_registry as _get_ingestion_registry
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.models import (
     DataSourceType,
@@ -23,13 +24,12 @@ from notary_platform.models import (
 from notary_platform.services import (
     IngestionService,
     LabelProvenanceService,
-    ServiceRegistry,
 )
 
 router = APIRouter(tags=["verification"])
 
 # Backward-compatible module-level registry. New code uses the storage backend.
-_registry = ServiceRegistry(storage)
+_registry = _get_ingestion_registry()
 
 
 def _next_vr_id() -> str:

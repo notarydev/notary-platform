@@ -583,9 +583,15 @@ def build_catalog(registry: Any, org_id: str) -> dict[str, Any]:
             sandbox_readiness=case.sandbox_readiness,
             next_action=case.next_action,
         )
-        vr.replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
+        vr.computed_replayability, vr.replayability_reason, vr.missing_prerequisites = _assess_replayability(vr)
+        # Store computed replayability before we override for demo
+        vr.replayability = vr.computed_replayability
         # Force the intended replayability state for product demo purposes.
-        vr.replayability = case.replayability
+        if vr.computed_replayability != case.replayability:
+            vr.demo_replayability = case.replayability
+            vr.demo_replayability_reason = "Demo-seeded: overrides computed state for storytelling"
+            vr.replayability = case.replayability
+            vr.replayability_source = "demo_seed"
         if case.replayability == ReplayabilityStatus.requires_human_label:
             vr.replayability_reason = "Cassette data is present but no expected outcome label has been added."
             vr.missing_prerequisites = ["human_label"]
