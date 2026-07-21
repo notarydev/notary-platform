@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from notary_platform.api_server.routers import certificates, dashboard, incidents, ingestion, platform, release_gate, setup, verification, viz
@@ -34,6 +35,11 @@ app.include_router(release_gate.router, prefix="/v1")
 app.include_router(viz.router, prefix="/v1")
 app.include_router(setup.router, prefix="/v1")
 app.include_router(dashboard.router)
+
+# Redirect root to the platform SPA.
+@app.get("/")
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/app/", status_code=302)
 
 # Serve the internal Command Center SPA (static build from notary-viz) at /cc.
 _static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "cc"
