@@ -41,3 +41,8 @@ tfplan
 # Emergent preview-only shims (not part of the real repo)
 /frontend/
 /backend/
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
