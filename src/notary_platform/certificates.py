@@ -116,7 +116,6 @@ def generate_certificate(
             "Does not certify general AI safety, fairness, "
             "regulatory compliance, or outside tested scenario."
         ),
-        ),
         "certificate_uuid": uuid.uuid4().hex,
     }
     cert["signature"] = _sign(cert)
