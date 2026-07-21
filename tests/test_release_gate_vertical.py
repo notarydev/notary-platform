@@ -207,7 +207,7 @@ class TestReleaseGateVertical:
         assert resp.status_code == 200
         assert resp.json()["status"] == "error"
 
-    def test_harborline_release_gate_fails_before_fix_and_passes_after_fix(self) -> None:
+    def test_northstar_release_gate_fails_before_fix_and_passes_after_fix(self) -> None:
         resp = client.post("/v1/demo/northstar/seed")
         assert resp.status_code == 200
         seeded = resp.json()

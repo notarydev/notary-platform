@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from io import StringIO
 
-from notary_platform.demo_preflight import format_text_report, main, run_harborline_preflight
+from notary_platform.demo_preflight import format_text_report, main, run_northstar_preflight
 
 
-def test_harborline_preflight_passes_and_reports_demo_anchors() -> None:
-    result = run_harborline_preflight()
+def test_northstar_preflight_passes_and_reports_demo_anchors() -> None:
+    result = run_northstar_preflight()
 
     assert result["status"] == "pass"
     assert result["summary"]["blocked_gate_status"] == "fail"
@@ -17,7 +17,7 @@ def test_harborline_preflight_passes_and_reports_demo_anchors() -> None:
 
 
 def test_preflight_text_report_is_presenter_ready() -> None:
-    result = run_harborline_preflight()
+    result = run_northstar_preflight()
     report = format_text_report(result)
 
     assert "Northstar demo preflight: PASS" in report

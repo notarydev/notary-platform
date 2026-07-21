@@ -12,7 +12,7 @@ from typing import Any, Sequence
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
-from notary_platform.demo_preflight import run_harborline_preflight
+from notary_platform.demo_preflight import run_northstar_preflight
 from notary_platform.security_readiness import build_security_readiness
 
 
@@ -34,7 +34,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    preflight = run_harborline_preflight()
+    preflight = run_northstar_preflight()
     security = build_security_readiness()
     summary = preflight["summary"]
     client = TestClient(app)
@@ -76,7 +76,7 @@ def build_evidence_pack(output_dir: Path) -> dict[str, Any]:
         "status": "pass" if preflight["status"] == "pass" else "blocked",
         "demo": "Northstar Air bereavement support-bot refund case",
         "required_recordings": [
-            "Open platform app home Harborline path",
+            "Open platform app home Northstar path",
             "Open Verification Record",
             "Open blocked Release Gate",
             "Open passing Release Gate",

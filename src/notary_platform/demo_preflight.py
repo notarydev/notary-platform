@@ -1,4 +1,4 @@
-"""Local Harborline demo preflight checks.
+"""Local Northstar Air demo preflight checks.
 
 Runs the flagship demo through the real FastAPI app in-process. This avoids
 network, cloud, credential, and production dependencies while still exercising
@@ -55,7 +55,7 @@ def _get(client: TestClient, path: str) -> dict[str, Any]:
     return loaded
 
 
-def run_harborline_preflight(reset: bool = True) -> dict[str, Any]:
+def run_northstar_preflight(reset: bool = True) -> dict[str, Any]:
     if reset:
         _clear_storage()
 
@@ -202,7 +202,7 @@ def main(argv: Sequence[str] | None = None, stdout: TextIO | None = None) -> int
     args = parser.parse_args(argv)
 
     output_stream = stdout if stdout is not None else sys.stdout
-    result = run_harborline_preflight(reset=not args.no_reset)
+    result = run_northstar_preflight(reset=not args.no_reset)
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True), file=output_stream)
     else:

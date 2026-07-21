@@ -21,7 +21,7 @@ const S = {
   selectedScenario: null,
   selectedReadinessCheck: null,
   selectedReleaseGate: null,
-  harborlineSeed: null,
+  northstarSeed: null,
   loading: false,
   error: null,
   setupStep: 0,
@@ -346,7 +346,7 @@ function chip(n, l, color, view) {
 const DEMO_ORG_NAME = "Northstar Air";
 function friendlyOrg(orgId) {
   if (!orgId) return "Organization";
-  if (String(orgId).toLowerCase().includes("harborline") || String(orgId).toLowerCase().includes("meridian") || String(orgId).includes("demo")) return DEMO_ORG_NAME;
+  if (String(orgId).includes("demo")) return DEMO_ORG_NAME;
   return orgId;
 }
 
@@ -368,7 +368,7 @@ function renderHome(c, h) {
   ];
 
   c.innerHTML = `
-    ${renderHarborlineJourney()}
+    ${renderNorthstarJourney()}
     ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Fictional demo data — no production or customer data.</div>` : ""}
     <div class="stat-grid">${stats.map(s => `
       <div class="stat stat-clickable" onclick="${s.action}">
@@ -406,13 +406,13 @@ function renderHome(c, h) {
   `;
 }
 
-function renderHarborlineJourney() {
-  const seeded = S.harborlineSeed;
+function renderNorthstarJourney() {
+  const seeded = S.northstarSeed;
   const steps = seeded ? [
-    { name: "Capture", detail: "Sealed Meridian loan decision", data: [
-      ["Applicant", "HLCU-PL-0427"],
-      ["Original decision", "DENY"],
-      ["Expected outcome", "UNDERWRITING_REVIEW"],
+    { name: "Capture", detail: "Sealed Northstar Air bereavement decision", data: [
+      ["Case", "CASE-50093821"],
+      ["Original decision", "OFFER_RETROACTIVE_REFUND"],
+      ["Expected outcome", "ESCALATE_TO_HUMAN"],
       ["Root hash", (seeded.proof_of_mitigation_certificate_id || "n/a").slice(0, 16) + "..."],
     ], action: ["openVRDetail", seeded.verification_record_id] },
     { name: "Replay", detail: "Original DENY reproduced", data: [
@@ -420,10 +420,10 @@ function renderHarborlineJourney() {
       ["Replayed", "DENY"],
       ["Verdict", "Failure reproduced from cassette"],
     ], action: ["openVRDetail", seeded.verification_record_id] },
-    { name: "Fix", detail: "Corrected path routes to underwriting review", data: [
-      ["Before fix", "DENY"],
-      ["After fix", "UNDERWRITING_REVIEW"],
-      ["Change", "Missing bureau evidence routes to underwriting review"],
+    { name: "Fix", detail: "Corrected path escalates to human review", data: [
+      ["Before fix", "OFFER_RETROACTIVE_REFUND"],
+      ["After fix", "ESCALATE_TO_HUMAN"],
+      ["Change", "require_policy_match_for_refund_claims: true"],
     ], action: ["openIncidentDetail", seeded.incident_id] },
     { name: "Proof", detail: "Scenario-scoped mitigation proof", data: [
       ["Proof ID", seeded.proof_of_mitigation_certificate_id],
@@ -433,7 +433,7 @@ function renderHarborlineJourney() {
     { name: "Scenario", detail: "Regression scenario promoted", data: [
       ["Scenario ID", seeded.scenario_id],
       ["Library", "Release gate regression library"],
-      ["Expected outcome", "UNDERWRITING_REVIEW"],
+      ["Expected outcome", "ESCALATE_TO_HUMAN"],
     ], action: ["openScenarioDetail", seeded.scenario_id] },
     { name: "Gate", detail: "Fail before fix, pass after fix", data: [
       ["Before fix", "FAIL"],
@@ -489,10 +489,10 @@ function renderHarborlineJourney() {
     </section>`;
 }
 
-async function seedHarborlineGoldenPath() {
+async function seedNorthstarGoldenPath() {
   try {
-    const r = await apiPost("/v1/demo/harborline-release-gate/seed");
-    S.harborlineSeed = r;
+    const r = await apiPost("/v1/demo/northstar/seed");
+    S.northstarSeed = r;
     notify("Demo path ready: gate " + r.release_gate_before_fix_status + " -> " + r.release_gate_after_fix_status, "success");
     R();
   } catch (e) {
@@ -711,19 +711,19 @@ function renderSetupWorkflowStep() {
       <p class="setup-lead">Notary turns a captured AI failure into sealed, replayable evidence. Start with one high-stakes decision workflow.</p>
       <div class="workflow-grid">
         <div class="workflow-card selected">
-          <div class="workflow-org">Meridian Credit Union</div>
-          <h3>Thin-file personal loan adverse-action</h3>
-          <p>A thin-file applicant was denied when missing bureau evidence should have routed the case to underwriting review.</p>
+          <div class="workflow-org">Northstar Air</div>
+          <h3>AI support bot bereavement refund misrepresentation</h3>
+          <p>A support bot offered a retroactive bereavement refund despite the policy API indicating it's not allowed and human review is required.</p>
           <div class="workflow-meta">
-            <span><strong>Original AI decision:</strong> DENY</span>
-            <span><strong>Expected outcome:</strong> UNDERWRITING_REVIEW</span>
+            <span><strong>Original AI decision:</strong> OFFER_RETROACTIVE_REFUND</span>
+            <span><strong>Expected outcome:</strong> ESCALATE_TO_HUMAN</span>
           </div>
-          <div class="workflow-risk">Risk: fair lending / adverse action / customer harm</div>
+          <div class="workflow-risk">Risk: regulatory liability / customer harm / binding precedent</div>
           ${confirmed ? `<span class="badge badge-built" style="margin-top:12px">CONFIRMED</span>` : `<button class="btn btn-sm" style="margin-top:12px" onclick="confirmWorkflow()">Confirm Workflow</button>`}
         </div>
         <div class="workflow-card planned">
           <h3>Other workflows</h3>
-          <p>Additional decision workflows can be added once the Meridian demo path is proven.</p>
+          <p>Additional decision workflows can be added once the Northstar Air demo path is proven.</p>
           <span class="badge badge-planned">Planned</span>
         </div>
       </div>
@@ -1322,19 +1322,19 @@ function demoEnd() {
     </div>`;
 }
 
-async function sendHarborlineTestCapture() {
-  const btn = q("#harborline-test-capture-btn");
+async function sendNorthstarTestCapture() {
+  const btn = q("#northstar-test-capture-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
   try {
     const snapshot = {
       schema_version: 1,
       timestamp: new Date().toISOString(),
       elements: [
-        { kind: "input", payload: { applicant_id: "HLCU-PL-0427", product: "personal_loan", thin_file: true } },
-        { kind: "llm", payload: { prompt: "Adverse-action decision for HLCU-PL-0427", response: "Decision: DENY — thin file, insufficient bureau evidence" } },
-        { kind: "http", payload: { request: { method: "POST", url: "/credit-bureau/evidence" }, response: { status: "missing_evidence", tradelines: 0 }, status: 200 } },
-        { kind: "policy", payload: { version: "underwriting-policy-v1.3", rule: "thin_file_missing_bureau → route to underwriting review" } },
-        { kind: "decision", payload: { decision: "DENY", confidence: 0.72 } },
+        { kind: "input", payload: { case_id: "50093821", customer_message: "My grandmother passed away. Can I get a bereavement refund?" } },
+        { kind: "http", payload: { request: { method: "POST", url: "/bereavement-policy-api" }, response: { retroactive_refund_allowed: false, human_review_required: true }, status: 200 } },
+        { kind: "llm", payload: { prompt: "support-policy-prompt-v42", response: "Decision: OFFER_RETROACTIVE_REFUND" } },
+        { kind: "policy", payload: { version: "bereavement-policy-v7", rule: "retroactive_refund_allowed: false → escalate to human" } },
+        { kind: "decision", payload: { decision: "OFFER_RETROACTIVE_REFUND", confidence: 0.72 } },
       ],
     };
     const r = await apiPost("/v1/verification-records/from-snapshot?agent_id=browser-sdk-demo", snapshot);
@@ -1342,14 +1342,14 @@ async function sendHarborlineTestCapture() {
     const vr = await apiGet("/v1/verification-records/" + vrId);
     S.setupTestCapture = {
       id: vr.id,
-      applicant_id: "HLCU-PL-0427",
-      decision: "DENY",
-      expected: "UNDERWRITING_REVIEW",
-      systems: ["Loan Origination System", "Credit Bureau Evidence", "Underwriting Policy Rules", "AI Decision Agent"],
+      case_id: "50093821",
+      decision: "OFFER_RETROACTIVE_REFUND",
+      expected: "ESCALATE_TO_HUMAN",
+      systems: ["Salesforce Service Cloud", "Bereavement Policy API", "Prompt Config", "AI Support Agent"],
       root_hash: vr.root_hash || "",
       replayability: vr.replayability || "Pending assessment",
     };
-    notify("Meridian test capture created", "success");
+    notify("Northstar test capture created", "success");
     renderSetupStep(5); // jump to readiness
   } catch (e) {
     notify("Test capture failed: " + e.message, "error");
@@ -1363,7 +1363,7 @@ function renderSetupTestStep() {
   return `
     <div class="setup-step-content">
       <h2>Send a test capture</h2>
-      <p class="setup-lead">Create a sample Meridian capture packet and confirm the evidence is sealed and replayable.</p>
+      <p class="setup-lead">Create a sample Northstar Air capture packet and confirm the evidence is sealed and replayable.</p>
       ${cap ? `
         <div class="test-capture-packet">
           <h3>Captured packet</h3>
@@ -1383,9 +1383,9 @@ function renderSetupTestStep() {
         </div>
       ` : `
         <div class="empty-state compact">
-          <h3>Meridian test capture</h3>
-          <p>This will create one Verification Record for applicant HLCU-PL-0427 with a sealed cassette and root hash.</p>
-          <button id="harborline-test-capture-btn" class="btn" onclick="sendHarborlineTestCapture()">Send Test Capture</button>
+          <h3>Northstar Air test capture</h3>
+          <p>This will create one Verification Record for case CASE-50093821 with a sealed cassette and root hash.</p>
+          <button id="northstar-test-capture-btn" class="btn" onclick="sendNorthstarTestCapture()">Send Test Capture</button>
         </div>
       `}
     </div>`;
@@ -1674,7 +1674,7 @@ function renderIntegrationsChooseExperience() {
       <div class="ic-experience-card" onclick="nav('setup')" style="cursor:pointer">
         <div class="ic-experience-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>
         <h3>Explore the Demo</h3>
-        <p>See Notary in action with a preconfigured Meridian Credit Union lending scenario. Walk through the full assurance loop — capture, replay, fix, proof, and release gate.</p>
+        <p>See Notary in action with a preconfigured Northstar Air bereavement support bot scenario. Walk through the full assurance loop — capture, replay, fix, proof, and release gate.</p>
         <span class="badge badge-demo" style="margin-top:12px">GUIDED DEMO</span>
       </div>
       <div class="ic-experience-card ic-experience-primary" onclick="S._ic_experience_chosen=true;renderIntegrations(q('#main-content'))" style="cursor:pointer">
