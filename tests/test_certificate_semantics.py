@@ -58,8 +58,8 @@ class TestCertificateSemantics:
             mutated_decision="APPROVE",
             fix_config={},
         )
-        assert "scope" in cert
-        assert "Not general AI safety" in cert["scope"]
+        assert "claim_scope" in cert
+        assert "not certify general AI safety" in cert["claim_scope"]
 
     def test_tampered_cert_still_fails(self) -> None:
         cert = generate_certificate(

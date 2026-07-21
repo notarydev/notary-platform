@@ -41,8 +41,9 @@ class TestSDKSetupTruth:
             return  # SDK not installed in CI; skip
 
         capture = RunCapture(secret_key=b"test", api_url="http://test", api_token="test")
+        snapshot = capture.finalize()
         import inspect
-        source = inspect.getsource(capture.finalize)
+        source = inspect.getsource(snapshot.submit)
         assert "from-snapshot" in source or "verification-records" in source
 
     def test_app_shows_deployed_url(self) -> None:

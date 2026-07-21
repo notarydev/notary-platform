@@ -83,7 +83,14 @@ class TestReplayRunnerContract:
 
         snapshot = {
             "elements": [
-                {"kind": "http", "payload": {"request": {"method": "POST", "url": "https://demo.notary.local/credit-api"}, "response": {"score": 650}, "status": 200}},
+                {
+                    "kind": "http",
+                    "payload": {
+                        "request": {"method": "POST", "url": "https://demo.notary.local/credit-api"},
+                        "response": {"score": 650},
+                        "status": 200,
+                    },
+                },
                 {"kind": "decision", "payload": {"decision": "DENY"}},
             ],
             "root_hash": "test-root",
