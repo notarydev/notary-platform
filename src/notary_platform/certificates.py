@@ -17,7 +17,7 @@ import os
 import uuid
 from typing import Any
 
-CERTIFICATE_ID = "pom-cert-v1"
+SCHEMA_VERSION = "pom-v1"
 
 _DEV_SIGNING_KEY = (os.getenv("NOTARY_DEV_SIGNING_KEY") or "notary-dev-signing-key-mvp-only").encode("utf-8")
 
@@ -67,6 +67,7 @@ def generate_certificate(
     original_decision: Any,
     mutated_decision: Any,
     fix_config: dict[str, Any],
+    certificate_id: str | None = None,
     replay_result: dict[str, Any] | None = None,
     expected_correct_behavior: str = "",
     root_hash: str = "",
@@ -74,11 +75,13 @@ def generate_certificate(
     replay_method: str = "sealed cassette replay",
     verified_outcome: bool = True,
     timestamp: str = "",
+    claim_scope: str = "",
 ) -> dict[str, Any]:
     """Create a Proof of Mitigation certificate and sign it."""
     cert: dict[str, Any] = {
-        "certificate_id": CERTIFICATE_ID,
+        "certificate_id": certificate_id or f"proof-{uuid.uuid4().hex}",
         "certificate_type": "proof_of_mitigation",
+        "schema_version": SCHEMA_VERSION,
         "incident_id": incident_id,
         "root_hash": root_hash,
         "integrity_status": integrity_status,
@@ -92,6 +95,12 @@ def generate_certificate(
         "timestamp": timestamp,
         "signing_algorithm": _signing_algorithm(),
         "known_limitations": "demo data / dev-or-KMS signing; not a general AI safety certificate",
+        "claim_scope": (
+            claim_scope
+            or "Verified fix for this tested scenario under recorded conditions. "
+            "Does not certify general AI safety, fairness, "
+            "regulatory compliance, or performance."
+        ),
         "certificate_uuid": uuid.uuid4().hex,
     }
     cert["signature"] = _sign(cert)

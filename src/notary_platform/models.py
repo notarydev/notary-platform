@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import time
 import typing
@@ -1096,6 +1097,109 @@ class ActionEligibility:
         }
 
 
+# ---------------------------------------------------------------------------
+# Integrations & Capture models (Phase E)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AISystem:
+    id: str
+    org_id: str
+    environment_id: str
+    name: str
+    system_type: str = "agent"
+    deployment_version: str = ""
+    decision_endpoint: str = ""
+    external_caller: bool = False
+    risk_classification: str = ""
+    business_owner: str = ""
+    technical_owner: str = ""
+    status: str = "draft"
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class CaptureConnector:
+    id: str
+    ai_system_id: str
+    org_id: str
+    connector_type: str
+    name: str = ""
+    status: str = "not_configured"
+    config_json: str = "{}"
+    last_tested_at: str = ""
+    error_message: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class FieldHandlingRule:
+    id: str
+    ai_system_id: str
+    field_pattern: str
+    action: str = "store"
+    retention_days: int = 365
+    sensitive: bool = False
+    use_for_replay: bool = True
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class CoverageAssessment:
+    decision_detected: bool = False
+    input_captured: bool = False
+    model_version_captured: bool = False
+    prompt_captured: bool = False
+    tool_responses_available: bool = False
+    final_decision_captured: bool = False
+    root_hash_valid: bool = False
+    cassette_material_available: bool = False
+    expected_outcome_source_available: bool = False
+    replay_readiness: str = "insufficient_context"
+    assessment: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class CaptureValidationRun:
+    id: str
+    ai_system_id: str
+    org_id: str
+    status: str = "pending"
+    checks_json: str = "{}"
+    coverage_json: str = "{}"
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class DecisionFamilyCandidate:
+    id: str
+    org_id: str
+    ai_system_id: str
+    pattern_name: str
+    decision_count: int = 0
+    confirmed: bool = False
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
 # Attach generic from_dict to all dataclasses for storage reconstruction.
 _DATACLASS_MODELS = [
     Organization,
@@ -1124,6 +1228,12 @@ _DATACLASS_MODELS = [
     ReadinessCheck,
     ReleaseGateResult,
     ActionEligibility,
+    AISystem,
+    CaptureConnector,
+    FieldHandlingRule,
+    CoverageAssessment,
+    CaptureValidationRun,
+    DecisionFamilyCandidate,
 ]
 for _model_cls in _DATACLASS_MODELS:
     if not hasattr(_model_cls, "from_dict"):

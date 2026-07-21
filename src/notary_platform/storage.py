@@ -18,9 +18,14 @@ from typing import Any
 from notary_platform.config import SETTINGS
 from notary_platform.models import (
     Agent,
+    AISystem,
+    CaptureConnector,
     CapturePolicy,
+    CaptureValidationRun,
+    DecisionFamilyCandidate,
     Environment,
     EvidenceArtifact,
+    FieldHandlingRule,
     HumanLabel,
     Incident,
     MutationTest,
@@ -56,6 +61,11 @@ _PERSISTED_COLLECTIONS: dict[str, tuple[str, type[Any]]] = {
     "readiness_policies": ("_readiness_policies", ReadinessPolicy),
     "readiness_checks": ("_readiness_checks", ReadinessCheck),
     "release_gate_results": ("_release_gate_results", ReleaseGateResult),
+    "ai_systems": ("_ai_systems", AISystem),
+    "capture_connectors": ("_capture_connectors", CaptureConnector),
+    "field_handling_rules": ("_field_handling_rules", FieldHandlingRule),
+    "capture_validation_runs": ("_capture_validation_runs", CaptureValidationRun),
+    "decision_family_candidates": ("_decision_family_candidates", DecisionFamilyCandidate),
 }
 
 
@@ -250,6 +260,56 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None: ...
 
+    # ── Integrations & Capture (Phase E) ──
+
+    @abc.abstractmethod
+    def create_ai_system(self, system: AISystem) -> AISystem: ...
+
+    @abc.abstractmethod
+    def get_ai_system(self, system_id: str) -> AISystem | None: ...
+
+    @abc.abstractmethod
+    def list_ai_systems(self, org_id: str, environment_id: str = "") -> list[AISystem]: ...
+
+    @abc.abstractmethod
+    def update_ai_system(self, system: AISystem) -> AISystem: ...
+
+    @abc.abstractmethod
+    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: ...
+
+    @abc.abstractmethod
+    def get_capture_connector(self, conn_id: str) -> CaptureConnector | None: ...
+
+    @abc.abstractmethod
+    def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]: ...
+
+    @abc.abstractmethod
+    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: ...
+
+    @abc.abstractmethod
+    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule: ...
+
+    @abc.abstractmethod
+    def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]: ...
+
+    @abc.abstractmethod
+    def delete_field_handling_rules(self, ai_system_id: str) -> None: ...
+
+    @abc.abstractmethod
+    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun: ...
+
+    @abc.abstractmethod
+    def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]: ...
+
+    @abc.abstractmethod
+    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: ...
+
+    @abc.abstractmethod
+    def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]: ...
+
+    @abc.abstractmethod
+    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -283,6 +343,11 @@ class MemoryStorage(StorageBackend):
         self._readiness_checks: dict[str, ReadinessCheck] = {}
         self._release_gate_results: dict[str, ReleaseGateResult] = {}
         self._replay_execution_events: dict[str, list[ReplayExecutionEvent]] = {}
+        self._ai_systems: dict[str, AISystem] = {}
+        self._capture_connectors: dict[str, CaptureConnector] = {}
+        self._field_handling_rules: dict[str, FieldHandlingRule] = {}
+        self._capture_validation_runs: dict[str, CaptureValidationRun] = {}
+        self._decision_family_candidates: dict[str, DecisionFamilyCandidate] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -541,6 +606,74 @@ class MemoryStorage(StorageBackend):
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
         return self._release_gate_results.get(result_id)
 
+    # ── Integrations & Capture (Phase E) ──
+
+    def create_ai_system(self, system: AISystem) -> AISystem:
+        self._ai_systems[system.id] = system
+        return system
+
+    def get_ai_system(self, system_id: str) -> AISystem | None:
+        return self._ai_systems.get(system_id)
+
+    def list_ai_systems(self, org_id: str, environment_id: str = "") -> list[AISystem]:
+        systems = [s for s in self._ai_systems.values() if s.org_id == org_id]
+        if environment_id:
+            systems = [s for s in systems if s.environment_id == environment_id]
+        return systems
+
+    def update_ai_system(self, system: AISystem) -> AISystem:
+        self._ai_systems[system.id] = system
+        return system
+
+    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        self._capture_connectors[conn.id] = conn
+        return conn
+
+    def get_capture_connector(self, conn_id: str) -> CaptureConnector | None:
+        return self._capture_connectors.get(conn_id)
+
+    def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]:
+        return [c for c in self._capture_connectors.values() if c.ai_system_id == ai_system_id]
+
+    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        self._capture_connectors[conn.id] = conn
+        return conn
+
+    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule:
+        self._field_handling_rules[rule.id] = rule
+        return rule
+
+    def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]:
+        return [r for r in self._field_handling_rules.values() if r.ai_system_id == ai_system_id]
+
+    def delete_field_handling_rules(self, ai_system_id: str) -> None:
+        keep: dict[str, FieldHandlingRule] = {}
+        for rid, rule in self._field_handling_rules.items():
+            if rule.ai_system_id != ai_system_id:
+                keep[rid] = rule
+        self._field_handling_rules = keep
+
+    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun:
+        self._capture_validation_runs[run.id] = run
+        return run
+
+    def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]:
+        return [r for r in self._capture_validation_runs.values() if r.ai_system_id == ai_system_id]
+
+    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        self._decision_family_candidates[candidate.id] = candidate
+        return candidate
+
+    def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]:
+        candidates = [c for c in self._decision_family_candidates.values() if c.org_id == org_id]
+        if ai_system_id:
+            candidates = [c for c in candidates if c.ai_system_id == ai_system_id]
+        return candidates
+
+    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        self._decision_family_candidates[candidate.id] = candidate
+        return candidate
+
 
 class SharedDemoFileStorage(MemoryStorage):
     """JSON-backed shared-demo storage that survives process restarts.
@@ -731,6 +864,50 @@ class SharedDemoFileStorage(MemoryStorage):
         stored = super().create_release_gate_result(result)
         self._save()
         return stored
+
+    def create_ai_system(self, system: AISystem) -> AISystem:
+        result = super().create_ai_system(system)
+        self._save()
+        return result
+
+    def update_ai_system(self, system: AISystem) -> AISystem:
+        result = super().update_ai_system(system)
+        self._save()
+        return result
+
+    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        result = super().create_capture_connector(conn)
+        self._save()
+        return result
+
+    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        result = super().update_capture_connector(conn)
+        self._save()
+        return result
+
+    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule:
+        result = super().create_field_handling_rule(rule)
+        self._save()
+        return result
+
+    def delete_field_handling_rules(self, ai_system_id: str) -> None:
+        super().delete_field_handling_rules(ai_system_id)
+        self._save()
+
+    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun:
+        result = super().create_capture_validation_run(run)
+        self._save()
+        return result
+
+    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        result = super().create_decision_family_candidate(candidate)
+        self._save()
+        return result
+
+    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        result = super().update_decision_family_candidate(candidate)
+        self._save()
+        return result
 
 
 class PostgresS3Storage(StorageBackend):
@@ -1075,6 +1252,24 @@ class PostgresS3Storage(StorageBackend):
         return result
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
         return self._get_wo28("release_gate_result", result_id, ReleaseGateResult)
+
+    # ── Integrations & Capture (Phase E) ──
+    def create_ai_system(self, system: AISystem) -> AISystem: return system
+    def get_ai_system(self, system_id: str) -> AISystem | None: return None
+    def list_ai_systems(self, org_id: str, environment_id: str = "") -> list[AISystem]: return []
+    def update_ai_system(self, system: AISystem) -> AISystem: return system
+    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: return conn
+    def get_capture_connector(self, conn_id: str) -> CaptureConnector | None: return None
+    def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]: return []
+    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: return conn
+    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule: return rule
+    def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]: return []
+    def delete_field_handling_rules(self, ai_system_id: str) -> None: pass
+    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun: return run
+    def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]: return []
+    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
+    def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]: return []
+    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
 
 
 def get_storage() -> StorageBackend:

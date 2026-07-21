@@ -77,9 +77,50 @@ async function apiPost(path, body, opts = {}) {
   return res.json();
 }
 
+async function apiPut(path, body, opts = {}) {
+  const res = await fetch(path, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(body || {}),
+    ...opts,
+  });
+  if (res.status === 401) {
+    S.authConfigured = true;
+    renderAuthPanel();
+    throw new Error("Authentication required. Enter your API token in Settings.");
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text || res.statusText}`);
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("json")) return res.json();
+  return null;
+}
+
 async function apiPostForm(path, params, opts = {}) {
   const url = path + "?" + new URLSearchParams(params).toString();
   return apiPost(url, {}, opts);
+}
+
+async function downloadProofBlob(incidentId, proofId, format) {
+  const url = (format === "pdf"
+    ? "/v1/incidents/" + encodeURIComponent(incidentId) + "/certificates/" + encodeURIComponent(proofId) + "/export-pdf"
+    : "/v1/incidents/" + encodeURIComponent(incidentId) + "/certificates/" + encodeURIComponent(proofId) + "/download");
+  try {
+    const res = await fetch(url, {headers: authHeaders()});
+    if (!res.ok) { const text = await res.text(); throw new Error(text); }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "proof_" + incidentId + "." + (format === "pdf" ? "pdf" : "json");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+  } catch (e) {
+    notify("Download failed: " + e.message, "error");
+  }
 }
 
 async function apiPatch(path, body, opts = {}) {
@@ -191,8 +232,8 @@ async function R() {
     if (S.view === "home") {
       const h = await apiGet("/v1/platform/home");
       renderHome(c, h);
-    } else if (S.view === "setup") {
-      renderSetup(c);
+    } else if (S.view === "integrations") {
+      renderIntegrations(c);
     } else if (S.view === "verification-records") {
       const vrs = await apiGet("/v1/verification-records");
       renderVRs(c, vrs);
@@ -443,575 +484,500 @@ function openReleaseGateDetail(id) {
   nav("release-gate-detail");
 }
 
-// --- SETUP ---
+// --- INTEGRATIONS & CAPTURE ---
 
-function setupCanNext(step) {
-  if (step === 0) return S.setupWorkflowConfirmed;
-  if (step === 1) return true;
-  if (step === 2) {
-    const s = S.setupSystems;
-    return s ? s.some(x => x.selected) : true;
-  }
-  if (step === 3) return !!S.setupCaptureMethod;
-  if (step === 4) return !!S.setupTestCapture;
-  if (step === 5) return true;
-  return true;
-}
-
-function toggleSetupSystem(id) {
-  const s = S.setupSystems;
-  if (!s) return;
-  const sys = s.find(x => x.id === id);
-  if (sys && sys.tier !== "excluded") {
-    sys.selected = !sys.selected;
-    renderSetupStep(S.setupStep || 0);
-  }
-}
-
-function selectCaptureMethod(id) {
-  S.setupCaptureMethod = id;
-  renderSetupStep(S.setupStep || 0);
-}
-
-function confirmWorkflow() {
-  S.setupWorkflowConfirmed = true;
-  renderSetupStep(S.setupStep || 0);
-}
-
-const SETUP_STEPS = [
-  { id: "workflow", label: "Decision Workflow" },
-  { id: "boundary", label: "AI Decision Boundary" },
-  { id: "systems", label: "Evidence Systems" },
-  { id: "capture", label: "Capture Method" },
-  { id: "test", label: "Test Capture" },
-  { id: "readiness", label: "Replay Readiness" },
-];
-
-const SETUP_SYSTEMS = [
-  {
-    id: "loan-origination",
-    name: "Loan Origination System",
-    selected: true,
-    tier: "required",
-    captures: "Applicant facts, application state, and requested product.",
-    why: "The AI decision is made about this applicant and application.",
-    proof: "Proves the inputs the AI actually saw.",
-    not: "Does not capture queue timing, employee assignments, or CRM history.",
-  },
-  {
-    id: "credit-bureau",
-    name: "Credit Bureau Evidence",
-    selected: true,
-    tier: "required",
-    captures: "External bureau response used by the AI.",
-    why: "A missing or borderline bureau response is the causal evidence for the adverse action.",
-    proof: "Enables cassette replay without live bureau calls.",
-    not: "Does not capture bureau latency SLA or third-party availability metrics.",
-  },
-  {
-    id: "policy-rules",
-    name: "Underwriting Policy Rules",
-    selected: true,
-    tier: "required",
-    captures: "Policy/rules/config version that defined the correct route.",
-    why: "The AI must be evaluated against the policy version in force at the time.",
-    proof: "Proves the rule set that should have routed the case to underwriting review.",
-    not: "Does not capture policy drafting workflow or approval chains.",
-  },
-  {
-    id: "ai-agent",
-    name: "AI Decision Agent",
-    selected: true,
-    tier: "required",
-    captures: "Model/prompt/output and final AI decision.",
-    why: "This is the decision system whose behavior is under review.",
-    proof: "Shows exactly what the AI decided and on what basis.",
-    not: "Does not capture unrelated model training data or general model metrics.",
-  },
-  {
-    id: "human-review",
-    name: "Human Review Queue",
-    selected: false,
-    tier: "optional",
-    captures: "Expected correct outcome label or override.",
-    why: "A reviewer supplies the ground-truth outcome the AI should have produced.",
-    proof: "Provides customer-approved expected outcome for replay and fix verification.",
-    not: "Does not capture queue wait time, reviewer productivity, or case assignment.",
-  },
-  {
-    id: "crm",
-    name: "CRM / Customer Communications",
-    selected: false,
-    tier: "excluded",
-    captures: "Notifications and follow-up activity.",
-    why: "Out of scope for AI Decision Assurance.",
-    proof: "—",
-    not: "Not captured because it does not affect the decision itself.",
-  },
-  {
-    id: "ops",
-    name: "Generic Ops Logs / SLA Monitoring",
-    selected: false,
-    tier: "excluded",
-    captures: "System latency, throughput, uptime.",
-    why: "Out of scope for AI Decision Assurance.",
-    proof: "—",
-    not: "Not captured because it explains infrastructure, not the decision.",
-  },
-];
-
-const SETUP_CAPTURE_METHODS = [
-  {
-    id: "sdk",
-    title: "Python SDK",
-    best: "Instrumented Python AI agents.",
-    captures: "LLM calls, tool calls, decisions, and sealed cassettes in-process.",
-    not: "Non-Python backends or third-party systems you cannot instrument.",
-    action: "openSDKSetup()",
-  },
-  {
-    id: "api",
-    title: "API Submission",
-    best: "Backend systems sending Verification Records directly.",
-    captures: "Structured decision evidence, labels, and references.",
-    not: "In-process model internals unless you serialize them.",
-    action: "openAPISubmissionSetup()",
-  },
-  {
-    id: "manual",
-    title: "Manual Submission",
-    best: "Complaints, overrides, disputes, or one-off reviews.",
-    captures: "Human-provided expected outcome and evidence summary.",
-    not: "High-volume automated decisions.",
-    action: "openManualSubmissionForm()",
-  },
-  {
-    id: "webhook",
-    title: "Webhook",
-    best: "Source-system event forwarding.",
-    captures: "Events that represent a decision or escalation.",
-    not: "Arbitrary operational telemetry.",
-    action: "openWebhookSetup()",
-  },
-];
-
-function renderSetupStepIndicator(step) {
-  return `
-    <div class="setup-steps">
-      ${SETUP_STEPS.map((s, i) => `
-        <div class="setup-step ${i === step ? 'active' : i < step ? 'done' : ''}">
-          <span class="setup-step-num">${i + 1}</span>
-          <span class="setup-step-label">${esc(s.label)}</span>
-        </div>
-        ${i < SETUP_STEPS.length - 1 ? '<span class="setup-step-line"></span>' : ''}
-      `).join("")}
-    </div>`;
-}
-
-function renderSetupNav(step) {
-  const canNext = setupCanNext(step);
-  return `
-    <div class="setup-nav">
-      ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})">Back</button>` : "<span></span>"}
-      ${step < SETUP_STEPS.length - 1 ? `<button class="btn" onclick="renderSetupStep(${step + 1})" ${canNext ? "" : "disabled"}>Next</button>` : ""}
-    </div>`;
-}
-
-function renderSetupWorkflowStep() {
-  const confirmed = S.setupWorkflowConfirmed;
-  return `
-    <div class="setup-step-content">
-      <h2>Choose the decision workflow to assure</h2>
-      <p class="setup-lead">Notary turns a captured AI failure into sealed, replayable evidence. Start with one high-stakes decision workflow.</p>
-      <div class="workflow-grid">
-        <div class="workflow-card selected">
-          <div class="workflow-org">Harborline Credit Union</div>
-          <h3>Thin-file personal loan adverse-action</h3>
-          <p>A thin-file applicant was denied when missing bureau evidence should have routed the case to underwriting review.</p>
-          <div class="workflow-meta">
-            <span><strong>Original AI decision:</strong> DENY</span>
-            <span><strong>Expected outcome:</strong> UNDERWRITING_REVIEW</span>
-          </div>
-          <div class="workflow-risk">Risk: fair lending / adverse action / customer harm</div>
-          ${confirmed ? `<span class="badge badge-built" style="margin-top:12px">CONFIRMED</span>` : `<button class="btn btn-sm" style="margin-top:12px" onclick="confirmWorkflow()">Confirm Workflow</button>`}
-        </div>
-        <div class="workflow-card planned">
-          <h3>Other workflows</h3>
-          <p>Additional decision workflows can be added once the Harborline demo path is proven.</p>
-          <span class="badge badge-planned">Planned</span>
-        </div>
-      </div>
-    </div>`;
-}
-
-function renderSetupBoundaryStep() {
-  return `
-    <div class="setup-step-content">
-      <h2>Define the AI decision boundary</h2>
-      <p class="setup-lead">Notary is AI Decision Assurance, not process mining. We capture only what affects the AI decision.</p>
-      <div class="scope-grid">
-        <div class="scope-block in-scope">
-          <h3>In scope because it affects the AI decision</h3>
-          <ul>
-            <li>Applicant facts.</li>
-            <li>Credit bureau / bureau evidence response.</li>
-            <li>Policy/rules/config version.</li>
-            <li>LLM / decision agent prompt + output.</li>
-            <li>Final AI decision.</li>
-            <li>Human-approved expected outcome.</li>
-            <li>Replay cassette or sandbox validation method.</li>
-            <li>Proof / certificate references.</li>
-          </ul>
-        </div>
-        <div class="scope-block out-scope">
-          <h3>Out of scope for AI Decision Assurance</h3>
-          <ul>
-            <li>Queue wait time.</li>
-            <li>Employee workload.</li>
-            <li>Generic CRM activity.</li>
-            <li>Notification delivery.</li>
-            <li>SLA analytics.</li>
-            <li>Generic process optimization.</li>
-          </ul>
-        </div>
-      </div>
-    </div>`;
-}
-
-function renderSetupSystemsStep() {
-  const systems = S.setupSystems || SETUP_SYSTEMS;
-  return `
-    <div class="setup-step-content">
-      <h2>Select evidence systems</h2>
-      <p class="setup-lead">Each system is included because it provides decision-relevant evidence. We do not capture operational telemetry.</p>
-      <div class="systems-grid">
-        ${systems.map(sys => `
-          <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}" ${sys.tier !== "excluded" ? `onclick="toggleSetupSystem('${sys.id}')" style="cursor:pointer"` : ""}>
-            <div class="system-header">
-              <strong>${esc(sys.name)}</strong>
-              <span class="system-tier ${sys.tier}">${sys.tier}</span>
-            </div>
-            <div class="system-field"><span class="system-label">Captures</span><span>${esc(sys.captures)}</span></div>
-            <div class="system-field"><span class="system-label">Why include it</span><span>${esc(sys.why)}</span></div>
-            <div class="system-field"><span class="system-label">Proof it enables</span><span>${esc(sys.proof)}</span></div>
-            <div class="system-field"><span class="system-label">Does not capture</span><span>${esc(sys.not)}</span></div>
-            ${sys.tier !== "excluded" ? `<div style="margin-top:8px"><span class="${sys.selected ? 'badge badge-built' : 'badge badge-planned'}">${sys.selected ? 'Selected' : 'Click to include'}</span></div>` : ""}
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-}
-
-function renderSetupCaptureStep() {
-  return `
-    <div class="setup-step-content">
-      <h2>Choose a capture method</h2>
-      <p class="setup-lead">Pick the path that matches how this decision enters your environment.</p>
-      <div class="capture-grid">
-        ${SETUP_CAPTURE_METHODS.map(m => `
-          <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer">
-            <h3>${esc(m.title)}</h3>
-            <div class="capture-field"><span>Best for</span><span>${esc(m.best)}</span></div>
-            <div class="capture-field"><span>Captures</span><span>${esc(m.captures)}</span></div>
-            <div class="capture-field"><span>Does not capture</span><span>${esc(m.not)}</span></div>
-            ${S.setupCaptureMethod === m.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-}
-
-async function sendHarborlineTestCapture() {
-  const btn = q("#harborline-test-capture-btn");
-  if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
-  try {
-    const snapshot = {
-      schema_version: 1,
-      timestamp: new Date().toISOString(),
-      elements: [
-        { kind: "input", payload: { applicant_id: "HLCU-PL-0427", product: "personal_loan", thin_file: true } },
-        { kind: "llm", payload: { prompt: "Adverse-action decision for HLCU-PL-0427", response: "Decision: DENY — thin file, insufficient bureau evidence" } },
-        { kind: "http", payload: { request: { method: "POST", url: "/credit-bureau/evidence" }, response: { status: "missing_evidence", tradelines: 0 }, status: 200 } },
-        { kind: "policy", payload: { version: "underwriting-policy-v1.3", rule: "thin_file_missing_bureau → route to underwriting review" } },
-        { kind: "decision", payload: { decision: "DENY", confidence: 0.72 } },
-      ],
-    };
-    const r = await apiPost("/v1/verification-records/from-snapshot", {
-      snapshot: snapshot,
-      agent_id: "browser-sdk-demo",
-    });
-    const vrId = r.id;
-    const vr = await apiGet("/v1/verification-records/" + vrId);
-    S.setupTestCapture = {
-      id: vr.id,
-      applicant_id: "HLCU-PL-0427",
-      decision: "DENY",
-      expected: "UNDERWRITING_REVIEW",
-      systems: ["Loan Origination System", "Credit Bureau Evidence", "Underwriting Policy Rules", "AI Decision Agent"],
-      root_hash: vr.root_hash || "",
-      replayability: vr.replayability || "Pending assessment",
-    };
-    notify("Harborline test capture created", "success");
-    renderSetupStep(5); // jump to readiness
-  } catch (e) {
-    notify("Test capture failed: " + e.message, "error");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "Send Test Capture"; }
-  }
-}
-
-function renderSetupTestStep() {
-  const cap = S.setupTestCapture;
-  return `
-    <div class="setup-step-content">
-      <h2>Send a test capture</h2>
-      <p class="setup-lead">Create a sample Harborline capture packet and confirm the evidence is sealed and replayable.</p>
-      ${cap ? `
-        <div class="test-capture-packet">
-          <h3>Captured packet</h3>
-          <div class="packet-grid">
-            <div class="packet-field"><span>Record ID</span><span>${esc(cap.id)}</span></div>
-            <div class="packet-field"><span>Applicant ID</span><span>${esc(cap.applicant_id)}</span></div>
-            <div class="packet-field"><span>Decision</span><span class="packet-decision decision-fail">${esc(cap.decision)}</span></div>
-            <div class="packet-field"><span>Expected outcome</span><span class="packet-decision decision-pass">${esc(cap.expected)}</span></div>
-            <div class="packet-field"><span>Captured systems</span><span>${cap.systems.map(s => esc(s)).join(", ")}</span></div>
-            <div class="packet-field"><span>Root hash / seal</span><span class="mono">${esc(cap.root_hash)}</span></div>
-            <div class="packet-field"><span>Replay readiness</span><span>${esc(cap.replayability)}</span></div>
-          </div>
-          <div class="action-row" style="margin-top:12px">
-            <button class="btn" onclick="nav('verification-records')">Open Verification Records</button>
-            <button class="btn btn-outline" onclick="S.setupTestCapture=null; renderSetupStep(4)">Send Another</button>
-          </div>
-        </div>
-      ` : `
-        <div class="empty-state compact">
-          <h3>Harborline test capture</h3>
-          <p>This will create one Verification Record for applicant HLCU-PL-0427 with a sealed cassette and root hash.</p>
-          <button id="harborline-test-capture-btn" class="btn" onclick="sendHarborlineTestCapture()">Send Test Capture</button>
-        </div>
-      `}
-    </div>`;
-}
-
-function renderSetupReadinessStep() {
-  const cap = S.setupTestCapture;
-  const hasVR = cap && cap.root_hash && cap.id;
-  const items = [
-    { label: "AI decision captured", ok: hasVR },
-    { label: "External response cassette sealed", ok: hasVR },
-    { label: "Policy version captured", ok: hasVR },
-    { label: "Expected outcome labeled", ok: false },
-    { label: "Replayable from sealed cassette", ok: false },
-    { label: "Ready for incident / release gate", ok: false },
-  ];
-  return `
-    <div class="setup-step-content">
-      <h2>Replay readiness checklist</h2>
-      <p class="setup-lead">Before a record becomes an incident or gates a release, Notary confirms it can be deterministically replayed.</p>
-      <div class="readiness-checklist">
-        ${items.map(item => `
-          <div class="readiness-item">
-            <span class="readiness-check ${item.ok ? 'ok' : ''}">${item.ok ? '✓' : '○'}</span>
-            <span class="readiness-label">${esc(item.label)}</span>
-          </div>
-        `).join("")}
-      </div>
-      ${cap ? `
-        <div class="action-row" style="margin-top:16px">
-          <button class="btn" onclick="nav('verification-records')">View Verification Record</button>
-          <button class="btn btn-outline" onclick="nav('incidents')">Open Incidents</button>
-        </div>
-      ` : `
-        <div class="action-row" style="margin-top:16px">
-          <button class="btn btn-outline" onclick="renderSetupStep(4)">Send Test Capture First</button>
-        </div>
-      `}
-    </div>`;
-}
-
-function renderSetupStep(step) {
-  S.setupStep = step;
-  const c = q("#setup-container");
-  if (!c) return;
-  let content = "";
-  switch (SETUP_STEPS[step].id) {
-    case "workflow": content = renderSetupWorkflowStep(); break;
-    case "boundary": content = renderSetupBoundaryStep(); break;
-    case "systems": content = renderSetupSystemsStep(); break;
-    case "capture": content = renderSetupCaptureStep(); break;
-    case "test": content = renderSetupTestStep(); break;
-    case "readiness": content = renderSetupReadinessStep(); break;
-  }
-  c.innerHTML = renderSetupStepIndicator(step) + content + renderSetupNav(step);
-}
-
-async function renderSetup(c) {
-  if (!S.setupSystems) {
-    S.setupSystems = SETUP_SYSTEMS.map(s => ({...s}));
+async function renderIntegrations(c) {
+  if (!S._ic_experience_chosen) {
+    c.innerHTML = renderIntegrationsChooseExperience();
+    return;
   }
   c.innerHTML = sk(40);
-  const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
-  const step = typeof S.setupStep === "number" ? S.setupStep : 0;
+  const systems = await apiGet("/v1/setup/ai-systems").catch(() => []);
+  const status = await apiGet("/v1/setup/status").catch(() => ({}));
+  const selectedSystemId = S._ic_selected_system;
+  const editing = S._ic_editing;
   c.innerHTML = `
-    <div class="int-card" style="margin-bottom:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><h4>API Token</h4><p style="font-size:12px;color:var(--muted)">Sent automatically in headers. Copy for CLI/curl use.</p></div>
-        <span class="badge badge-built">ACTIVE</span>
-      </div>
-      ${renderCodeBlock(S.token || "ntry-demo-...", {mask: true})}
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Change or view in <span class="link" onclick="nav('settings')">Settings</span></div>
-    </div>
-    <div id="setup-container" class="setup-wizard">
-      ${renderSetupStepIndicator(step)}
-      <div id="setup-step-content"></div>
-      ${renderSetupNav(step)}
-    </div>
-    <div class="section-title" style="margin-top:32px">Capture Adapter Registry</div>
-    <div class="section-sub">What capture methods are available today vs planned</div>
-    ${renderTable(["Adapter", "Status", "Description"], adapters.map(ad => [
-      `<span style="font-weight:700;color:var(--text)">${ad.label}</span>`,
-      statusBadge(ad.status),
-      `<span style="font-size:11px">${esc(ad.desc)}</span>`,
-    ]), {emptyDetail: "Adapter registry unavailable"})}
-  `;
-  renderSetupStep(step);
-}
-
-function setupCard(id, title, desc, status, code, actions) {
-  const isBuilt = status === "built";
-  const actionHtml = actions.map(a => {
-    if (a.disabled) return renderDisabledAction(a.label, a.reason);
-    const cls = a.primary ? "btn btn-sm" : "btn btn-sm btn-outline";
-    return `<button class="${cls}" onclick="${a.action}">${esc(a.label)}</button>`;
-  }).join("");
-  return `
-    <div class="int-card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><h4>${esc(title)}</h4><p>${esc(desc)}</p></div>
-        <span class="badge badge-${isBuilt ? "built" : "planned"}">${isBuilt ? "BUILT" : "PLANNED"}</span>
-      </div>
-      ${code ? renderCodeBlock(code) : ""}
-      <div class="action-row" style="margin-top:12px">${actionHtml}</div>
+    <h2 style="margin-bottom:4px">Integrations & Capture</h2>
+    <p class="section-sub" style="margin-bottom:16px">Connect AI systems and configure how Notary receives and handles decision evidence.</p>
+    ${renderIntegrationsStats(status)}
+    <div id="ic-workspace">
+      ${editing ? renderIntegrationsForm() : (
+        selectedSystemId ? renderAISystemDetail(selectedSystemId) : renderIntegrationsSystemList(systems)
+      )}
     </div>`;
 }
 
-function openSDKSetup() {
-  const body = `
-    <div class="section-title">1. Install (local / Git path)</div>
-    ${renderCodeBlock("git clone https://github.com/notarydev/notary-platform.git\ncd notary-platform\npip install -e packages/notary-sdk-py")}
-    <div style="font-size:11px;color:var(--amber);margin:4px 0 12px">Notary Python SDK is not published to PyPI yet. Install from the repo directly.</div>
-    <div class="section-title">2. Capture a decision (Python)</div>
-    ${renderCodeBlock(`from notary_sdk import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_tool(method="POST", url="/score", response={"score": 620})\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
-    <div class="section-title">3. Submit to Notary API</div>
-    ${renderCodeBlock(`import requests\n\n# NOTARY_API_AUTH_TOKEN is the env var the platform reads (set in Settings)\n# The ingestion endpoint is /v1/verification-records (incidents is legacy)\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json={"snapshot": snapshot.to_dict(), "org_id": "demo-org"}\n)`)}
-  `;
-  renderDrawer("Python SDK Setup", body);
-}
-
-async function sendSDKTestCapture() {
-  try {
-    const snapshot = {
-      schema_version: 1,
-      timestamp: new Date().toISOString(),
-      elements: [
-        {kind: "llm", payload: {prompt: "loan app demo", response: "score: 620"}},
-        {kind: "http", payload: {request: {method: "POST", url: "/score"}, response: {score: 620}, status: 200}},
-        {kind: "decision", payload: {decision: "DENY"}},
-      ],
-    };
-    const r = await apiPost("/v1/verification-records/from-snapshot", {
-      snapshot: snapshot,
-    });
-    notify("Created Verification Record " + r.id, "success");
-    nav("verification-records");
-  } catch (e) {
-    notify("Failed: " + e.message, "error");
-  }
-}
-
-function openAPISubmissionSetup() {
-  const body = `
-    <div class="section-title">Endpoint</div>
-    ${renderCodeBlock("POST https://api.getnotary.ai/v1/verification-records")}
-    <div class="section-title">Auth header</div>
-    ${renderCodeBlock("Authorization: Bearer <token>")}
-    <div class="section-title">Sample payload — lending</div>
-    ${renderCodeBlock(`{\n  "source_type": "api_submission",\n  "external_ref": "APP-A-1234",\n  "agent_id": "agent:lending",\n  "business_function": "loan_underwriting"\n}`)}
-    <div class="section-title">Success response</div>
-    ${renderCodeBlock(`{\n  "id": "vr-abc123",\n  "replayability": "requires_human_label",\n  "next_action": "Add expected outcome label"\n}`)}
-  `;
-  renderDrawer("API Submission Guide", body);
-}
-
-async function sendAPISampleRecord() {
-  try {
-    const r = await apiPostForm("/v1/verification-records", {source_type: "api_submission", external_ref: "APP-DEMO-" + Date.now(), agent_id: "agent:lending", business_function: "loan_underwriting"});
-    notify("Created API Verification Record " + r.id, "success");
-    nav("verification-records");
-  } catch (e) {
-    notify("Failed: " + e.message, "error");
-  }
-}
-
-function openManualSubmissionForm() {
-  const body = `
-    <div class="np-form">
-      <div class="np-field"><label>Source System</label><input id="ms-system" value="sys:support-ticketing"></div>
-      <div class="np-field"><label>Source Record Ref</label><input id="ms-ref" value="TKT-DEMO-" placeholder="e.g. TKT-1234"></div>
-      <div class="np-field"><label>Agent</label><input id="ms-agent" value="agent:support-handoff"></div>
-      <div class="np-field"><label>Expected Outcome</label><input id="ms-outcome" value="ESCALATE_TO_HUMAN" placeholder="e.g. ESCALATE_TO_HUMAN"></div>
-      <div class="np-field"><label>Reason / Evidence Summary</label><textarea id="ms-transcript">Customer complained about repeated bot responses without escalation.</textarea></div>
+function renderIntegrationsChooseExperience() {
+  return `
+    <h2 style="margin-bottom:20px">Welcome to Notary</h2>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:24px;max-width:600px">Choose how you want to get started with AI Decision Assurance.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:720px">
+      <div class="ic-experience-card" onclick="nav('home')" style="cursor:pointer">
+        <div class="ic-experience-icon">▶</div>
+        <h3>Explore Harborline Demo</h3>
+        <p>See Notary in action with our preconfigured lending scenario. Walk through the full assurance loop — capture, replay, fix, proof, and release gate.</p>
+        <span class="badge badge-demo" style="margin-top:12px">GUIDED DEMO</span>
+      </div>
+      <div class="ic-experience-card ic-experience-primary" onclick="S._ic_experience_chosen=true;renderIntegrations(q('#main-content'))" style="cursor:pointer">
+        <div class="ic-experience-icon">⚙</div>
+        <h3>Set Up Your Organization</h3>
+        <p>Register your AI systems, connect capture sources, and configure evidence handling. No assumptions about your industry or workflow.</p>
+        <span class="badge badge-built" style="margin-top:12px">GET STARTED</span>
+      </div>
     </div>
-  `;
-  const actions = `<button class="btn" onclick="submitManualForm()">Submit Manual Record</button>`;
-  renderDrawer("Manual Submission", body, actions);
+    <p style="font-size:11px;color:var(--dim);margin-top:20px">Harborline demo is a guided walkthrough. Customer onboarding starts with zero assumptions.</p>`;
 }
 
-async function submitManualForm() {
+function renderIntegrationsStats(status) {
+  const total = status.total_systems || 0;
+  const active = status.active_systems || 0;
+  const inSetup = (status.systems_in_setup || []).length;
+  return `
+    <div style="display:flex;gap:12px;margin-bottom:16px">
+      <div class="stat"><div class="stat-val">${total}</div><div class="stat-label">AI Systems</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--green)">${active}</div><div class="stat-label">Active</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--amber)">${inSetup}</div><div class="stat-label">In Setup</div></div>
+    </div>`;
+}
+
+function renderIntegrationsForm(system) {
+  const s = system || {};
+  return `
+    <div class="ic-form-card">
+      <h3 style="margin-bottom:12px">${s.id ? "Edit AI System" : "Register an AI System"}</h3>
+      <div class="np-form">
+        <div class="integ-form-row">
+          <div class="np-field" style="flex:2"><label>System Name *</label><input id="ais-name" value="${esc(s.name || "")}" placeholder="e.g. Claims Review Assistant"></div>
+          <div class="np-field" style="flex:1"><label>System Type *</label>
+            <select id="ais-type">
+              <option value="agent" ${s.system_type === "agent" ? "selected" : ""}>Agent</option>
+              <option value="model_service" ${s.system_type === "model_service" ? "selected" : ""}>Model Service</option>
+              <option value="decision_engine" ${s.system_type === "decision_engine" ? "selected" : ""}>Decision Engine</option>
+              <option value="ai_enabled_app" ${s.system_type === "ai_enabled_app" ? "selected" : ""}>AI-Enabled App</option>
+            </select>
+          </div>
+        </div>
+        <div class="integ-form-row">
+          <div class="np-field" style="flex:1"><label>Deployment / Version</label><input id="ais-version" value="${esc(s.deployment_version || "")}" placeholder="e.g. v2.1.0"></div>
+          <div class="np-field" style="flex:2"><label>Decision Endpoint</label><input id="ais-endpoint" value="${esc(s.decision_endpoint || "")}" placeholder="e.g. /claims/recommendation"></div>
+        </div>
+        <div class="integ-form-row">
+          <div class="np-field" style="flex:1"><label>Business Owner</label><input id="ais-bo" value="${esc(s.business_owner || "")}"></div>
+          <div class="np-field" style="flex:1"><label>Technical Owner</label><input id="ais-to" value="${esc(s.technical_owner || "")}"></div>
+        </div>
+        <div class="np-field"><label>Uses external tools / APIs?</label>
+          <label style="font-size:12px;font-weight:400;display:flex;align-items:center;gap:8px;margin-top:4px">
+            <input type="checkbox" id="ais-external" ${s.external_caller ? "checked" : ""}> Yes, this system calls external services
+          </label>
+        </div>
+        <div class="action-row" style="margin-top:12px">
+          <button class="btn btn-green" onclick="saveAISystem('${s.id || ""}')">${s.id ? "Save Changes" : "Register System"}</button>
+          <button class="btn btn-outline" onclick="S._ic_editing=null;renderIntegrations(q('#main-content'))">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function saveAISystem(existingId) {
+  const name = q("#ais-name").value.trim();
+  if (!name) { notify("System name is required", "error"); return; }
+  const body = {
+    name,
+    system_type: q("#ais-type").value,
+    deployment_version: q("#ais-version").value,
+    decision_endpoint: q("#ais-endpoint").value,
+    business_owner: q("#ais-bo").value,
+    technical_owner: q("#ais-to").value,
+    external_caller: q("#ais-external").checked,
+  };
   try {
-    const r = await apiPost("/v1/verification-records/manual", {
-      ticket_id: q("#ms-ref").value,
-      transcript: q("#ms-transcript").value,
-      decision: "REVIEW",
-      agent_id: q("#ms-agent").value,
-      business_function: "support",
-      source_system_id: q("#ms-system").value,
-    });
-    notify("Submitted " + r.id, "success");
-    closeDrawer();
-    nav("verification-records");
+    if (existingId) {
+      await apiPut("/v1/setup/ai-systems/" + existingId, body);
+      notify("System updated", "success");
+    } else {
+      await apiPost("/v1/setup/ai-systems", body);
+      notify("System registered", "success");
+    }
+    S._ic_editing = null;
+    renderIntegrations(q("#main-content"));
   } catch (e) {
     notify("Failed: " + e.message, "error");
   }
 }
 
-function openWebhookSetup() {
-  const body = `
-    <div class="section-title">Webhook URL</div>
-    ${renderCodeBlock("POST https://api.getnotary.ai/v1/verification-records/webhook")}
-    <div class="section-title">Auth header</div>
-    ${renderCodeBlock("Authorization: Bearer <token>\nX-Webhook-Secret: <secret>")}
-    <div class="section-title">Event schema</div>
-    ${renderCodeBlock(`{\n  "source_id": "TKT-1234",\n  "events": [\n    {"kind": "model_call", "payload": {"model": "support-agent"}},\n    {"kind": "decision", "payload": {"decision": "CONTINUE_BOT"}}\n  ]\n}`)}
-    <div class="section-title">Idempotency</div>
-    <p style="font-size:12px;color:var(--muted)">Re-send the same source_id within 24h and Notary deduplicates based on source record reference.</p>
-  `;
-  renderDrawer("Webhook Setup", body);
+function renderIntegrationsSystemList(systems) {
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="section-title" style="margin:0">AI Systems</div>
+      <button class="btn btn-sm" onclick="S._ic_editing={};renderIntegrations(q('#main-content'));q('#ic-workspace').scrollIntoView({behavior:'smooth'})">+ Register System</button>
+    </div>
+    ${systems.length === 0 ? `
+      <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius);padding:32px">
+        <h3>No AI systems registered yet</h3>
+        <p>Register your first AI system to begin setting up capture and evidence handling.</p>
+        <button class="btn" onclick="S._ic_editing={};renderIntegrations(q('#main-content'))">Register Your First System</button>
+      </div>
+    ` : `
+    <div style="display:grid;gap:10px">
+      ${systems.map(s => `
+        <div class="ic-system-row" onclick="S._ic_selected_system='${s.id}';renderIntegrations(q('#main-content'))">
+          <div style="display:flex;align-items:center;gap:12px;flex:1">
+            <div class="ic-system-icon">${s.system_type === "agent" ? "🤖" : s.system_type === "model_service" ? "⚡" : s.system_type === "decision_engine" ? "⚙" : "📱"}</div>
+            <div>
+              <strong>${esc(s.name)}</strong>
+              <div style="font-size:11px;color:var(--muted)">${esc(s.system_type)} · ${s.deployment_version ? esc(s.deployment_version) : "no version"}</div>
+            </div>
+          </div>
+          <span class="badge badge-${s.status === "active" ? "green" : s.status === "draft" ? "planned" : s.status === "error" ? "red" : "ingested"}">${esc(s.status)}</span>
+          <span style="color:var(--dim);font-size:16px">→</span>
+        </div>
+      `).join("")}
+    </div>`}`;
 }
 
-async function sendWebhookTestEvent() {
+async function renderAISystemDetail(systemId) {
+  const [system, connectors, fieldRules, validationRuns] = await Promise.all([
+    apiGet("/v1/setup/ai-systems/" + systemId).catch(() => null),
+    apiGet("/v1/setup/ai-systems/" + systemId + "/connectors").catch(() => []),
+    apiGet("/v1/setup/ai-systems/" + systemId + "/field-rules").catch(() => []),
+    apiGet("/v1/setup/ai-systems/" + systemId + "/validation-runs").catch(() => []),
+  ]);
+  if (!system) { notify("System not found", "error"); S._ic_selected_system = null; renderIntegrations(q("#main-content")); return; }
+  const c = q("#ic-workspace");
+  if (!c) return;
+
+  const lastValidation = validationRuns.length > 0 ? validationRuns[validationRuns.length - 1] : null;
+  const coverage = lastValidation ? JSON.parse(lastValidation.coverage_json || "{}") : {};
+  const tab = S._ic_system_tab || "connectors";
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <button class="btn btn-outline btn-sm" onclick="S._ic_selected_system=null;S._ic_system_tab=null;renderIntegrations(q('#main-content'))">← Back</button>
+      <h3 style="margin:0">${esc(system.name)}</h3>
+      <span class="badge badge-${system.status === "active" ? "green" : system.status === "draft" ? "planned" : system.status === "error" ? "red" : "ingested"}">${esc(system.status)}</span>
+      <button class="btn btn-outline btn-sm" onclick="S._ic_editing=${JSON.stringify(system).replace(/"/g, "'")};renderAISystemDetail('${systemId}')">Edit</button>
+    </div>
+    <div class="integ-tabs">
+      <button class="integ-tab ${tab === "connectors" ? "active" : ""}" onclick="S._ic_system_tab='connectors';renderAISystemDetail('${systemId}')">Connectors ${connectors.length ? `<span class="tab-badge">${connectors.length}</span>` : ""}</button>
+      <button class="integ-tab ${tab === "evidence" ? "active" : ""}" onclick="S._ic_system_tab='evidence';renderAISystemDetail('${systemId}')">Evidence Graph</button>
+      <button class="integ-tab ${tab === "boundary" ? "active" : ""}" onclick="S._ic_system_tab='boundary';renderAISystemDetail('${systemId}')">Boundary ${fieldRules.length ? `<span class="tab-badge">${fieldRules.length}</span>` : ""}</button>
+      <button class="integ-tab ${tab === "validation" ? "active" : ""}" onclick="S._ic_system_tab='validation';renderAISystemDetail('${systemId}')">Validate & Activate</button>
+    </div>
+    <div id="ic-tab-content">
+      ${tab === "connectors" ? renderConnectorsTab(system, connectors) : ""}
+      ${tab === "evidence" ? renderEvidenceTab(system) : ""}
+      ${tab === "boundary" ? renderBoundaryTab(system, fieldRules) : ""}
+      ${tab === "validation" ? renderValidationTab(system, coverage, validationRuns) : ""}
+    </div>`;
+}
+
+function renderConnectorsTab(system, connectors) {
+  const addingConnector = S._ic_adding_connector;
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 12px">
+      <div class="section-title" style="margin:0">Capture Sources</div>
+      <button class="btn btn-sm" onclick="S._ic_adding_connector=true;renderAISystemDetail('${system.id}')">+ Add Capture Source</button>
+    </div>
+    ${addingConnector ? `
+      <div class="ic-connector-form">
+        <div class="integ-form-row">
+          <div class="np-field" style="flex:1"><label>Connector Type *</label>
+            <select id="conn-type">
+              <option value="python_sdk">Python SDK</option>
+              <option value="rest_api">REST API</option>
+              <option value="webhook">Webhook</option>
+              <option value="event_stream">Event Stream</option>
+              <option value="manual">Manual Submission</option>
+              <option value="batch_import">File / Batch Import</option>
+            </select>
+          </div>
+          <div class="np-field" style="flex:2"><label>Name</label><input id="conn-name" placeholder="e.g. Production Agent SDK"></div>
+        </div>
+        <div class="action-row" style="margin-top:8px">
+          <button class="btn btn-green btn-sm" onclick="saveConnector('${system.id}')">Create Connector</button>
+          <button class="btn btn-outline btn-sm" onclick="S._ic_adding_connector=null;renderAISystemDetail('${system.id}')">Cancel</button>
+        </div>
+      </div>
+    ` : ""}
+    ${connectors.length === 0 ? `
+      <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius);padding:24px">
+        <p>No capture sources connected yet. Add a connector to start receiving decision evidence.</p>
+      </div>
+    ` : `
+    <div style="display:grid;gap:8px">
+      ${connectors.map(c => `
+        <div class="ic-connector-row">
+          <div style="flex:1">
+            <strong>${esc(c.name || c.connector_type)}</strong>
+            <div style="font-size:11px;color:var(--muted)">${esc(c.connector_type)}${c.last_tested_at ? " · last tested " + esc(c.last_tested_at) : ""}</div>
+          </div>
+          <span class="badge badge-${c.status === "connected" ? "green" : c.status === "error" ? "red" : c.status === "receiving" ? "replayed" : c.status === "validated" ? "certified" : "planned"}">${esc(c.status)}</span>
+          <div class="action-row">
+            <button class="btn btn-outline btn-sm" onclick="testConnector('${c.id}','${system.id}')">Test</button>
+            <button class="btn btn-outline btn-sm" onclick="viewConnectorSamples('${c.id}','${system.id}')">View Sample</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>`}`;
+}
+
+async function saveConnector(systemId) {
+  const type = q("#conn-type").value;
+  const name = q("#conn-name").value.trim();
   try {
-    const r = await apiPost("/v1/verification-records/webhook", {
-      source_id: "WEBHOOK-DEMO-" + Date.now(),
-      events: [
-        {kind: "model_call", payload: {model: "support-agent", intent: "billing dispute"}},
-        {kind: "decision", payload: {decision: "CONTINUE_BOT"}},
-      ],
-    });
-    notify("Created webhook V.R. " + r.id, "success");
-    nav("verification-records");
+    await apiPost("/v1/setup/ai-systems/" + systemId + "/connectors", { connector_type: type, name: name || type, config: {} });
+    notify("Connector created", "success");
+    S._ic_adding_connector = null;
+    renderAISystemDetail(systemId);
   } catch (e) {
     notify("Failed: " + e.message, "error");
+  }
+}
+
+async function testConnector(connId, systemId) {
+  try {
+    const r = await apiPost("/v1/setup/connectors/" + connId + "/test", {});
+    notify(r.message || "Connection verified", "success");
+    renderAISystemDetail(systemId);
+  } catch (e) {
+    notify("Test failed: " + e.message, "error");
+  }
+}
+
+async function viewConnectorSamples(connId, systemId) {
+  try {
+    const samples = await apiGet("/v1/setup/connectors/" + connId + "/samples");
+    if (!samples || samples.length === 0) {
+      notify("No samples available yet", "info");
+      return;
+    }
+    S._ic_selected_sample = samples[0];
+    S._ic_system_tab = "evidence";
+    renderAISystemDetail(systemId);
+  } catch (e) {
+    notify("Failed to load samples: " + e.message, "error");
+  }
+}
+
+function renderEvidenceTab(system) {
+  const sample = S._ic_selected_sample;
+  return `
+    <div style="margin:16px 0">
+      <div class="section-title" style="margin:0 0 8px">Inspect Captured Evidence</div>
+      <p class="section-sub">After a decision arrives, Notary detects the evidence flow through your system. Review what was captured.</p>
+      ${sample ? `
+        <div class="ic-evidence-header">
+          <div><strong>Sample:</strong> ${esc(sample.summary)}</div>
+          <div style="font-size:11px;color:var(--muted)">${esc(sample.timestamp)} · ${esc(sample.source_system)}</div>
+        </div>
+        <div class="ic-evidence-graph">
+          <div class="ic-evidence-node">
+            <div class="ic-evidence-node-header"><span>Inputs</span><span class="ic-evidence-node-type">source</span></div>
+            <div class="ic-evidence-node-items">Application data, User context</div>
+          </div>
+          <div class="ic-evidence-arrow">↓</div>
+          <div class="ic-evidence-node">
+            <div class="ic-evidence-node-header"><span>Model / Agent</span><span class="ic-evidence-node-type" style="background:rgba(59,130,212,.15);color:#3b82d4">process</span></div>
+            <div class="ic-evidence-node-items">Agent version · Prompt/configuration</div>
+          </div>
+          <div class="ic-evidence-arrow">↓ ↑</div>
+          <div class="ic-evidence-node">
+            <div class="ic-evidence-node-header"><span>Tool Responses</span><span class="ic-evidence-node-type" style="background:rgba(245,158,11,.15);color:#f59e0b">external</span></div>
+            <div class="ic-evidence-node-items">Enrichment API · Policy service</div>
+          </div>
+          <div class="ic-evidence-arrow">↓</div>
+          <div class="ic-evidence-node">
+            <div class="ic-evidence-node-header"><span>Policy / Config</span><span class="ic-evidence-node-type" style="background:rgba(124,92,216,.15);color:#7c5cd8">config</span></div>
+            <div class="ic-evidence-node-items">Policy version · Rules applied</div>
+          </div>
+          <div class="ic-evidence-arrow">↓</div>
+          <div class="ic-evidence-node">
+            <div class="ic-evidence-node-header"><span>Decision</span><span class="ic-evidence-node-type" style="background:rgba(34,197,94,.15);color:#22c55e">output</span></div>
+            <div class="ic-evidence-node-items">Final outcome</div>
+          </div>
+        </div>
+        <div class="section-title" style="margin-top:16px">Captured Elements</div>
+        <div class="evidence-table">
+          <table>
+            <thead><tr><th>Kind</th><th>Source</th><th>Summary</th><th>Classification</th><th>Influenced</th><th>Sealed</th></tr></thead>
+            <tbody>
+              ${(sample.elements || []).map(e => `
+                <tr>
+                  <td><span class="badge badge-${e.kind === "decision" ? "green" : e.kind === "input" ? "planned" : e.kind === "model_invocation" ? "replayed" : "ingested"}">${esc(e.kind)}</span></td>
+                  <td>${esc(e.source)}</td>
+                  <td>${esc(e.summary)}</td>
+                  <td>${esc(e.classification)}</td>
+                  <td>${e.influenced_decision ? "✓" : "—"}</td>
+                  <td>${e.sealed ? "✓" : "—"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius);padding:24px">
+          <p>No captured evidence to inspect yet. Connect a capture source and send a test decision to see the evidence graph.</p>
+        </div>
+      `}
+    </div>`;
+}
+
+function renderBoundaryTab(system, rules) {
+  const editingRules = S._ic_editing_rules;
+  return `
+    <div style="margin:16px 0">
+      <div class="section-title" style="margin:0 0 8px">Evidence Handling Rules</div>
+      <p class="section-sub">Define how Notary should handle each type of evidence. A system or field belongs in the decision boundary when it satisfies at least one criterion below.</p>
+      <div class="ic-boundary-criteria">
+        <div class="ic-criterion">✓ It supplied data consumed by the AI.</div>
+        <div class="ic-criterion">✓ Its output materially influenced the decision.</div>
+        <div class="ic-criterion">✓ It identifies the model, prompt, agent, policy or configuration version.</div>
+        <div class="ic-criterion">✓ It contains the final AI decision.</div>
+        <div class="ic-criterion">✓ It provides the authoritative expected outcome or later correction.</div>
+        <div class="ic-criterion">✓ It is required to reproduce an external interaction.</div>
+        <div class="ic-criterion">✓ It establishes provenance or chain of custody.</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 8px">
+        <div class="section-title" style="margin:0">Field Rules</div>
+        <button class="btn btn-sm" onclick="S._ic_editing_rules=true;renderAISystemDetail('${system.id}')">${rules.length ? "Edit Rules" : "Define Rules"}</button>
+      </div>
+      ${editingRules ? renderFieldRulesForm(system, rules) : (
+        rules.length === 0 ? `
+          <div class="empty-state" style="border:1px dashed var(--border);padding:16px;border-radius:var(--radius)">
+            <p>No field handling rules defined yet. Define how each evidence field should be stored, redacted, or excluded.</p>
+          </div>
+        ` : `
+        <div class="evidence-table">
+          <table>
+            <thead><tr><th>Field Pattern</th><th>Action</th><th>Retention</th><th>Sensitive</th><th>Use for Replay</th></tr></thead>
+            <tbody>
+              ${rules.map(r => `
+                <tr>
+                  <td><code>${esc(r.field_pattern)}</code></td>
+                  <td><span class="badge badge-${r.action === "store" ? "green" : r.action === "redact" ? "amber" : r.action === "hash" ? "replayed" : r.action === "exclude" ? "red" : "ingested"}">${esc(r.action)}</span></td>
+                  <td>${r.retention_days}d</td>
+                  <td>${r.sensitive ? "✓" : "—"}</td>
+                  <td>${r.use_for_replay ? "✓" : "—"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>`
+      )}
+    </div>`;
+}
+
+function renderFieldRulesForm(system, existingRules) {
+  const defaults = existingRules.length > 0 ? existingRules : [
+    {field_pattern: "input.*", action: "store", retention_days: 365, sensitive: false, use_for_replay: true},
+    {field_pattern: "model_invocation.*", action: "store", retention_days: 365, sensitive: false, use_for_replay: true},
+    {field_pattern: "tool_response.*", action: "store", retention_days: 365, sensitive: true, use_for_replay: true},
+    {field_pattern: "policy_config.*", action: "store", retention_days: 730, sensitive: false, use_for_replay: true},
+    {field_pattern: "decision.*", action: "store", retention_days: 2555, sensitive: false, use_for_replay: true},
+    {field_pattern: "personal_data.*", action: "redact", retention_days: 90, sensitive: true, use_for_replay: false},
+  ];
+  const rows = defaults.map((r, i) => `
+    <div class="ic-fhr-row" data-idx="${i}">
+      <input class="ic-fhr-field" value="${esc(r.field_pattern)}" placeholder="field pattern (e.g. input.*)">
+      <select class="ic-fhr-action">
+        <option value="store" ${r.action === "store" ? "selected" : ""}>Store</option>
+        <option value="redact" ${r.action === "redact" ? "selected" : ""}>Redact</option>
+        <option value="hash" ${r.action === "hash" ? "selected" : ""}>Hash</option>
+        <option value="exclude" ${r.action === "exclude" ? "selected" : ""}>Exclude</option>
+      </select>
+      <input class="ic-fhr-retention" type="number" value="${r.retention_days}" style="width:60px" min="1"> days
+      <label style="font-size:11px;white-space:nowrap"><input class="ic-fhr-sensitive" type="checkbox" ${r.sensitive ? "checked" : ""}> Sensitive</label>
+      <label style="font-size:11px;white-space:nowrap"><input class="ic-fhr-replay" type="checkbox" ${r.use_for_replay ? "checked" : ""}> Replay</label>
+    </div>
+  `).join("");
+  return `
+    <div class="ic-fhr-editor">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Configure how each evidence field type should be handled. ${defaults.length > 0 && existingRules.length === 0 ? "Default rules suggested based on common patterns." : ""}</p>
+      ${rows}
+      <div class="action-row" style="margin-top:12px">
+        <button class="btn btn-green btn-sm" onclick="saveFieldRules('${system.id}')">Save Rules</button>
+        <button class="btn btn-outline btn-sm" onclick="S._ic_editing_rules=null;renderAISystemDetail('${system.id}')">Cancel</button>
+      </div>
+    </div>`;
+}
+
+async function saveFieldRules(systemId) {
+  const rows = qa(".ic-fhr-row");
+  const rules = Array.from(rows).map(row => ({
+    field_pattern: row.querySelector(".ic-fhr-field").value,
+    action: row.querySelector(".ic-fhr-action").value,
+    retention_days: parseInt(row.querySelector(".ic-fhr-retention").value) || 365,
+    sensitive: row.querySelector(".ic-fhr-sensitive").checked,
+    use_for_replay: row.querySelector(".ic-fhr-replay").checked,
+  }));
+  try {
+    await apiPut("/v1/setup/ai-systems/" + systemId + "/field-rules", rules);
+    notify("Field rules saved", "success");
+    S._ic_editing_rules = null;
+    renderAISystemDetail(systemId);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+function renderValidationTab(system, coverage, validationRuns) {
+  const hasCoverage = coverage && coverage.replay_readiness;
+  return `
+    <div style="margin:16px 0">
+      <div class="section-title" style="margin:0 0 8px">Capture Coverage Validation</div>
+      <p class="section-sub">Run validation to assess whether the current setup produces complete, replayable evidence.</p>
+      <div style="display:flex;gap:12px;margin-bottom:16px">
+        <button class="btn" onclick="runValidation('${system.id}')">Run Validation</button>
+        <button class="btn btn-green ${system.status === "active" ? "" : ""}" onclick="activateSystem('${system.id}')" ${system.status === "active" ? "disabled" : ""}>
+          ${system.status === "active" ? "Capture Active ✓" : "Activate Capture"}
+        </button>
+      </div>
+      ${hasCoverage ? `
+        <div class="ic-coverage-report">
+          <div class="section-title" style="margin:12px 0 8px">Coverage Report</div>
+          <div class="ic-coverage-grid">
+            <div class="ic-coverage-item ${coverage.decision_detected ? "ok" : "fail"}"><span>Decision detected</span><span>${coverage.decision_detected ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.input_captured ? "ok" : "fail"}"><span>Input evidence captured</span><span>${coverage.input_captured ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.model_version_captured ? "ok" : "fail"}"><span>Model/agent version captured</span><span>${coverage.model_version_captured ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.prompt_captured ? "ok" : "fail"}"><span>Prompt/configuration captured</span><span>${coverage.prompt_captured ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.tool_responses_available ? "ok" : "fail"}"><span>Tool responses available</span><span>${coverage.tool_responses_available ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.final_decision_captured ? "ok" : "fail"}"><span>Final decision captured</span><span>${coverage.final_decision_captured ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.root_hash_valid ? "ok" : "fail"}"><span>Root hash valid</span><span>${coverage.root_hash_valid ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.cassette_material_available ? "ok" : "fail"}"><span>Cassette material available</span><span>${coverage.cassette_material_available ? "✓" : "✗"}</span></div>
+            <div class="ic-coverage-item ${coverage.expected_outcome_source_available ? "ok" : "fail"}"><span>Expected-outcome source available</span><span>${coverage.expected_outcome_source_available ? "✓" : "✗"}</span></div>
+          </div>
+          <div class="ic-readiness-badge">
+            Replay readiness: <strong class="${coverage.replay_readiness === "insufficient_context" ? "text-red" : "text-green"}">${esc(coverage.replay_readiness)}</strong>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:8px">${esc(coverage.assessment || "")}</p>
+        </div>
+      ` : validationRuns.length > 0 ? `
+        <p style="font-size:12px;color:var(--muted)">Last validation run: ${esc(validationRuns[validationRuns.length - 1].status)}</p>
+      ` : `
+        <div class="empty-state" style="border:1px dashed var(--border);padding:16px;border-radius:var(--radius)">
+          <p>No validation runs yet. Run validation to check capture coverage.</p>
+        </div>
+      `}
+    </div>`;
+}
+
+async function runValidation(systemId) {
+  try {
+    const r = await apiPost("/v1/setup/ai-systems/" + systemId + "/validate", {});
+    notify("Validation complete: " + (JSON.parse(r.coverage_json || "{}").replay_readiness || "unknown"), "success");
+    renderAISystemDetail(systemId);
+  } catch (e) {
+    notify("Validation failed: " + e.message, "error");
+  }
+}
+
+async function activateSystem(systemId) {
+  try {
+    await apiPut("/v1/setup/ai-systems/" + systemId, {status: "active"});
+    notify("Capture activated for this system", "success");
+    renderAISystemDetail(systemId);
+  } catch (e) {
+    notify("Activation failed: " + e.message, "error");
   }
 }
 
@@ -1393,22 +1359,30 @@ function renderIncidents(c, ix) {
   c.innerHTML = `
     ${renderFilterPills(pills)}
     <table>
-      <thead><tr><th>ID</th><th>Status</th><th title="Replay reproduced">R</th><th title="Fix verified">F</th><th title="Certificate/proof issued">C</th><th>Actions</th></tr></thead>
-      <tbody>${ix.map(i => `
-        <tr class="inc-row" data-status="${esc(i.status)}">
-          <td>${badgeDemo()} <span class="link" onclick="openIncidentDetail('${i.incident_id}')">${i.incident_id}</span></td>
+      <thead><tr><th>Incident</th><th>Stage</th><th>Observed → Expected</th><th>Systems</th><th>R</th><th>F</th><th>C</th><th>Next Action</th></tr></thead>
+      <tbody>${ix.map(i => {
+        const obs = i.replay_result?.decision || i.snapshot_summary?.decision || "—";
+        const exp = i.mutation_result?.expected_correct_behavior || i.snapshot_summary?.expected_outcome || "—";
+        const systems = i.snapshot_summary?.systems || [];
+        const systemStr = Array.isArray(systems) ? systems.length + " systems" : "—";
+        const nextAct = !i.replay_result ? "Run Replay" : i.replay_result && !i.mutation_result ? "Verify Fix" : i.mutation_result && !i.certificate ? "Issue Proof" : "Investigate";
+        return `
+        <tr class="inc-row" data-status="${esc(i.status)}" onclick="openIncidentDetail('${i.incident_id}')">
+          <td>${badgeDemo()} <span class="link">${i.incident_id}</span></td>
           <td>${statusBadge(i.status)}</td>
-          <td>${i.replay_result && Object.keys(i.replay_result).length ? "✓" : "—"}</td>
-          <td>${i.mutation_result && Object.keys(i.mutation_result).length ? "✓" : "—"}</td>
-          <td>${i.certificate && Object.keys(i.certificate).length ? "✓" : "—"}</td>
-          <td class="action-row">
+          <td><span class="decision-pill decision-fail">${esc(obs)}</span> → <span class="decision-pill decision-pass">${esc(exp)}</span></td>
+          <td style="font-size:11px">${esc(systemStr)}</td>
+          <td style="text-align:center">${i.replay_result && i.replay_result.replay_status === "replayed" ? '<span style="color:var(--green);font-weight:800">✓</span>' : '<span style="color:var(--dim)">—</span>'}</td>
+          <td style="text-align:center">${i.mutation_result && i.mutation_result.mitigated ? '<span style="color:var(--green);font-weight:800">✓</span>' : i.mutation_result ? '<span style="color:var(--amber)">⚠</span>' : '<span style="color:var(--dim)">—</span>'}</td>
+          <td style="text-align:center">${i.certificate && i.certificate.certificate_id ? '<span style="color:var(--green);font-weight:800">✓</span>' : '<span style="color:var(--dim)">—</span>'}</td>
+          <td class="action-row" onclick="event.stopPropagation()">
             ${!i.replay_result ? `<button class="btn btn-sm" onclick="runIncidentReplay('${i.incident_id}')">Replay</button>` : ""}
             ${i.replay_result && !i.mutation_result ? `<button class="btn btn-sm btn-amber" onclick="runIncidentVerify('${i.incident_id}')">Verify Fix</button>` : ""}
             ${i.mutation_result && !i.certificate ? `<button class="btn btn-sm btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : ""}
-            <button class="btn btn-sm btn-outline" onclick="openIncidentDetail('${i.incident_id}')">Investigate</button>
+            ${i.certificate ? `<button class="btn btn-sm btn-outline" onclick="openIncidentDetail('${i.incident_id}')">Investigate</button>` : ""}
           </td>
-        </tr>
-      `).join("")}
+        </tr>`;
+      }).join("")}
       </tbody>
     </table>
   `;
@@ -1430,9 +1404,9 @@ function openIncidentDetail(id) {
 }
 
 async function renderIncidentDetail(c, i, wf) {
-  const [sourceVr, snapshot, replayEvents] = await Promise.all([
-    apiGet("/v1/verification-records").then(vrs => vrs.find(v => v.promoted_to_incident === i.incident_id) || null).catch(() => null),
-    apiGet(`/v1/incidents/${i.incident_id}/snapshot`).catch(() => null),
+  const [sourceVr, snapshot, replayEvents, labelData] = await Promise.all([
+    apiGet("/v1/verification-records").then(function(vrs) { return vrs.find(function(v) { return v.promoted_to_incident === i.incident_id; }) || null; }).catch(function() { return null; }),
+    apiGet("/v1/incidents/" + i.incident_id + "/snapshot").catch(function() { return null; }),
     (i.replay_result && i.replay_result.replay_run_id
       ? apiGet("/v1/replay-runs/" + encodeURIComponent(i.replay_result.replay_run_id) + "/events").catch(() => null)
       : Promise.resolve(null)),
@@ -1443,21 +1417,25 @@ async function renderIncidentDetail(c, i, wf) {
     sigValid = await apiGet(`/v1/incidents/${i.incident_id}/certificates/${cert.certificate_id}/verify`).then(r => r.signature_valid).catch(() => null);
   }
   const scenario = sourceVr?.scenario || sourceVr?.metadata?.scenario || {};
-  const elements = Array.isArray(snapshot?.elements) ? snapshot.elements : [];
-  const cassetteEntries = elements.filter(e => ["http", "tool_call", "api_response"].includes(e.kind));
-  const decision = i.replay_result?.decision || i.mutation_result?.original_decision || sourceVr?.original_decision || "—";
-  const fixedDecision = i.mutation_result?.mutated_decision || sourceVr?.expected_correct_behavior || "—";
-  const proofError = wf.issue_proof_reason || (i.mutation_result ? "" : "Issue Proof requires a successful Fix Verification. Run Verify Fix after a successful replay.");
-  const inputEl = elements.find(e => e.kind === "input") || {};
-  const httpEl = elements.find(e => e.kind === "http") || {};
-  const policyEl = elements.find(e => e.kind === "policy") || {};
-  const decisionEl = elements.find(e => e.kind === "decision") || {};
-  const applicantId = inputEl.payload?.applicant_id || sourceVr?.source_record_ref || "HLCU-PL-0427";
-  const bureauStatus = httpEl.payload?.response?.status || "missing_evidence";
-  const policyVersion = policyEl.payload?.version || policyEl.payload?.policy_version || i.policy_version || "v1.3";
-  const originalDecision = decisionEl.payload?.decision || decision;
-  const replayedDecision = i.replay_result?.decision || "—";
-  const replayStatus = i.replay_result?.replay_status === "replayed" ? "pass" : "pending";
+  const elements = Array.isArray(snapshot && snapshot.elements) ? snapshot.elements : [];
+  const inputEl = elements.find(function(e) { return e.kind === "input"; }) || {};
+  const httpEl = elements.find(function(e) { return e.kind === "http"; }) || {};
+  const policyEl = elements.find(function(e) { return e.kind === "policy"; }) || {};
+  const decisionEl = elements.find(function(e) { return e.kind === "decision"; }) || {};
+  const applicantId = (inputEl.payload && inputEl.payload.applicant_id) || (sourceVr && sourceVr.source_record_ref) || "HLCU-PL-0427";
+  const systemName = (sourceVr && sourceVr.source_system_id) || "—";
+  const agentName = (sourceVr && sourceVr.agent_id) || "—";
+  const agentVer = (sourceVr && sourceVr.agent_version) || "—";
+  const policyVer = (policyEl.payload && (policyEl.payload.version || policyEl.payload.policy_version)) || (sourceVr && sourceVr.policy_version) || "—";
+  const envName = (sourceVr && sourceVr.environment_id) || "—";
+  const capturedAt = (sourceVr && sourceVr.created_at) || (i.snapshot_summary && i.snapshot_summary.timestamp) || "—";
+  const originalDecision = (decisionEl.payload && decisionEl.payload.decision) || (i.replay_result && i.replay_result.decision) || (i.mutation_result && i.mutation_result.original_decision) || (sourceVr && sourceVr.expected_outcome) || "—";
+  const replayedDecision = (i.replay_result && i.replay_result.decision) || "—";
+  const fixedDecision = (i.mutation_result && i.mutation_result.mutated_decision) || (labelData && labelData.expected_outcome) || "—";
+  const expectedOutcome = (labelData && labelData.expected_outcome) || (sourceVr && sourceVr.expected_outcome) || (i.mutation_result && i.mutation_result.expected_correct_behavior) || "—";
+  const replayStatus = i.replay_result && i.replay_result.replay_status === "replayed" ? "pass" : i.replay_result && i.replay_result.replay_status === "error" ? "error" : "pending";
+  const fixMitigated = i.mutation_result && i.mutation_result.mitigated;
+  const proofError = wf.issue_proof_reason || (i.mutation_result && !i.mutation_result.mitigated ? "Fix did not produce expected outcome" : !i.mutation_result ? "Issue Proof requires a successful Fix Verification. Run Verify Fix after a successful replay." : "");
   const replayRows = Array.isArray(replayEvents) && replayEvents.length > 0
     ? replayEvents.sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map(ev => ({
         step: ev.step,
@@ -1467,79 +1445,150 @@ async function renderIncidentDetail(c, i, wf) {
         status: ev.status,
       }))
     : [
-        { step: "Applicant facts", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending" },
-        { step: "Bureau response", source: "cassette", expected: bureauStatus, actual: bureauStatus, status: i.replay_result ? "pass" : "pending" },
-        { step: "Policy version", source: "sealed metadata", expected: policyVersion, actual: policyVersion, status: i.replay_result ? "pass" : "pending" },
-        { step: "AI decision", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending" },
-        { step: "Replay verdict", source: "comparison", expected: "reproduce failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus },
+        { step: "Applicant facts loaded", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending", sequence: 0 },
+        { step: "Build response cassette", source: "cassette", expected: "built", actual: "built", status: "pass", sequence: 1 },
+        { step: "Agent decision produced", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending", sequence: 2 },
+        { step: "Replay verdict", source: "comparison", expected: "reproduce known failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus, sequence: 3 },
       ];
-  const replayTableHtml = `
-    <table class="replay-table">
-      <thead><tr><th>Step</th><th>Source</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead>
-      <tbody>${replayRows.map(r => `
-        <tr>
-          <td>${esc(r.step)}</td>
-          <td>${esc(r.source)}</td>
-          <td>${esc(r.expected)}</td>
-          <td>${esc(r.actual)}</td>
-          <td><span class="replay-status ${r.status}">${esc(r.status)}</span></td>
-        </tr>
-      `).join("")}</tbody>
-    </table>`;
-  const trace = [
-    ["sealed", "Sealed inputs loaded", `${elements.length || "No"} captured evidence element${elements.length === 1 ? "" : "s"}`],
-    ["cassette", "Cassette selected", cassetteEntries.length ? `${cassetteEntries.length} recorded tool/API response${cassetteEntries.length === 1 ? "" : "s"}` : "No cassette response recorded"],
-    ["response", "System/tool response returned from cassette", cassetteEntries.length ? "Recorded response supplied without a production call" : "No recorded response available"],
-    ["decision", "Model/agent decision reconstructed", i.replay_result?.decision ? `Reconstructed decision: ${i.replay_result.decision}` : "Run Replay to reconstruct the decision"],
-    ["compare", "Original decision compared to replayed decision", i.replay_result ? `${decision} vs ${i.replay_result.decision || "—"}` : "Comparison is pending replay"],
-    ["verdict", "Replay verdict", i.replay_result?.replay_status === "replayed" ? "Failure reproduced from sealed evidence" : i.replay_result?.reason || "Replay has not run"],
-  ];
-  const traceHtml = trace.map(([kind, title, detail], index) => `<div class="investigation-trace-row"><span class="trace-index">${index + 1}</span><span class="trace-state ${i.replay_result || index < 2 ? "trace-done" : "trace-pending"}">${i.replay_result || index < 2 ? "✓" : "○"}</span><div><strong>${title}</strong><div class="trace-detail">${esc(detail)}</div></div><span class="trace-kind">${kind}</span></div>`).join("");
-  const pathHtml = sourceVr ? [
-    ["Source record", sourceVr.id], ["Agent", sourceVr.agent_id || sourceVr.source_system_id || "Recorded agent"],
-    ["Expected outcome", sourceVr.expected_correct_behavior || fixedDecision], ["Replayability", sourceVr.replayability || "—"],
-    ["Label", sourceVr.current_label_id || "Reviewer label not attached"],
-  ].map(([label, value]) => renderKV(label, esc(value))).join("") : renderEmptyState("Captured path unavailable", "The incident is missing its source verification record.", "");
-  const comparisonHtml = renderKV("Original captured decision", `<span class="decision-pill decision-fail">${esc(decision)}</span>`) + renderKV("Replayed decision", `<span class="decision-pill ${i.replay_result?.decision === decision ? "decision-fail" : "decision-neutral"}">${esc(i.replay_result?.decision || "Pending")}</span>`) + renderKV("After-fix decision", `<span class="decision-pill decision-pass">${esc(fixedDecision)}</span>`);
 
-  // Tabbed sections
+  // Two-column replay workspace (Phase B)
+  var selectedReplayIdx = S._selectedReplayIdx || 0;
+  var selectedEvent = replayRows.length > 0 ? replayRows[selectedReplayIdx] || replayRows[0] : null;
+  var replayColumnsHtml = replayRows.length > 0
+    ? '<div class="replay-workspace"><div class="replay-timeline"><div class="section-sub" style="margin-bottom:8px">Execution Timeline</div>' + replayRows.map(function(ev, idx) {
+        var icons = { pass: "✓", running: "⟳", reproduced: "✓", fail: "✗", error: "✗", pending: "○", escalation_required: "⚠", diverged: "✗" };
+        var colors = { pass: "var(--green)", running: "var(--accent)", reproduced: "var(--green)", fail: "var(--red)", error: "var(--red)", pending: "var(--dim)", escalation_required: "var(--amber)", diverged: "var(--red)" };
+        var ic = icons[ev.status] || "○";
+        var cl = colors[ev.status] || "var(--dim)";
+        var isSelected = idx === selectedReplayIdx;
+        return '<div class="replay-event-row' + (isSelected ? " selected" : "") + '" onclick="selectReplayEvent(' + idx + ')"><div class="replay-event-icon" style="color:' + cl + ';border-color:' + cl + '">' + ic + '</div><div class="replay-event-body"><div class="replay-event-step">' + esc(ev.step) + '</div><div class="replay-event-status" style="color:' + cl + '">' + esc(ev.status) + '</div></div></div>';
+      }).join("") + '<div style="margin-top:8px;font-size:10px;color:var(--dim);text-align:center">' + replayRows.length + ' events</div></div>' + (selectedEvent ? '<div class="replay-detail"><div class="section-sub" style="margin-bottom:8px">Event Detail</div>' + renderKV("Step", esc(selectedEvent.step)) + renderKV("Source", esc(selectedEvent.source || "—")) + renderKV("Expected", esc(selectedEvent.expected || "—")) + renderKV("Actual", esc(selectedEvent.actual || "—")) + renderKV("Status", '<span class="replay-status ' + selectedEvent.status + '">' + esc(selectedEvent.status) + '</span>') + renderKV("Sequence", "" + (selectedEvent.sequence != null ? selectedEvent.sequence : "—")) + renderKV("Timestamp", esc(selectedEvent.timestamp || "—")) + '</div>' : '') + '</div>'
+    : '<div class="empty-state compact"><h3>No replay events</h3><p>Run Replay to generate execution events.</p></div>';
+
+  // Custody audit trail (Phase C)
+  var custodyHtml = "";
+  if (i.custody && i.custody.length) {
+    custodyHtml = '<div class="custody-timeline">' + i.custody.slice().reverse().map(function(ev) {
+      return '<div class="custody-event"><span class="custody-time">' + esc(ev.timestamp) + '</span><span class="custody-action">' + esc(ev.action) + '</span><span class="custody-actor">' + esc(ev.actor) + '</span><span class="custody-detail">' + esc(ev.detail) + '</span></div>';
+    }).join("") + "</div>";
+  }
+
+  // Tab badges
+  function tabBadge(label, count, active) {
+    return '<button class="incident-tab' + (active ? ' active' : '') + '" onclick="switchIncidentTab(\'' + label.toLowerCase() + '\')">' + esc(label) + (count ? ' <span class="tab-badge">' + count + '</span>' : '') + '</button>';
+  }
+
   var tabs = [
-    {id: "evidence", label: "Evidence"},
-    {id: "replay", label: "Replay"},
-    {id: "fix", label: "Fix"},
-    {id: "proof", label: "Proof"},
-    {id: "gate", label: "Gate"},
+    {id: "evidence", label: "Evidence", badge: elements.length || sourceVr ? String(elements.length || "✓") : ""},
+    {id: "replay", label: "Replay", badge: i.replay_result ? (i.replay_result.replay_status === "replayed" ? "Reproduced" : "Ran") : ""},
+    {id: "fix", label: "Fix", badge: fixMitigated ? "Passed" : i.mutation_result ? "Ran" : ""},
+    {id: "proof", label: "Proof", badge: cert.certificate_id ? "Issued" : ""},
+    {id: "gate", label: "Gate", badge: i.mutation_result && fixMitigated ? "Protected" : i.mutation_result ? "At Risk" : ""},
+    {id: "audit", label: "Audit", badge: i.custody ? String(i.custody.length) : ""},
   ];
   var activeTab = S._incTab || "evidence";
   S._incTab = activeTab;
-  var tabContent = {
-    evidence: renderSection("Captured AI Decision Path", pathHtml + '<div class="path-rail"><span>Input</span><span>Agent + policy</span><span>Tool evidence</span><span>Decision</span></div>', {sub: "What was captured, labeled, and made eligible for replay."}),
-    replay: renderSection("Replay Execution Trace", '<div class="investigation-trace">' + traceHtml + '</div>' + (i.replay_result && i.replay_result.reason ? '<div class="error-state">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : ""), {sub: "Cassette replay reconstructs the known decision under recorded conditions."}) + renderSection("Replay Run Detail", replayTableHtml, {sub: "Step-by-step comparison of the recorded and replayed decision path."}) + renderSection("Original vs Replayed Comparison", '<div class="comparison-grid">' + comparisonHtml + '</div><div class="comparison-verdict ' + (i.replay_result && i.replay_result.replay_status === "replayed" ? "verdict-fail" : "verdict-pending") + '">' + (i.replay_result && i.replay_result.replay_status === "replayed" ? "Failure reproduced: the replay matched the recorded decision." : "Run Replay to compare the recorded and reconstructed decisions.") + '</div>'),
-    fix: i.mutation_result ? '<div class="before-after"><div><span class="comparison-label">BEFORE FIX</span><strong>' + esc(i.mutation_result.original_decision || decision) + '</strong><p>Known failure reproduced under the captured conditions.</p></div><div class="before-after-arrow">→</div><div><span class="comparison-label">AFTER FIX</span><strong class="text-green">' + esc(i.mutation_result.mutated_decision || "—") + '</strong><p>' + (i.mutation_result.mitigated ? "Expected behavior verified for this scenario." : "Expected behavior was not verified.") + '</p></div></div>' : '<div class="empty-state compact"><h3>Fix verification pending</h3><p>Replay the failure first, then run the scenario-specific fix against the same cassette.</p></div>',
-    proof: (cert.certificate_id ? '<div class="proof-bundle"><h3>' + cert.certificate_id + '</h3>' + renderKV("Algorithm", cert.signing_algorithm || "—") + renderKV("Root hash", cert.root_hash || (i.snapshot_summary && i.snapshot_summary.root_hash) || "—") + renderKV("Replay method", cert.replay_method || (i.replay_result && i.replay_result.replay_method) || "cassette") + renderKV("Signature Valid", sigValid === true ? "✓ Yes" : sigValid === false ? "✗ No" : "Unknown") + renderKV("Claim Scope", "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.") + renderKV("Limitations", cert.known_limitations || "—") + '<div class="action-row" style="margin-top:12px"><a href="/v1/incidents/' + i.incident_id + '/certificates/' + cert.certificate_id + '/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a><a href="/v1/incidents/' + i.incident_id + '/certificates/' + cert.certificate_id + '/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a><button class="btn btn-sm btn-outline" onclick="verifyIncidentCert(\'' + i.incident_id + '\')">Verify Signature</button></div></div>' : '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p></div>') + (cert.certificate_id ? renderSection("Scenario Promotion", '<div class="promotion-panel"><div><strong>Reusable scenario candidate</strong><p>This verified failure can be promoted into the scenario library and run in future release checks.</p></div>' + (sourceVr ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + '\', \'' + i.incident_id + '\')">Promote to Scenario</button>' : '<button class="btn btn-sm btn-outline" onclick="nav(\'scenarios\')">Open Scenario Library</button>') + '</div>') : '<div class="proof-pending"><strong>Promotion is gated</strong><p>Issue a scenario-scoped proof before promoting this incident.</p></div>'),
-    gate: renderSection("Release Gate Impact", '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (i.mutation_result && i.mutation_result.mitigated ? "gate-pass" : "gate-muted") + '">' + (i.mutation_result && i.mutation_result.mitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>'),
-  };
 
-  c.innerHTML = `
-    <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('incidents')">← Back to Incidents</button>
-    ${badgeDemo()}
-    <div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">
-      ${statusBadge(i.status)}
-      <span style="font-size:13px;color:var(--muted)">ID: ${i.incident_id}</span>
-    </div>
-    ${renderSection("Business Summary", '<div class="incident-summary"><div><div class="eyebrow">AI decision assurance investigation</div><h2>' + esc(scenario.title || (sourceVr && sourceVr.business_function) || "Captured AI decision failure") + '</h2><p>' + esc(scenario.risk || "A recorded AI decision is being investigated through sealed evidence, deterministic replay, and scenario-scoped fix verification.") + '</p></div><div class="summary-outcome"><span class="summary-label">Observed outcome</span><strong>' + esc(decision) + '</strong><span class="summary-arrow">→</span><strong class="text-green">' + esc(fixedDecision) + '</strong><span class="summary-label">target outcome</span></div></div>')}
-    ${renderSection("Proof Loop Workflow", wf.steps.map(function(s) { return renderWorkflowStep(s.label, s.state, s.detail, s.action ? '<button class="btn btn-sm" onclick="wfAction(\'' + i.incident_id + '\', \'' + s.label + '\')">' + s.action + '</button>' : ""); }).join(""))}
-    <div class="incident-tabs">
-      ${tabs.map(function(t) { return '<button class="incident-tab' + (t.id === activeTab ? ' active' : '') + '" onclick="switchIncidentTab(\'' + t.id + '\')">' + esc(t.label) + '</button>'; }).join("")}
-    </div>
-    <div class="incident-tab-content">${tabContent[activeTab] || ""}</div>
-    <div class="action-row" style="margin-top:16px">
-      <button class="btn${i.replay_result ? " btn-outline" : ""}" onclick="runIncidentReplay('${i.incident_id}')">${i.replay_result ? "Replay Again" : "Run Replay"}</button>
-      ${i.replay_result && !i.mutation_result ? '<button class="btn btn-amber" onclick="runIncidentVerify(\'' + i.incident_id + '\')">Verify Fix</button>' : ""}
-      ${!cert.certificate_id ? (wf.can_issue_proof ? '<button class="btn btn-green" onclick="runIncidentCertify(\'' + i.incident_id + '\')">Issue Proof</button>' : '<button class="btn btn-green" disabled title="' + esc(proofError || "Fix verification required first") + '">Issue Proof</button>') : ""}
-      ${sourceVr && cert.certificate_id ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + '\', \'' + i.incident_id + '\')">Promote to Scenario</button>' : ""}
-    </div>
-  `;
+  // Fix detail
+  var fixDetailHtml = "";
+  if (i.mutation_result) {
+    fixDetailHtml = '<div class="before-after"><div><span class="comparison-label">CAPTURED DECISION</span><strong class="decision-fail" style="display:block;font-size:18px;margin:8px 0">' + esc(i.mutation_result.original_decision || originalDecision) + '</strong><p>Known failure reproduced under the captured conditions.</p></div><div class="before-after-arrow">→</div><div><span class="comparison-label">AFTER FIX</span><strong class="text-green" style="display:block;font-size:18px;margin:8px 0">' + esc(i.mutation_result.mutated_decision || "—") + '</strong><p>' + (fixMitigated ? "Expected outcome verified for this scenario." : "Fix did not produce the expected outcome.") + '</p></div></div>' + renderKV("Expected outcome", esc(i.mutation_result.expected_correct_behavior || expectedOutcome)) + renderKV("Fix config", renderCodeBlock(JSON.stringify(i.mutation_result.fix_config || {}))) + renderKV("Decision changed", i.mutation_result.decision_changed ? "Yes" : "No");
+  } else {
+    fixDetailHtml = '<div class="empty-state compact"><h3>Fix verification pending</h3><p>Replay the failure first, then run the scenario-specific fix against the same cassette.</p></div>';
+  }
+
+  // Proof detail (Phase D)
+  var proofDetailHtml = "";
+  if (cert.certificate_id) {
+    proofDetailHtml = '<div class="proof-bundle">' +
+      '<h3>' + esc(cert.certificate_id) + '</h3>' +
+      renderKV("Schema Version", esc(cert.schema_version || "pom-v1")) +
+      renderKV("Incident", '<span class="link" onclick="openIncidentDetail(\'' + i.incident_id + '\')">' + i.incident_id + '</span>') +
+      (sourceVr ? renderKV("Source V.R.", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') : "") +
+      renderKV("Original Decision", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') +
+      renderKV("Mutated Decision", '<span class="decision-pill decision-pass">' + esc(fixedDecision) + '</span>') +
+      renderKV("Expected Outcome", esc(expectedOutcome || "Not available")) +
+      renderKV("Replay Method", esc(cert.replay_method || "sealed cassette replay")) +
+      renderKV("Root Hash", esc(cert.root_hash || (i.snapshot_summary && i.snapshot_summary.root_hash) || "—")) +
+      renderKV("Signature", sigValid === true ? "✓ Valid" : sigValid === false ? "✗ Invalid" : "Unknown") +
+      renderKV("Algorithm", esc(cert.signing_algorithm || "—")) +
+      renderKV("Issued", esc(cert.timestamp || "—")) +
+      renderKV("Claim Scope", esc(cert.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")) +
+      renderKV("Limitations", esc(cert.known_limitations || "None documented")) +
+      '<div class="action-row" style="margin-top:12px">' +
+      '<button class="btn btn-sm btn-outline" onclick="downloadProofBlob(\'' + i.incident_id + "','" + cert.certificate_id + "','json')" + '">Download JSON</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="downloadProofBlob(\'' + i.incident_id + "','" + cert.certificate_id + "','pdf')" + '">Download PDF</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="verifyIncidentCert(\'' + i.incident_id + '\')">Verify Signature</button>' +
+      '</div></div>';
+    if (sourceVr) {
+      proofDetailHtml += renderSection("Promote to Scenario", '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">This verified failure can be promoted to the scenario library for use in future release checks.</p><button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + "','" + i.incident_id + '\')">Promote to Scenario</button>');
+    }
+  } else {
+    proofDetailHtml = '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p></div>';
+  }
+
+  var gateHtml = '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (fixMitigated ? "gate-pass" : "gate-muted") + '">' + (fixMitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub" style="margin-top:8px">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>';
+
+  c.innerHTML = [
+    '<button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav(\'incidents\')">← Back to Incidents</button>',
+    badgeDemo(),
+    '<div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">',
+    statusBadge(i.status),
+    '<span style="font-size:13px;color:var(--muted)">ID: ' + esc(i.incident_id) + '</span>',
+    '</div>',
+    // Phase C: separate captured/replayed/expected/after-fix summary
+    '<section><div class="incident-summary-v2">',
+    '<div class="summary-block"><span class="summary-block-label">Captured</span><strong>' + esc(originalDecision) + '</strong><span class="summary-block-source">from ' + esc(systemName) + '</span></div>',
+    '<div class="summary-arrow">→</div>',
+    '<div class="summary-block"><span class="summary-block-label">Replayed</span><strong>' + esc(replayedDecision || "Pending") + '</strong><span class="summary-block-source">' + (i.replay_result ? "via " + esc(i.replay_result.replay_status || "cassette") : "not yet replayed") + '</span></div>',
+    '<div class="summary-arrow">→</div>',
+    '<div class="summary-block"><span class="summary-block-label">Expected</span><strong class="text-green">' + esc(expectedOutcome || "—") + '</strong><span class="summary-block-source">' + (labelData ? "from label" : sourceVr && sourceVr.expected_outcome ? "from source" : "—") + '</span></div>',
+    '<div class="summary-arrow">→</div>',
+    '<div class="summary-block"><span class="summary-block-label">After Fix</span><strong class="text-green">' + esc(fixedDecision || "—") + '</strong><span class="summary-block-source">' + (fixMitigated ? "verified" : i.mutation_result ? "not verified" : "not attempted") + '</span></div>',
+    '</div></section>',
+    // Metadata section (Phase C)
+    '<section><div class="section-title">Metadata</div><div class="incident-metadata">',
+    renderKV("System", esc(systemName)),
+    renderKV("Agent", esc(agentName)),
+    renderKV("Agent Version", esc(agentVer)),
+    renderKV("Policy Version", esc(policyVer)),
+    renderKV("Environment", esc(envName)),
+    renderKV("Captured", esc(capturedAt)),
+    renderKV("Severity", "High"),
+    renderKV("Owner", "Platform User"),
+    '</div></section>',
+    // Workflow
+    renderSection("Progress", wf.steps.map(function(s) { return renderWorkflowStep(s.label, s.state, s.detail, s.action ? '<button class="btn btn-sm" onclick="wfAction(\'' + i.incident_id + '\', \'' + s.label + '\')">' + s.action + '</button>' : ""); }).join("")),
+    // Tabs with badges
+    '<div class="incident-tabs">',
+    tabs.map(function(t) { return tabBadge(t.label, t.badge, t.id === activeTab); }).join(""),
+    '</div>',
+    '<div class="incident-tab-content">',
+    activeTab === "evidence" ? renderSection("Captured Evidence", (elements.length ? '<div class="evidence-table"><table><thead><tr><th>#</th><th>Kind</th><th>Source System</th><th>Summary</th></tr></thead><tbody>' + elements.map(function(e, idx) {
+      var summary = "";
+      if (e.payload) {
+        if (e.payload.decision) summary = e.payload.decision;
+        else if (e.payload.response && typeof e.payload.response === "object") summary = e.payload.response.status || JSON.stringify(e.payload.response).slice(0, 60);
+        else if (e.payload.version) summary = e.payload.version;
+        else if (e.payload.applicant_id) summary = e.payload.applicant_id;
+        else summary = e.kind;
+      }
+      return '<tr onclick="event.stopPropagation();renderDrawer(\'Element ' + (idx + 1) + '\', renderCodeBlock(JSON.stringify(e, null, 2)))"><td>' + (idx + 1) + '</td><td><span class="badge badge-built">' + esc(e.kind) + '</span></td><td style="font-size:11px">' + esc(e.source_system || e.kind) + '</td><td style="font-size:11px">' + esc(typeof summary === "string" ? summary : JSON.stringify(summary).slice(0, 60)) + '</td></tr>';
+    }).join("") + '</tbody></table></div>' : "No captured elements") + (sourceVr ? renderSection("Source Record", renderKV("Verification Record", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') + renderKV("Replayability", statusBadge(sourceVr.replayability)) + renderKV("Label", sourceVr.current_label_id ? '<span class="link">' + esc(sourceVr.current_label_id) + '</span>' : "—")) : "")) : "",
+    activeTab === "replay" ? renderSection("Replay Execution Workspace", replayColumnsHtml) + (i.replay_result && i.replay_result.reason ? '<div class="error-state" style="margin-top:12px">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : "") + renderSection("Decisions", renderKV("Original", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') + renderKV("Replayed", '<span class="decision-pill ' + (replayedDecision === originalDecision ? "decision-fail" : "decision-neutral") + '">' + esc(replayedDecision || "Pending") + '</span>') + renderKV("Comparison", replayStatus === "pass" ? '<span style="color:var(--green);font-weight:800">Failure reproduced ✓</span>' : '<span style="color:var(--dim)">Pending</span>')) : "",
+    activeTab === "fix" ? fixDetailHtml : "",
+    activeTab === "proof" ? proofDetailHtml : "",
+    activeTab === "gate" ? gateHtml : "",
+    activeTab === "audit" ? renderSection("Chronological Audit Trail", custodyHtml || "No audit events recorded.") : "",
+    '</div>',
+    // Action bar
+    '<div class="action-row" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">',
+    '<button class="btn' + (i.replay_result ? " btn-outline" : "") + '" onclick="runIncidentReplay(\'' + i.incident_id + '\')">' + (i.replay_result ? "Replay Again" : "Run Replay") + '</button>',
+    (i.replay_result && !i.mutation_result ? '<button class="btn btn-amber" onclick="runIncidentVerify(\'' + i.incident_id + '\')">Verify Fix</button>' : ""),
+    (!cert.certificate_id ? (wf.can_issue_proof ? '<button class="btn btn-green" onclick="confirmIssueProof(\'' + i.incident_id + '\')">Issue Proof</button>' : '<button class="btn btn-green" disabled title="' + esc(proofError || "Fix verification required first") + '">Issue Proof</button>') : ""),
+    (sourceVr && cert.certificate_id ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + '\', \'' + i.incident_id + '\')">Promote to Scenario</button>' : ""),
+    '</div>',
+  ].join("\n");
 }
 
 function switchIncidentTab(id) {
@@ -1559,15 +1608,24 @@ async function runIncidentReplay(id) {
     notify("Replay completed", "success");
     const runId = result.replay_run_id;
     if (runId) {
-      const evSource = new EventSource("/v1/incidents/" + encodeURIComponent(id) + "/replay/stream");
-      evSource.onmessage = (ev) => {
+      const started = Date.now();
+      const notified = {};
+      const poll = setInterval(async () => {
         try {
-          const data = JSON.parse(ev.data);
-          if (data.step) notify("Replay step: " + data.step + " → " + data.status, "info");
+          const events = await apiGet("/v1/replay-runs/" + encodeURIComponent(runId) + "/events");
+          events.forEach(function(ev) {
+            const key = ev.sequence + "-" + ev.step;
+            if (!notified[key] && ev.status !== "running") {
+              notified[key] = true;
+              notify("Replay: " + ev.step + " → " + ev.status, ev.status === "error" || ev.status === "escalation_required" ? "error" : "info");
+            }
+          });
+          const terminal = ["pass","fail","reproduced","error","escalation_required","diverged"];
+          const done = events.length > 0 && events.every(function(ev) { return terminal.includes(ev.status); });
+          if (done || Date.now() - started > 15000) clearInterval(poll);
         } catch (_) {}
-      };
-      evSource.addEventListener("done", () => { evSource.close(); });
-      setTimeout(() => evSource.close(), 15000);
+      }, 500);
+      setTimeout(function() { clearInterval(poll); }, 15000);
     }
     openIncidentDetail(id);
   } catch (e) {
@@ -1595,6 +1653,30 @@ async function runIncidentCertify(id) {
     notify("Proof issue failed: " + reason, "error");
     openIncidentDetail(id);
   }
+}
+
+function selectReplayEvent(idx) {
+  S._selectedReplayIdx = idx;
+  openIncidentDetail(S.selectedIncident);
+}
+
+function confirmIssueProof(incidentId) {
+  renderDrawer("Issue Proof of Mitigation", [
+    '<div class="section-title">Proposed Claim</div>',
+    '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">This proof certifies the fix for this specific scenario under the recorded conditions. It does <strong>not</strong> certify general AI safety, fairness, regulatory compliance, or performance.</p>',
+    '<div class="proof-pending" style="border:1px solid var(--amber);padding:12px;border-radius:8px;margin-bottom:12px">',
+    '<strong style="color:var(--amber)">Explicit scope boundaries</strong>',
+    '<ul style="font-size:12px;color:var(--muted);margin:8px 0 0 16px">',
+    '<li>This proof applies only to the tested scenario and recorded conditions.</li>',
+    '<li>No claim is made about general AI safety, fairness, or regulatory compliance.</li>',
+    '<li>No claim is made about the AI system\'s performance on untested inputs.</li>',
+    '<li>The proof is bounded by the cassette evidence, replay method, and fix configuration used during verification.</li>',
+    '</ul></div>',
+    '<div class="action-row" style="margin-top:16px">',
+    '<button class="btn btn-green" onclick="runIncidentCertify(\'' + incidentId + '\')">Confirm & Issue Proof</button>',
+    '<button class="btn btn-outline" onclick="closeDrawer()">Cancel</button>',
+    '</div>',
+  ].join("\n"));
 }
 
 async function promoteToScenario(vrId, incidentId) {
@@ -1640,8 +1722,8 @@ function renderProofs(c, proofs) {
           <td style="font-size:11px">Bounded to tested scenario</td>
           <td class="action-row">
             <button class="btn btn-sm btn-outline" onclick="openProofDetail('${p.proof_id}')">View</button>
-            <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/download" class="btn btn-sm btn-outline" style="text-decoration:none">JSON</a>
-            <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">PDF</a>
+            <button class="btn btn-sm btn-outline" onclick="downloadProofBlob('${p.incident_id}', '${p.proof_id}', 'json')">JSON</button>
+            <button class="btn btn-sm btn-outline" onclick="downloadProofBlob('${p.incident_id}', '${p.proof_id}', 'pdf')">PDF</button>
           </td>
         </tr>
       `).join("")}
@@ -1681,8 +1763,8 @@ async function renderProofDetail(c, p) {
       ${renderKV("Claim Scope", p.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
       ${renderKV("Limitations", p.known_limitations || cert.known_limitations || "Not documented")}
       <div class="action-row" style="margin-top:12px">
-        <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/download" class="btn btn-sm btn-outline" style="text-decoration:none">Download JSON</a>
-        <a href="/v1/incidents/${p.incident_id}/certificates/${p.proof_id}/export-pdf" class="btn btn-sm btn-outline" style="text-decoration:none">Download PDF</a>
+        <button class="btn btn-sm btn-outline" onclick="downloadProofBlob('${p.incident_id}', '${p.proof_id}', 'json')">Download JSON</button>
+        <button class="btn btn-sm btn-outline" onclick="downloadProofBlob('${p.incident_id}', '${p.proof_id}', 'pdf')">Download PDF</button>
         <button class="btn btn-sm btn-outline" onclick="verifyProofSig('${p.incident_id}', '${p.proof_id}')">Verify Signature</button>
       </div>
       <div class="proof-pending" style="margin-top:16px">

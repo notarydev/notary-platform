@@ -19,7 +19,6 @@ from pydantic import BaseModel
 import notary_platform.api_server.routers.incidents as incidents_mod
 from notary_platform.api_server.auth import require_auth
 from notary_platform.certificates import (
-    CERTIFICATE_ID,
     generate_certificate,
     verify_certificate_signature,
 )
@@ -109,8 +108,11 @@ def issue_certificate(incident_id: str, org_id: str = Depends(require_auth)) -> 
         raise HTTPException(status_code=409, detail="proof requires a successful fix verification; run mutation-tests after replay")
     if not mutation.get("mitigated"):
         raise HTTPException(status_code=409, detail="proof requires a mitigated fix verification; the latest fix did not produce the expected outcome")
+    import uuid
+    proof_id = "proof-" + uuid.uuid4().hex
     cert = generate_certificate(
         incident_id=incident_id,
+        certificate_id=proof_id,
         root_hash=inc.snapshot_summary.get("root_hash", ""),
         integrity_status="verified" if inc.snapshot_summary.get("integrity") == "verified" else "unverified",
         replay_result=inc.replay_result,
@@ -123,7 +125,7 @@ def issue_certificate(incident_id: str, org_id: str = Depends(require_auth)) -> 
 
     inc.certificate = cert
     inc.status = IncidentStatus.certified
-    inc._record_custody("certified", actor=org_id, detail=f"certificate {CERTIFICATE_ID}")
+    inc._record_custody("certified", actor=org_id, detail=f"certificate {proof_id}")
     incidents_mod.storage.store_certificate(incident_id, cert)
     incidents_mod.storage.update_incident(inc)
 
