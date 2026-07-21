@@ -797,7 +797,7 @@ function renderCaptureSnippet(method) {
   const base = "https://api.getnotary.ai/v1";
   let code = "";
   if (method === "sdk") {
-    code = `pip install notary-sdk\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_input(text="Can I get a bereavement refund after booking?")\ncapture.capture_tool(method="GET", url="/policy-service/bereavement", response={"retroactive_refund_allowed": False, "human_review_required": True})\ncapture.capture_decision(decision="ESCALATE_TO_HUMAN")\ncapture.finalize()  # -> sealed Verification Record`;
+    code = `pip install -e packages/notary-sdk-py\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_input(text="Can I get a bereavement refund after booking?")\ncapture.capture_tool(method="GET", url="/policy-service/bereavement", response={"retroactive_refund_allowed": False, "human_review_required": True})\ncapture.capture_decision(decision="ESCALATE_TO_HUMAN")\ncapture.finalize()  # -> sealed Verification Record`;
   } else if (method === "api") {
     code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:support-bot","business_function":"customer_support"}'`;
   } else if (method === "webhook") {
