@@ -779,10 +779,7 @@ async function sendHarborlineTestCapture() {
         { kind: "decision", payload: { decision: "DENY", confidence: 0.72 } },
       ],
     };
-    const r = await apiPost("/v1/verification-records/from-snapshot", {
-      snapshot: snapshot,
-      agent_id: "browser-sdk-demo",
-    });
+    const r = await apiPost("/v1/verification-records/from-snapshot?agent_id=browser-sdk-demo", snapshot);
     const vrId = r.id;
     const vr = await apiGet("/v1/verification-records/" + vrId);
     S.setupTestCapture = {
@@ -946,7 +943,7 @@ function openSDKSetup() {
     <div class="section-title">2. Capture a decision (Python)</div>
     ${renderCodeBlock(`from notary_sdk import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_tool(method="POST", url="/score", response={"score": 620})\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
     <div class="section-title">3. Submit to Notary API</div>
-    ${renderCodeBlock(`import requests\n\n# NOTARY_API_AUTH_TOKEN is the env var the platform reads (set in Settings)\n# The ingestion endpoint is /v1/verification-records (incidents is legacy)\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json={"snapshot": snapshot.to_dict(), "org_id": "demo-org"}\n)`)}
+    ${renderCodeBlock(`import requests\n\n# NOTARY_API_AUTH_TOKEN is the env var the platform reads (set in Settings)\n# The ingestion endpoint is /v1/verification-records (incidents is legacy)\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json=snapshot.to_dict()\n)`)}
   `;
   renderDrawer("Python SDK Setup", body);
 }
@@ -962,9 +959,7 @@ async function sendSDKTestCapture() {
         {kind: "decision", payload: {decision: "DENY"}},
       ],
     };
-    const r = await apiPost("/v1/verification-records/from-snapshot", {
-      snapshot: snapshot,
-    });
+    const r = await apiPost("/v1/verification-records/from-snapshot", snapshot);
     notify("Created Verification Record " + r.id, "success");
     nav("verification-records");
   } catch (e) {

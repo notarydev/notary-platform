@@ -53,3 +53,34 @@ class TestSDKSetupTruth:
             return
         text = resp.text
         assert "api.getnotary.ai" in text or "getnotary" in text
+
+    def test_app_js_no_wrapper_snippet(self) -> None:
+        """UI snippet must not wrap snapshot in json={"snapshot": ...}."""
+        resp = client.get("/app/app.js")
+        if resp.status_code != 200:
+            return
+        text = resp.text
+        assert 'json={"snapshot": snapshot.to_dict()' not in text
+
+    def test_app_js_sends_raw_snapshot(self) -> None:
+        """UI snippet must send json=snapshot.to_dict() directly."""
+        resp = client.get("/app/app.js")
+        if resp.status_code != 200:
+            return
+        text = resp.text
+        assert "json=snapshot.to_dict()" in text
+
+    def test_sdk_submit_and_ui_target_same_endpoint(self) -> None:
+        """SDK .submit() and the UI code snippet both target /verification-records/from-snapshot."""
+        resp = client.get("/app/app.js")
+        if resp.status_code == 200:
+            assert "/v1/verification-records/from-snapshot" in resp.text
+        try:
+            from notary_sdk import RunCapture
+        except ImportError:
+            return
+        capture = RunCapture(secret_key=b"test", api_url="http://test", api_token="test")
+        snapshot = capture.finalize()
+        import inspect
+        source = inspect.getsource(snapshot.submit)
+        assert "/v1/verification-records/from-snapshot" in source
