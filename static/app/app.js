@@ -1070,14 +1070,41 @@ async function renderIntegrations(c) {
   const status = await apiGet("/v1/setup/status").catch(() => ({}));
   const selectedSystemId = S._ic_selected_system;
   const editing = S._ic_editing;
+  const showWelcome = systems.length === 0 && !editing && !selectedSystemId;
   c.innerHTML = `
     <h2 style="margin-bottom:4px">Integrations & Capture</h2>
     <p class="section-sub" style="margin-bottom:16px">Connect AI systems and configure how Notary receives and handles decision evidence.</p>
     ${renderIntegrationsStats(status)}
+    ${showWelcome ? renderIntegrationsWelcome() : ""}
     <div id="ic-workspace">
       ${editing ? renderIntegrationsForm() : (
-        selectedSystemId ? renderAISystemDetail(selectedSystemId) : renderIntegrationsSystemList(systems)
+        selectedSystemId ? renderAISystemDetail(selectedSystemId) : (showWelcome ? "" : renderIntegrationsSystemList(systems))
       )}
+    </div>`;
+}
+
+function renderIntegrationsWelcome() {
+  return `
+    <div style="max-width:560px;margin:16px 0 24px">
+      <div class="section-title" style="margin:0 0 8px">Get started</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Three steps to activate decision capture for your AI systems.</p>
+      <div style="display:flex;gap:16px;margin-bottom:20px">
+        <div class="ic-step-card">
+          <div class="ic-step-number">1</div>
+          <div><strong>Register</strong><div style="font-size:11px;color:var(--muted)">Name your AI system, type, endpoint, owners</div></div>
+        </div>
+        <div class="ic-step-connector">→</div>
+        <div class="ic-step-card">
+          <div class="ic-step-number">2</div>
+          <div><strong>Connect</strong><div style="font-size:11px;color:var(--muted)">Add capture sources, configure field rules</div></div>
+        </div>
+        <div class="ic-step-connector">→</div>
+        <div class="ic-step-card">
+          <div class="ic-step-number">3</div>
+          <div><strong>Activate</strong><div style="font-size:11px;color:var(--muted)">Validate coverage, flip the switch</div></div>
+        </div>
+      </div>
+      <button class="btn" onclick="S._ic_editing={};renderIntegrations(q('#main-content'))">Register Your First AI System</button>
     </div>`;
 }
 
@@ -1169,13 +1196,22 @@ async function saveAISystem(existingId) {
       await apiPut("/v1/setup/ai-systems/" + existingId, body);
       notify("System updated", "success");
     } else {
-      await apiPost("/v1/setup/ai-systems", body);
+      const created = await apiPost("/v1/setup/ai-systems", body);
       notify("System registered", "success");
+      S._ic_selected_system = created.id;
     }
     S._ic_editing = null;
     renderIntegrations(q("#main-content"));
   } catch (e) {
     notify("Failed: " + e.message, "error");
+  }
+}
+
+async function editAISystem(systemId) {
+  const system = await apiGet("/v1/setup/ai-systems/" + systemId).catch(() => null);
+  if (system) {
+    S._ic_editing = system;
+    renderAISystemDetail(systemId);
   }
 }
 
@@ -1193,7 +1229,9 @@ function renderIntegrationsSystemList(systems) {
       </div>
     ` : `
     <div style="display:grid;gap:10px">
-      ${systems.map(s => `
+      ${systems.map(s => {
+        const nextHint = s.status === "draft" ? "Add capture sources" : s.status === "configured" ? "Validate & activate" : s.status === "active" ? "Capture active" : "";
+        return `
         <div class="ic-system-row" onclick="S._ic_selected_system='${s.id}';renderIntegrations(q('#main-content'))">
           <div style="display:flex;align-items:center;gap:12px;flex:1">
             <div class="ic-system-icon">${s.system_type === "agent" ? "🤖" : s.system_type === "model_service" ? "⚡" : s.system_type === "decision_engine" ? "⚙" : "📱"}</div>
@@ -1202,10 +1240,13 @@ function renderIntegrationsSystemList(systems) {
               <div style="font-size:11px;color:var(--muted)">${esc(s.system_type)} · ${s.deployment_version ? esc(s.deployment_version) : "no version"}</div>
             </div>
           </div>
-          <span class="badge badge-${s.status === "active" ? "green" : s.status === "draft" ? "planned" : s.status === "error" ? "red" : "ingested"}">${esc(s.status)}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="badge badge-${s.status === "active" ? "green" : s.status === "draft" ? "planned" : "ingested"}">${esc(s.status)}</span>
+            ${nextHint ? `<span style="font-size:10px;color:var(--muted)">${nextHint}</span>` : ""}
+          </div>
           <span style="color:var(--dim);font-size:16px">→</span>
-        </div>
-      `).join("")}
+        </div>`;
+      }).join("")}
     </div>`}`;
 }
 
@@ -1224,13 +1265,18 @@ async function renderAISystemDetail(systemId) {
   const coverage = lastValidation ? JSON.parse(lastValidation.coverage_json || "{}") : {};
   const tab = S._ic_system_tab || "connectors";
 
+  const statusSteps = ["draft", "configured", "validated", "active"];
+  const statusIdx = statusSteps.indexOf(system.status);
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <button class="btn btn-outline btn-sm" onclick="S._ic_selected_system=null;S._ic_system_tab=null;renderIntegrations(q('#main-content'))">← Back</button>
       <h3 style="margin:0">${esc(system.name)}</h3>
-      <span class="badge badge-${system.status === "active" ? "green" : system.status === "draft" ? "planned" : system.status === "error" ? "red" : "ingested"}">${esc(system.status)}</span>
-      <button class="btn btn-outline btn-sm" onclick="S._ic_editing=${JSON.stringify(system).replace(/"/g, "'")};renderAISystemDetail('${systemId}')">Edit</button>
+      <span class="badge badge-${system.status === "active" ? "green" : system.status === "draft" ? "planned" : "ingested"}">${esc(system.status)}</span>
+      <button class="btn btn-outline btn-sm" onclick="editAISystem('${systemId}')">Edit</button>
     </div>
+    <div class="ic-status-bar">${statusSteps.map(function(s, i) {
+      return '<div class="ic-status-step' + (i <= statusIdx ? ' done' : '') + (i === statusIdx ? ' current' : '') + '"><span class="ic-status-dot"></span><span>' + s + '</span></div>';
+    }).join('<span class="ic-status-line"></span>')}</div>
     <div class="integ-tabs">
       <button class="integ-tab ${tab === "connectors" ? "active" : ""}" onclick="S._ic_system_tab='connectors';renderAISystemDetail('${systemId}')">Connectors ${connectors.length ? `<span class="tab-badge">${connectors.length}</span>` : ""}</button>
       <button class="integ-tab ${tab === "evidence" ? "active" : ""}" onclick="S._ic_system_tab='evidence';renderAISystemDetail('${systemId}')">Evidence Graph</button>
@@ -1247,6 +1293,7 @@ async function renderAISystemDetail(systemId) {
 
 function renderConnectorsTab(system, connectors) {
   const addingConnector = S._ic_adding_connector;
+  const hasConnected = connectors.some(c => c.status === "connected");
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 12px">
       <div class="section-title" style="margin:0">Capture Sources</div>
@@ -1275,24 +1322,29 @@ function renderConnectorsTab(system, connectors) {
     ` : ""}
     ${connectors.length === 0 ? `
       <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius);padding:24px">
-        <p>No capture sources connected yet. Add a connector to start receiving decision evidence.</p>
+        <p>No capture sources connected yet. Add a connector to start receiving decision evidence from your AI system.</p>
+        <div style="margin-top:12px;font-size:11px;color:var(--muted)">After creating a connector, click <strong>Test</strong> to verify the connection, then <strong>View Sample</strong> to inspect captured evidence.</div>
       </div>
     ` : `
     <div style="display:grid;gap:8px">
-      ${connectors.map(c => `
+      ${connectors.map(c => {
+        var badgeColor = c.status === "connected" ? "green" : c.status === "error" ? "red" : "planned";
+        var statusLabel = c.status === "not_configured" ? "not configured" : c.status;
+        return `
         <div class="ic-connector-row">
           <div style="flex:1">
             <strong>${esc(c.name || c.connector_type)}</strong>
             <div style="font-size:11px;color:var(--muted)">${esc(c.connector_type)}${c.last_tested_at ? " · last tested " + esc(c.last_tested_at) : ""}</div>
           </div>
-          <span class="badge badge-${c.status === "connected" ? "green" : c.status === "error" ? "red" : c.status === "receiving" ? "replayed" : c.status === "validated" ? "certified" : "planned"}">${esc(c.status)}</span>
+          <span class="badge badge-${badgeColor}">${esc(statusLabel)}</span>
           <div class="action-row">
             <button class="btn btn-outline btn-sm" onclick="testConnector('${c.id}','${system.id}')">Test</button>
-            <button class="btn btn-outline btn-sm" onclick="viewConnectorSamples('${c.id}','${system.id}')">View Sample</button>
+            <button class="btn btn-outline btn-sm" onclick="viewConnectorSamples('${c.id}','${system.id}')" ${c.status !== "connected" ? "disabled title='Test the connector first'" : ""}>View Sample</button>
           </div>
-        </div>
-      `).join("")}
-    </div>`}`;
+        </div>`;
+      }).join("")}
+    </div>
+    ${!hasConnected ? '<div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center">Test each connector to verify connectivity before viewing evidence samples.</div>' : ""}`}`;
 }
 
 async function saveConnector(systemId) {
@@ -1335,10 +1387,18 @@ async function viewConnectorSamples(connId, systemId) {
 
 function renderEvidenceTab(system) {
   const sample = S._ic_selected_sample;
+  const sysType = system.system_type || "agent";
+  const nodeConfigs = {
+    agent: {model: "Agent", processLabel: "Agent Runtime", toolLabel: "Tool Calls"},
+    model_service: {model: "Model", processLabel: "Model Service", toolLabel: "API Responses"},
+    decision_engine: {model: "Engine", processLabel: "Rules Engine", toolLabel: "Data Lookups"},
+    ai_enabled_app: {model: "Feature", processLabel: "AI Feature", toolLabel: "External APIs"},
+  };
+  const cfg = nodeConfigs[sysType] || nodeConfigs.agent;
   return `
     <div style="margin:16px 0">
       <div class="section-title" style="margin:0 0 8px">Inspect Captured Evidence</div>
-      <p class="section-sub">After a decision arrives, Notary detects the evidence flow through your system. Review what was captured.</p>
+      <p class="section-sub">When a decision arrives, Notary captures the evidence flow through your system.${sample ? "" : " Connect a capture source and view a sample to see it."}</p>
       ${sample ? `
         <div class="ic-evidence-header">
           <div><strong>Sample:</strong> ${esc(sample.summary)}</div>
@@ -1351,23 +1411,23 @@ function renderEvidenceTab(system) {
           </div>
           <div class="ic-evidence-arrow">↓</div>
           <div class="ic-evidence-node">
-            <div class="ic-evidence-node-header"><span>Model / Agent</span><span class="ic-evidence-node-type" style="background:rgba(59,130,212,.15);color:#3b82d4">process</span></div>
-            <div class="ic-evidence-node-items">Agent version · Prompt/configuration</div>
+            <div class="ic-evidence-node-header"><span>${cfg.model}</span><span class="ic-evidence-node-type" style="background:rgba(59,130,212,.15);color:#3b82d4">process</span></div>
+            <div class="ic-evidence-node-items">${cfg.processLabel} · Prompt/configuration · ${system.deployment_version || "version unknown"}</div>
           </div>
           <div class="ic-evidence-arrow">↓ ↑</div>
           <div class="ic-evidence-node">
-            <div class="ic-evidence-node-header"><span>Tool Responses</span><span class="ic-evidence-node-type" style="background:rgba(245,158,11,.15);color:#f59e0b">external</span></div>
-            <div class="ic-evidence-node-items">Enrichment API · Policy service</div>
+            <div class="ic-evidence-node-header"><span>${cfg.toolLabel}</span><span class="ic-evidence-node-type" style="background:rgba(245,158,11,.15);color:#f59e0b">external</span></div>
+            <div class="ic-evidence-node-items">${system.external_caller ? "External APIs · Third-party services" : "Internal services · Policy lookups"}</div>
           </div>
           <div class="ic-evidence-arrow">↓</div>
           <div class="ic-evidence-node">
-            <div class="ic-evidence-node-header"><span>Policy / Config</span><span class="ic-evidence-node-type" style="background:rgba(124,92,216,.15);color:#7c5cd8">config</span></div>
-            <div class="ic-evidence-node-items">Policy version · Rules applied</div>
+            <div class="ic-evidence-node-header"><span>Policies</span><span class="ic-evidence-node-type" style="background:rgba(124,92,216,.15);color:#7c5cd8">config</span></div>
+            <div class="ic-evidence-node-items">Active policies · Rules applied · Config version</div>
           </div>
           <div class="ic-evidence-arrow">↓</div>
           <div class="ic-evidence-node">
             <div class="ic-evidence-node-header"><span>Decision</span><span class="ic-evidence-node-type" style="background:rgba(34,197,94,.15);color:#22c55e">output</span></div>
-            <div class="ic-evidence-node-items">Final outcome</div>
+            <div class="ic-evidence-node-items">Final outcome from ${esc(system.name)}</div>
           </div>
         </div>
         <div class="section-title" style="margin-top:16px">Captured Elements</div>
@@ -1390,7 +1450,8 @@ function renderEvidenceTab(system) {
         </div>
       ` : `
         <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius);padding:24px">
-          <p>No captured evidence to inspect yet. Connect a capture source and send a test decision to see the evidence graph.</p>
+          <p>No captured evidence to inspect yet.</p>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted)">Go to the <strong>Connectors</strong> tab, add a capture source, then click <strong>View Sample</strong> to see the evidence flow through your system.</div>
         </div>
       `}
     </div>`;
@@ -1496,15 +1557,16 @@ async function saveFieldRules(systemId) {
 
 function renderValidationTab(system, coverage, validationRuns) {
   const hasCoverage = coverage && coverage.replay_readiness;
+  const canActivate = hasCoverage && (coverage.decision_detected && coverage.input_captured && coverage.final_decision_captured);
+  const showActivate = system.status !== "active" && (validationRuns.length > 0 || canActivate);
   return `
     <div style="margin:16px 0">
       <div class="section-title" style="margin:0 0 8px">Capture Coverage Validation</div>
-      <p class="section-sub">Run validation to assess whether the current setup produces complete, replayable evidence.</p>
+      <p class="section-sub">Run validation to assess whether the current setup would produce complete, replayable evidence if a decision arrived now.</p>
       <div style="display:flex;gap:12px;margin-bottom:16px">
-        <button class="btn" onclick="runValidation('${system.id}')">Run Validation</button>
-        <button class="btn btn-green ${system.status === "active" ? "" : ""}" onclick="activateSystem('${system.id}')" ${system.status === "active" ? "disabled" : ""}>
-          ${system.status === "active" ? "Capture Active ✓" : "Activate Capture"}
-        </button>
+        <button class="btn" onclick="runValidation('${system.id}')" id="ic-val-btn">Run Validation</button>
+        ${showActivate ? `<button class="btn btn-green" onclick="activateSystem('${system.id}')">Activate Capture</button>` : ""}
+        ${system.status === "active" ? '<span class="badge badge-green" style="font-size:13px;padding:8px 16px">Capture Active ✓</span>' : ""}
       </div>
       ${hasCoverage ? `
         <div class="ic-coverage-report">
@@ -1521,7 +1583,7 @@ function renderValidationTab(system, coverage, validationRuns) {
             <div class="ic-coverage-item ${coverage.expected_outcome_source_available ? "ok" : "fail"}"><span>Expected-outcome source available</span><span>${coverage.expected_outcome_source_available ? "✓" : "✗"}</span></div>
           </div>
           <div class="ic-readiness-badge">
-            Replay readiness: <strong class="${coverage.replay_readiness === "insufficient_context" ? "text-red" : "text-green"}">${esc(coverage.replay_readiness)}</strong>
+            Readiness: <strong class="${coverage.replay_readiness === "insufficient_context" ? "text-red" : "text-green"}">${esc(coverage.replay_readiness)}</strong>
           </div>
           <p style="font-size:12px;color:var(--muted);margin-top:8px">${esc(coverage.assessment || "")}</p>
         </div>
@@ -1529,7 +1591,7 @@ function renderValidationTab(system, coverage, validationRuns) {
         <p style="font-size:12px;color:var(--muted)">Last validation run: ${esc(validationRuns[validationRuns.length - 1].status)}</p>
       ` : `
         <div class="empty-state" style="border:1px dashed var(--border);padding:16px;border-radius:var(--radius)">
-          <p>No validation runs yet. Run validation to check capture coverage.</p>
+          <p>No validation runs yet. Run validation to check capture coverage. You need at least one connected capture source and field rules defined.</p>
         </div>
       `}
     </div>`;
@@ -1547,6 +1609,11 @@ async function runValidation(systemId) {
 
 async function activateSystem(systemId) {
   try {
+    const runs = await apiGet("/v1/setup/ai-systems/" + systemId + "/validation-runs").catch(() => []);
+    if (!runs.length) {
+      notify("Run validation first before activating capture", "error");
+      return;
+    }
     await apiPut("/v1/setup/ai-systems/" + systemId, {status: "active"});
     notify("Capture activated for this system", "success");
     renderAISystemDetail(systemId);
@@ -1675,7 +1742,7 @@ async function renderVRDetail(c, v) {
               evts.sort(function(a, b) { return (a.order || 0) - (b.order || 0); }).map(function(ev) {
                 var icon = ev.kind === "input" ? "📥" : ev.kind === "tool_call" ? "🔧" : ev.kind === "api_response" ? "📡" : ev.kind === "decision" ? "⚖" : ev.kind === "policy" ? "📋" : "●";
                 var summary = ev.payload && (ev.payload.decision || ev.payload.response && ev.payload.response.status || ev.payload.version || ev.kind);
-                return '<div class="evidence-node"><span class="evidence-icon">' + icon + '</span><span class="evidence-kind">' + esc(ev.kind) + '</span><span class="evidence-summary">' + esc(typeof summary === "string" ? summary : JSON.stringify(summary).substring(0, 60)) + '</span></div>';
+                return '<div class="evidence-node" onclick="event.stopPropagation();renderDrawer(\'Evidence: ' + esc(ev.kind) + '\', renderCodeBlock(' + JSON.stringify(JSON.stringify(ev, null, 2)) + '))"><span class="evidence-icon">' + icon + '</span><span class="evidence-kind">' + esc(ev.kind) + '</span><span class="evidence-summary">' + esc(typeof summary === "string" ? summary : JSON.stringify(summary).substring(0, 60)) + '</span></div>';
               }).join('<div class="evidence-edge">↓</div>') +
             '</div>';
           }).join('<div class="evidence-edge-h">→</div>');
@@ -1952,7 +2019,8 @@ function renderIncidents(c, ix) {
           <td class="action-row" onclick="event.stopPropagation()">
             ${!i.replay_result ? `<button class="btn btn-sm" onclick="runIncidentReplay('${i.incident_id}')">Replay</button>` : ""}
             ${i.replay_result && !i.mutation_result ? `<button class="btn btn-sm btn-amber" onclick="runIncidentVerify('${i.incident_id}')">Verify Fix</button>` : ""}
-            ${i.mutation_result && !i.certificate ? `<button class="btn btn-sm btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : ""}
+            ${i.can_issue_proof ? `<button class="btn btn-sm btn-green" onclick="runIncidentCertify('${i.incident_id}')">Issue Proof</button>` : ""}
+            ${!i.can_issue_proof && i.mutation_result && !i.certificate ? `<button class="btn btn-sm btn-green" disabled title="${esc(i.issue_proof_reason || 'Fix verification must produce expected outcome')}">Issue Proof</button>` : ""}
             ${i.certificate ? `<button class="btn btn-sm btn-outline" onclick="openIncidentDetail('${i.incident_id}')">Investigate</button>` : ""}
           </td>
         </tr>`;
@@ -2018,12 +2086,7 @@ async function renderIncidentDetail(c, i, wf) {
         actual: ev.actual,
         status: ev.status,
       }))
-    : [
-        { step: "Applicant facts loaded", source: "sealed input", expected: "match", actual: applicantId ? "match" : "—", status: applicantId ? "pass" : "pending", sequence: 0 },
-        { step: "Build response cassette", source: "cassette", expected: "built", actual: "built", status: "pass", sequence: 1 },
-        { step: "Agent decision produced", source: "replay", expected: originalDecision, actual: replayedDecision, status: replayStatus === "pass" ? "reproduced" : "pending", sequence: 2 },
-        { step: "Replay verdict", source: "comparison", expected: "reproduce known failure", actual: replayStatus === "pass" ? "reproduced" : "pending", status: replayStatus, sequence: 3 },
-      ];
+    : [];
 
   // Two-column replay workspace (Phase B)
   var selectedReplayIdx = S._selectedReplayIdx || 0;
@@ -2049,7 +2112,7 @@ async function renderIncidentDetail(c, i, wf) {
 
   // Tab badges
   function tabBadge(label, count, active) {
-    return '<button class="incident-tab' + (active ? ' active' : '') + '" onclick="switchIncidentTab(\'' + label.toLowerCase() + '\')">' + esc(label) + (count ? ' <span class="tab-badge">' + count + '</span>' : '') + '</button>';
+    return '<button class="incident-tab' + (active ? ' active' : '') + '" data-tab="' + label.toLowerCase() + '" onclick="switchIncidentTab(\'' + label.toLowerCase() + '\')">' + esc(label) + (count ? ' <span class="tab-badge">' + count + '</span>' : '') + '</button>';
   }
 
   var tabs = [
@@ -2098,7 +2161,7 @@ async function renderIncidentDetail(c, i, wf) {
       proofDetailHtml += renderSection("Promote to Scenario", '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">This verified failure can be promoted to the scenario library for use in future release checks.</p><button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + "','" + i.incident_id + '\')">Promote to Scenario</button>');
     }
   } else {
-    proofDetailHtml = '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p></div>';
+    proofDetailHtml = '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p>' + (wf.issue_proof_next_action ? '<p style="margin-top:8px;font-size:12px;color:var(--muted)">Next: ' + esc(wf.issue_proof_next_action) + '</p>' : '') + '</div>';
   }
 
   var gateHtml = '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (fixMitigated ? "gate-pass" : "gate-muted") + '">' + (fixMitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub" style="margin-top:8px">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>';
@@ -2138,7 +2201,7 @@ async function renderIncidentDetail(c, i, wf) {
     tabs.map(function(t) { return tabBadge(t.label, t.badge, t.id === activeTab); }).join(""),
     '</div>',
     '<div class="incident-tab-content">',
-    activeTab === "evidence" ? renderSection("Captured Evidence", (elements.length ? '<div class="evidence-table"><table><thead><tr><th>#</th><th>Kind</th><th>Source System</th><th>Summary</th></tr></thead><tbody>' + elements.map(function(e, idx) {
+    '<div data-tab="evidence" style="display:' + (activeTab === "evidence" ? "block" : "none") + '">' + renderSection("Captured Evidence", (elements.length ? '<div class="evidence-table"><table><thead><tr><th>#</th><th>Kind</th><th>Source System</th><th>Summary</th></tr></thead><tbody>' + elements.map(function(e, idx) {
       var summary = "";
       if (e.payload) {
         if (e.payload.decision) summary = e.payload.decision;
@@ -2148,12 +2211,12 @@ async function renderIncidentDetail(c, i, wf) {
         else summary = e.kind;
       }
       return '<tr onclick="event.stopPropagation();renderDrawer(\'Element ' + (idx + 1) + '\', renderCodeBlock(JSON.stringify(e, null, 2)))"><td>' + (idx + 1) + '</td><td><span class="badge badge-built">' + esc(e.kind) + '</span></td><td style="font-size:11px">' + esc(e.source_system || e.kind) + '</td><td style="font-size:11px">' + esc(typeof summary === "string" ? summary : JSON.stringify(summary).slice(0, 60)) + '</td></tr>';
-    }).join("") + '</tbody></table></div>' : "No captured elements") + (sourceVr ? renderSection("Source Record", renderKV("Verification Record", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') + renderKV("Replayability", statusBadge(sourceVr.replayability)) + renderKV("Label", sourceVr.current_label_id ? '<span class="link">' + esc(sourceVr.current_label_id) + '</span>' : "—")) : "")) : "",
-    activeTab === "replay" ? renderSection("Replay Execution Workspace", replayColumnsHtml) + (i.replay_result && i.replay_result.reason ? '<div class="error-state" style="margin-top:12px">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : "") + renderSection("Decisions", renderKV("Original", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') + renderKV("Replayed", '<span class="decision-pill ' + (replayedDecision === originalDecision ? "decision-fail" : "decision-neutral") + '">' + esc(replayedDecision || "Pending") + '</span>') + renderKV("Comparison", replayStatus === "pass" ? '<span style="color:var(--green);font-weight:800">Failure reproduced ✓</span>' : '<span style="color:var(--dim)">Pending</span>')) : "",
-    activeTab === "fix" ? fixDetailHtml : "",
-    activeTab === "proof" ? proofDetailHtml : "",
-    activeTab === "gate" ? gateHtml : "",
-    activeTab === "audit" ? renderSection("Chronological Audit Trail", custodyHtml || "No audit events recorded.") : "",
+    }).join("") + '</tbody></table></div>' : "No captured elements") + (sourceVr ? renderSection("Source Record", renderKV("Verification Record", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') + renderKV("Replayability", statusBadge(sourceVr.replayability)) + renderKV("Label", sourceVr.current_label_id ? '<span class="link">' + esc(sourceVr.current_label_id) + '</span>' : "—")) : "")) + '</div>',
+    '<div data-tab="replay" style="display:' + (activeTab === "replay" ? "block" : "none") + '">' + renderSection("Replay Execution Workspace", replayColumnsHtml) + (i.replay_result && i.replay_result.reason ? '<div class="error-state" style="margin-top:12px">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : "") + renderSection("Decisions", renderKV("Original", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') + renderKV("Replayed", '<span class="decision-pill ' + (replayedDecision === originalDecision ? "decision-fail" : "decision-neutral") + '">' + esc(replayedDecision || "Pending") + '</span>') + renderKV("Comparison", replayStatus === "pass" ? '<span style="color:var(--green);font-weight:800">Failure reproduced ✓</span>' : '<span style="color:var(--dim)">Pending</span>')) + '</div>',
+    '<div data-tab="fix" style="display:' + (activeTab === "fix" ? "block" : "none") + '">' + fixDetailHtml + '</div>',
+    '<div data-tab="proof" style="display:' + (activeTab === "proof" ? "block" : "none") + '">' + proofDetailHtml + '</div>',
+    '<div data-tab="gate" style="display:' + (activeTab === "gate" ? "block" : "none") + '">' + gateHtml + '</div>',
+    '<div data-tab="audit" style="display:' + (activeTab === "audit" ? "block" : "none") + '">' + renderSection("Chronological Audit Trail", custodyHtml || "No audit events recorded.") + '</div>',
     '</div>',
     // Action bar
     '<div class="action-row" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">',
@@ -2167,7 +2230,12 @@ async function renderIncidentDetail(c, i, wf) {
 
 function switchIncidentTab(id) {
   S._incTab = id;
-  openIncidentDetail(S.selectedIncident);
+  qa(".incident-tab-content > div[data-tab]").forEach(function(d) {
+    d.style.display = d.dataset.tab === id ? "block" : "none";
+  });
+  qa(".incident-tab").forEach(function(b) {
+    b.classList.toggle("active", b.dataset.tab === id);
+  });
 }
 
 function wfAction(incidentId, label) {
@@ -2323,18 +2391,21 @@ async function renderProofDetail(c, p) {
     </div>
     <div class="proof-bundle">
       <h3>${p.proof_id}</h3>
+      ${renderKV("Schema Version", cert.schema_version || "pom-v1")}
       ${renderKV("Decision Workflow", p.workflow_title || cert.workflow_title || "Recorded AI decision workflow")}
+      ${renderKV("Lifecycle", renderKV("Issued", cert.timestamp || cert.issued_at || "—") + renderKV("Status", "Certified"))}
       ${renderKV("Source Incident", `<span class="link" onclick="openIncidentDetail('${p.incident_id}')">${p.incident_id}</span>`)}
       ${renderKV("Source Verification Record", p.verification_record_id ? `<span class="link" onclick="openVRDetail('${p.verification_record_id}')">${p.verification_record_id}</span>` : "—")}
       ${renderKV("Source System", p.source_system_id || "—")}
       ${renderKV("Original AI Decision", `<span class="decision-pill decision-fail">${esc(p.original_decision || "—")}</span>`)}
       ${renderKV("Verified Fixed Outcome", `<span class="decision-pill decision-pass">${esc(p.mutated_decision || cert.mutated_decision || "—")}</span>`)}
-      ${renderKV("Expected Outcome Provenance", cert.expected_correct_behavior || "UNDERWRITING_REVIEW")}
-      ${renderKV("Replay Method", cert.replay_method || "sealed cassette replay")}
-      ${renderKV("Root Hash / Seal", cert.root_hash || "—")}
+      ${renderKV("Expected Outcome Provenance", cert.expected_correct_behavior || p.claim_scope || "Verified scenario outcome")}
+      ${renderKV("Manifest", renderKV("Replay Method", cert.replay_method || "sealed cassette replay") + renderKV("Root Hash / Seal", cert.root_hash || "—") + renderKV("Schema Version", cert.schema_version || "pom-v1"))}
+      ${renderKV("Conditions", 'This proof is valid for the recorded scenario under the conditions preserved in the sealed cassette. The fix outcome was verified against the expected correct behavior. The proof does not extend to inputs, configurations, or model versions outside the captured scope.')}
+      ${renderKV("Provenance", renderKV("Replay Method", cert.replay_method || "sealed cassette replay") + renderKV("Root Hash / Seal", cert.root_hash || "—"))}
       ${renderKV("Signature Status", sig === true ? "✓ Valid" : sig === false ? "✗ Invalid" : "Unknown")}
       ${renderKV("Signing Algorithm", cert.signing_algorithm || "—")}
-      ${renderKV("Claim Scope", p.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
+      ${renderKV("Claim Scope", p.claim_scope || cert.claim_scope || "Verified fix for this tested scenario under recorded conditions. Does not certify general AI safety.")}
       ${renderKV("Limitations", p.known_limitations || cert.known_limitations || "Not documented")}
       <div class="action-row" style="margin-top:12px">
         <button class="btn btn-sm btn-outline" onclick="downloadProofBlob('${p.incident_id}', '${p.proof_id}', 'json')">Download JSON</button>

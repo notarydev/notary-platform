@@ -343,3 +343,14 @@ section{margin-bottom:20px}
 .ic-coverage-item.ok span:last-child{color:var(--green)}
 .ic-coverage-item.fail span:last-child{color:var(--red)}
 .ic-readiness-badge{font-size:12px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px}
+.ic-status-bar{display:flex;align-items:center;gap:0;margin-bottom:16px;padding:8px 0;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+.ic-status-step{display:flex;align-items:center;gap:6px;color:var(--dim)}
+.ic-status-step.done{color:var(--green)}
+.ic-status-step.current{color:var(--accent);font-weight:700}
+.ic-status-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block}
+.ic-status-step.done .ic-status-dot{background:var(--green)}
+.ic-status-step.current .ic-status-dot{background:var(--accent)}
+.ic-status-line{width:24px;height:1px;background:var(--border);margin:0 8px}
+.ic-step-card{display:flex;gap:12px;align-items:flex-start;flex:1;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.ic-step-number{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0}
+.ic-step-connector{display:flex;align-items:center;color:var(--dim);font-size:18px;padding:0 4px}

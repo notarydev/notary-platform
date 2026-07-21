@@ -95,7 +95,19 @@ def ingest_snapshot(body: SnapshotIngestRequest, org_id: str = Depends(require_a
 
 @router.get("/incidents")
 def list_incidents(org_id: str = Depends(require_auth)) -> list[dict[str, Any]]:
-    return [inc.to_dict() for inc in storage.list_incidents(org_id=org_id)]
+    result = []
+    for inc in storage.list_incidents(org_id=org_id):
+        d = inc.to_dict()
+        has_fix = inc.mutation_result is not None and inc.mutation_result.get("mitigated")
+        has_cert = inc.certificate is not None and inc.certificate.get("certificate_id") is not None
+        d["can_issue_proof"] = bool(has_fix) and not has_cert
+        d["issue_proof_reason"] = (
+            "Fix verification must produce the expected outcome before issuing proof."
+            if not has_fix
+            else ("Proof already issued" if has_cert else "")
+        )
+        result.append(d)
+    return result
 
 
 @router.get("/incidents/{incident_id}")
