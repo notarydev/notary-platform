@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from notary_platform.api_server.main import app
 from notary_platform.api_server.routers.incidents import set_demo_agent
 from notary_platform.api_server.routers.ingestion import storage
-from notary_platform.certificates import CERTIFICATE_ID, generate_certificate, verify_certificate_signature
+from notary_platform.certificates import generate_certificate, verify_certificate_signature
 from notary_platform.replay_engine.cassette import ResponseCassette
 from notary_platform.snapshot import (
     CapturedElement,
@@ -105,7 +105,7 @@ class TestCertificateGeneration:
         assert cert["replay_method"] == "sealed cassette replay"
         assert cert["certificate_type"] == "proof_of_mitigation"
         assert cert["root_hash"] == "abc123"
-        assert cert["certificate_id"] == CERTIFICATE_ID
+        assert isinstance(cert["certificate_id"], str) and len(cert["certificate_id"]) > 0
 
 
 class TestMutationEndpoint:
@@ -214,7 +214,7 @@ class TestCertificateEndpoint:
         assert cert["original_decision"] == "DENY"
         assert cert["mutated_decision"] == "APPROVE"
         assert cert["fix_config"] == {"threshold": 620}
-        assert cert["certificate_id"] == CERTIFICATE_ID
+        assert cert["certificate_id"].startswith("proof-")
 
     def test_certificate_only_when_mitigated(self) -> None:
         inc_id = client.post(
@@ -225,30 +225,34 @@ class TestCertificateEndpoint:
 
     def test_get_certificate(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/incidents/{inc_id}/certificates")
-        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}")
+        issued = client.post(f"/v1/incidents/{inc_id}/certificates").json()
+        cert_id = issued["certificate_id"]
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{cert_id}")
         assert resp.status_code == 200
         assert resp.json()["certificate_type"] == "proof_of_mitigation"
 
     def test_download_certificate(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/incidents/{inc_id}/certificates")
-        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}/download")
+        issued = client.post(f"/v1/incidents/{inc_id}/certificates").json()
+        cert_id = issued["certificate_id"]
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{cert_id}/download")
         assert resp.status_code == 200
         assert "attachment" in resp.headers.get("content-disposition", "")
 
     def test_verify_certificate_signature(self) -> None:
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/incidents/{inc_id}/certificates")
-        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}/verify")
+        issued = client.post(f"/v1/incidents/{inc_id}/certificates").json()
+        cert_id = issued["certificate_id"]
+        resp = client.get(f"/v1/incidents/{inc_id}/certificates/{cert_id}/verify")
         assert resp.status_code == 200
         assert resp.json()["signature_valid"] is True
 
     def test_modified_certificate_fails(self) -> None:
         # Tampering is detected because signature covers the whole payload.
         inc_id = self._mitigate_incident()
-        client.post(f"/v1/incidents/{inc_id}/certificates")
-        cert = client.get(f"/v1/incidents/{inc_id}/certificates/{CERTIFICATE_ID}").json()
+        issued = client.post(f"/v1/incidents/{inc_id}/certificates").json()
+        cert_id = issued["certificate_id"]
+        cert = client.get(f"/v1/incidents/{inc_id}/certificates/{cert_id}").json()
         cert["mutated_decision"] = "DENY"
         assert verify_certificate_signature(cert) is False
 
