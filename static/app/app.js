@@ -141,6 +141,10 @@ async function apiPatch(path, body, opts = {}) {
     body: JSON.stringify(body || {}),
     ...opts,
   });
+  if (res.status === 401) {
+    S.authConfigured = true;
+    throw new Error("Authentication required. Enter your API token in Settings.");
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status}: ${text || res.statusText}`);
@@ -309,7 +313,11 @@ async function R() {
       c.innerHTML = renderErrorState("Unknown view: " + S.view);
     }
   } catch (e) {
-    c.innerHTML = renderErrorState(e.message, "R()");
+    if (S.authConfigured) {
+      renderAuthPanel();
+    } else {
+      c.innerHTML = renderErrorState(e.message, "R()");
+    }
   }
 }
 

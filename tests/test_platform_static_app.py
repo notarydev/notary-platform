@@ -36,3 +36,10 @@ def test_decision_discovery_workspace_is_registered() -> None:
     assert "Decision Discovery" in js
     assert "/imports/parse" in js
     assert "Commit selected records" in js
+
+
+def test_auth_failure_keeps_token_prompt_visible() -> None:
+    text = APP_JS.read_text(encoding="utf-8")
+    assert 'if (S.authConfigured) {' in text
+    assert "renderAuthPanel();" in text
+    assert 'res.status === 401' in text
