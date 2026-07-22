@@ -49,7 +49,7 @@ def replay_call(
             "replay_status": "escalation_required",
             "reason": "no matching cassette entry",
         }
-    _emit(event_callback, "Cassette hit", "cassette",
+    _emit(event_callback, "System/tool response returned from cassette", "cassette",
           f"Match {method} {url}", "recorded response supplied", "pass", sequence + 1)
     return {
         "response": result["response"],
@@ -76,7 +76,7 @@ def replay_snapshot(
     seq = 0
     elements = snapshot_dict.get("elements", [])
 
-    _emit(event_callback, "Load sealed evidence", "snapshot",
+    _emit(event_callback, "Sealed inputs loaded", "snapshot",
           f"{len(elements)} elements", "loaded", "pass", seq)
     seq += 1
 
@@ -88,10 +88,15 @@ def replay_snapshot(
         seq += 1
 
     seq += 1  # reserve for cassette construction below
-    cassette = ResponseCassette(elements, strict_order=strict_order)
+    cassette = ResponseCassette(
+        elements,
+        strict_order=strict_order,
+        event_callback=event_callback,
+        event_sequence=seq,
+    )
 
     http_elements = [e for e in elements if e.get("kind") in ("http", "tool_call", "api_response")]
-    _emit(event_callback, "Build response cassette", "cassette",
+    _emit(event_callback, "Cassette selected", "cassette",
           f"{len(http_elements)} recorded calls", "built", "pass", seq)
     seq += 1
 
@@ -142,11 +147,11 @@ def replay_snapshot(
                 "unconsumed_entries": cassette.unconsumed_count,
             }
 
-        _emit(event_callback, "Agent decision produced", "replay",
+        _emit(event_callback, "Model/agent decision reconstructed", "replay",
               original_decision, replayed_decision, "pass", seq)
         seq += 1
 
-        _emit(event_callback, "Compare decisions", "comparison",
+        _emit(event_callback, "Original decision compared to replayed decision", "comparison",
               original_decision, replayed_decision,
               "reproduced" if replayed_decision == original_decision else "diverged", seq)
         seq += 1

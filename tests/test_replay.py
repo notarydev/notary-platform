@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
 from notary_platform.api_server.routers.ingestion import storage
+from notary_platform.models import ReplayExecutionEvent
 from notary_platform.replay_engine.cassette import ResponseCassette, _call_signature
 from notary_platform.replay_engine.replay import replay_call, replay_snapshot
 from notary_platform.snapshot import (
@@ -138,6 +139,19 @@ class TestReplayCall:
 
 
 class TestReplayAgent:
+    def test_trace_exposes_buyer_readable_proof_loop_steps(self) -> None:
+        snap = _make_snapshot_with_http({"score": 650}, "DENY")
+        events: list[ReplayExecutionEvent] = []
+
+        replay_snapshot(snap, _lending_agent, event_callback=events.append)
+
+        steps = [event.step for event in events]
+        assert steps[:2] == ["Sealed inputs loaded", "Cassette selected"]
+        assert "System/tool response returned from cassette" in steps
+        assert "Model/agent decision reconstructed" in steps
+        assert "Original decision compared to replayed decision" in steps
+        assert steps[-1] == "Replay verdict"
+
     def test_original_deny(self) -> None:
         snap = _make_snapshot_with_http({"score": 650}, "DENY")
         result = replay_snapshot(snap, _lending_agent)
