@@ -245,7 +245,12 @@ def promote_candidate(candidate_id: str, org_id: str = Depends(require_auth)) ->
 
 
 @router.post("/scenarios")
-def promote_vr_to_scenario(vr_id: str = Query(""), org_id: str = Depends(require_auth)) -> dict:
+def promote_vr_to_scenario(
+    body: Optional[dict[str, Any]] = None,
+    vr_id: str = Query(""),
+    org_id: str = Depends(require_auth),
+) -> dict:
+    vr_id = vr_id or str((body or {}).get("vr_id", ""))
     if not vr_id:
         raise HTTPException(status_code=400, detail="vr_id is required")
     service = ScenarioLibraryService(_registry())
