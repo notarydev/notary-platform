@@ -36,6 +36,7 @@ from notary_platform.setup_engine import (
     ScenarioCandidateService,
     SetupReadinessService,
     get_workflow_templates,
+    parse_discovery_input,
 )
 
 router = APIRouter(tags=["setup"])
@@ -772,6 +773,19 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
     preview = _import_preview_svc.preview(records, rules)
     result = preview.to_dict()
+    selection_results = _record_svc.apply_rules(records, rules)
+    result["findings"] = [
+        {
+            "source_record_ref": r.source_row_id,
+            "trigger": r.trigger,
+            "reason": r.reason,
+            "replayability": r.replayability,
+            "scenario_candidate": r.scenario_candidate,
+            "matched_rules": r.matched_rules,
+        }
+        for r in selection_results
+        if r.create_vr
+    ][:200]
     ev = _import_preview_svc.estimate_volume(plan.workflow_type or "")
     result["estimated_volume"] = ev
     result["ignored_count"] = result["total_records"] - result["matched_count"]
@@ -779,6 +793,18 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     result["estimated_monthly_records"] = ev["high_risk_matched"]
     result["missing_required_fields"] = preview.missing_fields
     return result
+
+
+@router.post("/setup/plans/{plan_id}/imports/parse")
+def plan_import_parse(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    """Parse a discovery file payload before field mapping and preview."""
+    if not _engine_svc.get_plan(plan_id):
+        raise HTTPException(404, "Plan not found")
+    try:
+        records = parse_discovery_input(str(body.get("content", "")), str(body.get("format", "json")))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f"Invalid discovery input: {exc}") from exc
+    return {"format": body.get("format", "json"), "record_count": len(records), "records": records}
 
 
 @router.post("/setup/plans/{plan_id}/imports/commit")

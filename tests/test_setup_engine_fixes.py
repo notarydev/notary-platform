@@ -234,6 +234,32 @@ class TestSetupEngineFixes:
         assert data["imported"] == 1
         assert len(data["discovery_findings"]) == 2
 
+    def test_discovery_parse_accepts_jsonl_and_csv(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        jsonl = '{"source_record_ref":"J-1","elements":[]}\n{"source_record_ref":"J-2","elements":[]}'
+        parsed = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "jsonl", "content": jsonl},
+        )
+        assert parsed.status_code == 200, parsed.text
+        assert parsed.json()["record_count"] == 2
+
+        csv_content = "source_record_ref,expected_outcome\nC-1,ESCALATE\n"
+        parsed = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "csv", "content": csv_content},
+        )
+        assert parsed.status_code == 200, parsed.text
+        assert parsed.json()["records"][0]["source_record_ref"] == "C-1"
+
+    def test_discovery_parse_rejects_malformed_input(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        response = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "jsonl", "content": '{"broken":\n'},
+        )
+        assert response.status_code == 400
+
     def test_app_js_includes_git_clone_in_sdk_snippet(self) -> None:
         """SDK snippet must include git clone for clean environment install."""
         resp = client.get("/app/app.js")
