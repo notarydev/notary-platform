@@ -27,3 +27,12 @@ def test_northstar_golden_path_has_mobile_layout() -> None:
     assert ".golden-path" in text
     assert "@media(max-width:900px)" in text
     assert ".golden-path{grid-template-columns:1fr" in text
+
+
+def test_decision_discovery_workspace_is_registered() -> None:
+    html = Path("static/app/index.html").read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    assert 'data-view="discovery"' in html
+    assert "Decision Discovery" in js
+    assert "/imports/parse" in js
+    assert "Commit selected records" in js

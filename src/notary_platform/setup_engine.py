@@ -8,6 +8,8 @@ scenario candidates, and release gate plans.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import uuid
 from typing import Any
@@ -395,6 +397,11 @@ class RecordSelectionService:
             if value is not None and value != "":
                 normalized[target] = value
         normalized.setdefault("elements", [])
+        if isinstance(normalized.get("elements"), str):
+            try:
+                normalized["elements"] = json.loads(normalized["elements"])
+            except json.JSONDecodeError:
+                normalized["elements"] = []
         normalized.setdefault("source_record_ref", "")
         normalized.setdefault("expected_outcome", "")
         normalized.setdefault("business_function", "")
@@ -471,6 +478,25 @@ class RecordSelectionService:
                 result.create_vr and result.trigger and trigger_counts.get(result.trigger, 0) >= 2
             )
         return results
+
+
+def parse_discovery_input(content: str, file_format: str) -> list[dict]:
+    """Parse JSON, JSONL, or CSV discovery input into record dictionaries."""
+    fmt = file_format.lower().strip().lstrip(".")
+    if fmt == "json":
+        parsed = json.loads(content)
+        records = parsed if isinstance(parsed, list) else [parsed]
+    elif fmt in ("jsonl", "ndjson"):
+        records = [json.loads(line) for line in content.splitlines() if line.strip()]
+    elif fmt == "csv":
+        records = list(csv.DictReader(io.StringIO(content)))
+    else:
+        raise ValueError("format must be json, jsonl, or csv")
+    if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+        raise ValueError("input must contain record objects")
+    if len(records) > 10000:
+        raise ValueError("input exceeds the 10,000-record preview limit")
+    return records
 
 
 class ImportPreviewService:
