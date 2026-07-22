@@ -374,6 +374,32 @@ class CapturePolicyService:
 class RecordSelectionService:
     """Applies rules to events/logs and decides what to capture."""
 
+    @staticmethod
+    def _value_at(record: dict, source: object) -> object:
+        """Read a mapped value from a flat or dotted source path."""
+        if not isinstance(source, str):
+            return source
+        value: object = record
+        for part in source.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
+    @classmethod
+    def normalize_record(cls, record: dict, field_mapping: dict | None = None) -> dict:
+        """Normalize imported fields into the Verification Record intake shape."""
+        normalized = dict(record)
+        for target, source in (field_mapping or {}).items():
+            value = cls._value_at(record, source)
+            if value is not None and value != "":
+                normalized[target] = value
+        normalized.setdefault("elements", [])
+        normalized.setdefault("source_record_ref", "")
+        normalized.setdefault("expected_outcome", "")
+        normalized.setdefault("business_function", "")
+        return normalized
+
     def apply_rules(self, records: list[dict], rules: list[RecordSelectionRule]) -> list[RecordSelectionResult]:
         results: list[RecordSelectionResult] = []
         for i, rec in enumerate(records):
@@ -387,35 +413,42 @@ class RecordSelectionService:
             elements = rec.get("elements", [])
             text = json.dumps(rec).lower()
             matched = []
+            matched_trigger = ""
             for rule in rules:
                 if not rule.enabled:
                     continue
                 rule_type = rule.trigger_type
                 if rule_type == "policy_answer" and any(k in text for k in ("refund", "fare", "policy", "billing", "legal")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "customer_dispute" and any(k in text for k in ("wrong", "incorrect", "dispute", "complaint", "manager")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "human_override" and any(k in text for k in ("override", "human changed", "corrected")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "handoff_requested" and any(k in text for k in ("human", "agent", "speak to", "escalate")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "policy_mismatch" and "policy" in text and any(k in text for k in ("contradict", "conflict", "mismatch")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "missing_policy_lookup" and "policy" in text and "lookup" not in text:
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "low_confidence" and any(k in text for k in ("confidence", "uncertain", "low score")):
                     matched.append(rule.id)
+                    matched_trigger = matched_trigger or rule_type
                 elif rule_type == "sample":
                     if i % 1000 == 0:
                         matched.append(rule.id)
-                if matched:
-                    break
+                        matched_trigger = matched_trigger or rule_type
             if matched:
                 has_decision = any(e.get("kind") == "decision" for e in elements)
                 if has_decision:
                     result.decision = "capture"
                     result.create_vr = True
-                    result.trigger = rule.trigger_type if matched else "unknown"
+                    result.trigger = matched_trigger or "unknown"
                     result.matched_rules = matched
                     result.reason = f"Matched trigger: {result.trigger}"
                     has_cassette = any(e.get("kind") in ("tool", "llm", "http") for e in elements)
@@ -428,10 +461,15 @@ class RecordSelectionService:
                         result.replayability = "missing_context"
                     else:
                         result.replayability = "evidence_only"
-                    prev = results[-1] if results else None
-                    if prev and prev.replayability == "replayable" and prev.trigger == result.trigger:
-                        result.scenario_candidate = True
             results.append(result)
+        trigger_counts: dict[str, int] = {}
+        for result in results:
+            if result.create_vr and result.trigger:
+                trigger_counts[result.trigger] = trigger_counts.get(result.trigger, 0) + 1
+        for result in results:
+            result.scenario_candidate = bool(
+                result.create_vr and result.trigger and trigger_counts.get(result.trigger, 0) >= 2
+            )
         return results
 
 
@@ -452,7 +490,8 @@ class ImportPreviewService:
     def preview(self, records: list[dict], rules: list[RecordSelectionRule],
                 field_mapping: dict | None = None) -> ImportPreview:
         svc = RecordSelectionService()
-        results = svc.apply_rules(records, rules) if rules else []
+        normalized = [svc.normalize_record(record, field_mapping) for record in records]
+        results = svc.apply_rules(normalized, rules) if rules else []
         matched = [r for r in results if r.decision == "capture"]
         total = len(records)
         sample_records = []
@@ -464,6 +503,10 @@ class ImportPreviewService:
                 "replayability": r.replayability,
                 "scenario_candidate": r.scenario_candidate,
             })
+        missing_fields: list[str] = []
+        for field in ("source_record_ref", "elements"):
+            if any(not record.get(field) for record in normalized):
+                missing_fields.append(field)
         return ImportPreview(
             total_records=total,
             matched_count=len(matched),
@@ -473,6 +516,7 @@ class ImportPreviewService:
             evidence_only_count=len([r for r in matched if r.replayability == "evidence_only"]),
             scenario_candidate_count=len([r for r in matched if r.scenario_candidate]),
             sample_records=sample_records,
+            missing_fields=missing_fields,
         )
 
     def estimate_volume(self, workflow_type: str) -> dict:

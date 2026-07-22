@@ -1042,7 +1042,7 @@ async function renderSetupSelectionRulesStep() {
         </div>
       `).join('')}
       <div style="margin-top:16px;font-size:12px;color:var(--muted)">
-        Rules are evaluated in order. The first matching rule determines the trigger_type on the record.
+        All matching rules are retained; the first matching rule supplies the primary trigger_type on the record.
         Rules are evaluated by Notary Platform for imports and submitted records. SDKs may apply lightweight local filtering, but the platform is the source of truth.
       </div>
     </div>`;

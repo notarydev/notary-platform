@@ -768,25 +768,7 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
         raise HTTPException(404, "Plan not found")
     records = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
-    if field_mapping:
-        mapped_records = []
-        for rec in records:
-            mapped = {}
-            for target, source in field_mapping.items():
-                val = rec.get(source) if isinstance(source, str) else source
-                if target == "elements" and isinstance(val, list):
-                    mapped["elements"] = val
-                elif target == "expected_outcome":
-                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
-                elif target == "source_record_ref":
-                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
-                else:
-                    mapped[target] = val if val is not None else rec.get(target, "")
-            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
-                if k not in mapped or not mapped.get(k):
-                    mapped[k] = rec.get(k, "" if k != "elements" else [])
-            mapped_records.append(mapped)
-        records = mapped_records
+    records = [_record_svc.normalize_record(record, field_mapping) for record in records]
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
     preview = _import_preview_svc.preview(records, rules)
     result = preview.to_dict()
@@ -808,38 +790,35 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
         raise HTTPException(404, "Plan not found")
     records_raw = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
+    selected_refs = {str(ref) for ref in body.get("selected_source_record_refs", [])}
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
-    if field_mapping:
-        mapped_records = []
-        for rec in records_raw:
-            mapped = {}
-            for target, source in field_mapping.items():
-                val = rec.get(source) if isinstance(source, str) else source
-                if target == "elements" and isinstance(val, list):
-                    mapped["elements"] = val
-                elif target == "expected_outcome":
-                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
-                elif target == "source_record_ref":
-                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
-                else:
-                    mapped[target] = val if val is not None else rec.get(target, "")
-            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
-                if k not in mapped or not mapped.get(k):
-                    mapped[k] = rec.get(k, "" if k != "elements" else [])
-            mapped_records.append(mapped)
-        records_raw = mapped_records
+    records_raw = [_record_svc.normalize_record(record, field_mapping) for record in records_raw]
     results = _record_svc.apply_rules(records_raw, rules)
     created = []
+    rejected = []
+    findings = []
     for idx, rslt in enumerate(results):
         if not rslt.create_vr:
             continue
         if idx >= len(records_raw):
             continue
         item = records_raw[idx]
+        source_record_ref = str(item.get("source_record_ref", rslt.source_row_id))
+        finding = {
+            "source_record_ref": source_record_ref,
+            "trigger": rslt.trigger,
+            "reason": rslt.reason,
+            "replayability": rslt.replayability,
+            "scenario_candidate": rslt.scenario_candidate,
+            "matched_rules": rslt.matched_rules,
+        }
+        findings.append(finding)
+        if selected_refs and source_record_ref not in selected_refs:
+            continue
         snapshot = {
             "schema_version": item.get("schema_version", 1),
             "source_system_id": item.get("source_system_id", "import"),
-            "source_record_ref": item.get("source_record_ref", rslt.source_row_id),
+            "source_record_ref": source_record_ref,
             "business_function": item.get("business_function", plan.workflow_id),
             "expected_outcome": item.get("expected_outcome", ""),
             "elements": item.get("elements", []),
@@ -858,9 +837,12 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
                 "replayability": vr.replayability.value,
                 "trigger": rslt.trigger,
             })
-        except Exception:
-            pass
-    return {"imported": len(created), "records": created}
+        except Exception as exc:
+            rejected.append({
+                "source_record_ref": snapshot["source_record_ref"],
+                "reason": str(exc),
+            })
+    return {"imported": len(created), "rejected": rejected, "records": created, "discovery_findings": findings}
 
 
 @router.get("/setup/plans/{plan_id}/readiness")
