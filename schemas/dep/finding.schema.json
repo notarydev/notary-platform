@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/finding.schema.json",
+  "title": "DEP Finding",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["finding_kind", "basis_refs", "evidence_grade", "lifecycle_state"],
+      "properties": {
+        "finding_kind": {"enum": ["policy_mismatch", "expected_outcome_mismatch", "missing_evidence", "guardrail_violation", "consistency_mismatch", "replayability_failure"]},
+        "basis_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "format": "uri"}},
+        "missing_prerequisites": {"type": "array", "items": {"type": "string"}},
+        "evidence_grade": {"enum": ["E0", "E1", "E2", "E3", "E4"]},
+        "severity": {"type": "string"},
+        "business_impact": {"type": "string"},
+        "lifecycle_state": {"enum": ["signal", "candidate", "needs_context", "reviewable", "approved_incident", "dismissed", "accepted_risk", "suppressed", "evidence_sealed", "replayed", "fix_verified", "proof_issued", "scenario_active", "gate_enforced"]},
+        "available_actions": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

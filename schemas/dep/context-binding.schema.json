@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/context-binding.schema.json",
+  "title": "DEP Context Binding",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["context_ref", "relationship", "basis", "precedence"],
+      "properties": {
+        "context_ref": {"type": "string", "format": "uri"},
+        "relationship": {"enum": ["governed-by", "expected-by", "constrained-by", "produced-by"]},
+        "effective_from": {"type": "string", "format": "date-time"},
+        "effective_until": {"type": ["string", "null"], "format": "date-time"},
+        "selector": {"type": "object"},
+        "basis": {"$ref": "common.schema.json#/$defs/epistemicStatus"},
+        "precedence": {"type": "integer"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/envelope.schema.json",
+  "title": "DEP CloudEvents Exchange Envelope",
+  "type": "object",
+  "required": ["specversion", "id", "type", "source", "subject", "time", "datacontenttype", "dataschema", "deporg", "depenvironment", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1},
+    "type": {"type": "string", "pattern": "^org\\.dep\\."},
+    "source": {"type": "string", "format": "uri"},
+    "subject": {"type": "string", "format": "uri"},
+    "time": {"type": "string", "format": "date-time"},
+    "datacontenttype": {"const": "application/json"},
+    "dataschema": {"type": "string", "format": "uri"},
+    "deporg": {"type": "string", "format": "uri"},
+    "depenvironment": {"type": "string", "minLength": 1},
+    "data": {"type": "object"}
+  },
+  "additionalProperties": true
+}

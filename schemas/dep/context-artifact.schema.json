@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/context-artifact.schema.json",
+  "title": "DEP Context Artifact",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["artifact_kind", "version", "content_digest"],
+      "properties": {
+        "artifact_kind": {"enum": ["policy", "guardrail", "expected_outcome", "evidence_requirement", "system_manifest", "model_version", "prompt_version", "agent_version", "decision_family", "cohort_definition", "evaluator_definition", "approved_suppression"]},
+        "version": {"type": "string"},
+        "effective_from": {"type": "string", "format": "date-time"},
+        "effective_until": {"type": ["string", "null"], "format": "date-time"},
+        "content_digest": {"$ref": "common.schema.json#/$defs/digest"},
+        "content": {"type": "object"},
+        "content_ref": {"$ref": "common.schema.json#/$defs/externalReference"}
+      },
+      "oneOf": [{"required": ["content"]}, {"required": ["content_ref"]}]
+    }
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/verification-claim.schema.json",
+  "title": "DEP Verification Claim",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["evidence_bundle_ref", "original_version_ref", "candidate_version_ref", "method", "expected_behavior", "observed_behavior", "result", "evidence_grade", "verifier_ref", "issued_at", "scope_limitations"],
+      "properties": {
+        "evidence_bundle_ref": {"type": "string", "format": "uri"},
+        "original_version_ref": {"type": "string", "format": "uri"},
+        "candidate_version_ref": {"type": "string", "format": "uri"},
+        "method": {"enum": ["deterministic_replay", "cassette_replay", "isolated_reproduction", "static_verification", "hybrid"]},
+        "expected_behavior": {},
+        "observed_behavior": {},
+        "result": {"enum": ["pass", "fail", "inconclusive", "error"]},
+        "evaluator_refs": {"type": "array", "items": {"type": "string", "format": "uri"}},
+        "evidence_grade": {"const": "E4"},
+        "scope_limitations": {"type": "array", "items": {"type": "string"}},
+        "verifier_ref": {"type": "string", "format": "uri"},
+        "issued_at": {"type": "string", "format": "date-time"},
+        "expires_at": {"type": ["string", "null"], "format": "date-time"},
+        "signature_ref": {"type": "string", "format": "uri"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

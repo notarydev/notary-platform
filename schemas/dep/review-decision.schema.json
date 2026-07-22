@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/review-decision.schema.json",
+  "title": "DEP Review Decision",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["finding_ref", "action", "authority_ref", "decided_at", "reason"],
+      "properties": {
+        "finding_ref": {"type": "string", "format": "uri"},
+        "action": {"enum": ["approve_as_incident", "dismiss", "request_context", "suppress", "accept_risk", "instrument_next_occurrence"]},
+        "authority_ref": {"type": "string", "format": "uri"},
+        "decided_at": {"type": "string", "format": "date-time"},
+        "reason": {"type": "string", "minLength": 1},
+        "scope": {"type": "object"},
+        "supersedes_ref": {"type": "string", "format": "uri"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

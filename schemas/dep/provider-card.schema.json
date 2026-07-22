@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/provider-card.schema.json",
+  "title": "DEP Provider Card",
+  "type": "object",
+  "required": ["protocol_versions", "provider_id", "roles", "resource_types", "transports"],
+  "properties": {
+    "protocol_versions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "provider_id": {"type": "string", "format": "uri"},
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["observation_provider", "context_provider", "evaluator", "reviewer", "evidence_custodian", "verifier", "gate_consumer"]}
+    },
+    "resource_types": {"type": "array", "items": {"type": "string", "pattern": "^org\\.dep\\."}},
+    "transports": {"type": "array", "items": {"enum": ["https", "cloudevents-http", "batch-jsonl", "otlp-bridge"]}},
+    "auth": {"type": "array", "items": {"type": "string"}},
+    "integrity": {"type": "array", "items": {"type": "string"}},
+    "limits": {"type": "object", "additionalProperties": {"type": ["integer", "number", "string", "boolean"]}}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/observation.schema.json",
+  "title": "DEP Observation",
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["observation_kind", "occurred_at", "payload"],
+      "properties": {
+        "observation_kind": {"enum": ["decision", "input", "model_interaction", "retrieval", "tool_request", "tool_response", "policy_engine_result", "guardrail_result", "human_action", "business_effect", "deployment_event"]},
+        "occurred_at": {"type": "string", "format": "date-time"},
+        "sequence": {"type": "integer", "minimum": 0},
+        "payload": {"type": "object"},
+        "content_refs": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/externalReference"}}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}
