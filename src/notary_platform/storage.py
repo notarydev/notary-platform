@@ -23,6 +23,7 @@ from notary_platform.models import (
     CapturePolicy,
     CaptureValidationRun,
     DecisionFamilyCandidate,
+    DecisionWorkflow,
     Environment,
     EvidenceArtifact,
     FieldHandlingRule,
@@ -41,6 +42,7 @@ from notary_platform.models import (
     ScenarioRun,
     SystemConnection,
     VerificationRecord,
+    WorkflowEvidenceSource,
 )
 
 _PERSISTED_COLLECTIONS: dict[str, tuple[str, type[Any]]] = {
@@ -310,6 +312,28 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: ...
 
+    # ── Decision Workflow ──
+
+    @abc.abstractmethod
+    def create_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: ...
+
+    @abc.abstractmethod
+    def get_decision_workflow(self, wf_id: str) -> DecisionWorkflow | None: ...
+
+    @abc.abstractmethod
+    def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]: ...
+
+    @abc.abstractmethod
+    def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: ...
+
+    # ── Workflow Evidence Sources ──
+
+    @abc.abstractmethod
+    def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]: ...
+
+    @abc.abstractmethod
+    def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -348,6 +372,8 @@ class MemoryStorage(StorageBackend):
         self._field_handling_rules: dict[str, FieldHandlingRule] = {}
         self._capture_validation_runs: dict[str, CaptureValidationRun] = {}
         self._decision_family_candidates: dict[str, DecisionFamilyCandidate] = {}
+        self._decision_workflows: dict[str, DecisionWorkflow] = {}
+        self._workflow_evidence_sources: dict[str, list[WorkflowEvidenceSource]] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -673,6 +699,32 @@ class MemoryStorage(StorageBackend):
     def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
         self._decision_family_candidates[candidate.id] = candidate
         return candidate
+
+    # ── Decision Workflow ──
+
+    def create_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow:
+        self._decision_workflows[wf.id] = wf
+        return wf
+
+    def get_decision_workflow(self, wf_id: str) -> DecisionWorkflow | None:
+        return self._decision_workflows.get(wf_id)
+
+    def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]:
+        return [wf for wf in self._decision_workflows.values()
+                if wf.org_id == org_id and (not environment_id or wf.environment_id == environment_id)]
+
+    def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow:
+        self._decision_workflows[wf.id] = wf
+        return wf
+
+    # ── Workflow Evidence Sources ──
+
+    def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]:
+        return self._workflow_evidence_sources.get(workflow_id, [])
+
+    def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]:
+        self._workflow_evidence_sources[workflow_id] = sources
+        return sources
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -1270,6 +1322,12 @@ class PostgresS3Storage(StorageBackend):
     def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
     def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]: return []
     def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
+    def create_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: return wf
+    def get_decision_workflow(self, wf_id: str) -> DecisionWorkflow | None: return None
+    def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]: return []
+    def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: return wf
+    def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]: return []
+    def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]: return sources
 
 
 def get_storage() -> StorageBackend:

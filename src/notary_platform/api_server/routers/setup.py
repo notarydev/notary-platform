@@ -20,7 +20,10 @@ from notary_platform.models import (
     CaptureValidationRun,
     CoverageAssessment,
     DecisionFamilyCandidate,
+    DecisionWorkflow,
     FieldHandlingRule,
+    ReplayabilityStatus,
+    WorkflowEvidenceSource,
 )
 
 router = APIRouter(tags=["setup"])
@@ -315,16 +318,217 @@ def update_decision_family(candidate_id: str, body: dict[str, Any], _org: str = 
     return storage.update_decision_family_candidate(candidate).to_dict()
 
 
+# ── Decision Workflows ──
+
+
+@router.get("/setup/decision-workflows")
+def list_decision_workflows(
+    environment_id: Optional[str] = Query(None),
+    _org: str = Depends(require_auth),
+) -> list[dict]:
+    org = _org_id()
+    return [wf.to_dict() for wf in storage.list_decision_workflows(org, environment_id or "")]
+
+
+@router.post("/setup/decision-workflows")
+def create_decision_workflow(body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    org = _org_id()
+    wf = DecisionWorkflow(
+        id=f"wf-{uuid.uuid4().hex[:12]}",
+        org_id=org,
+        environment_id=body.get("environment_id", "env:demo"),
+        name=body.get("name", ""),
+        workflow_type=body.get("workflow_type", ""),
+        description=body.get("description", ""),
+        ai_system_id=body.get("ai_system_id", ""),
+        primary_source_system_id=body.get("primary_source_system_id", ""),
+        policy_source_system_id=body.get("policy_source_system_id", ""),
+        expected_safe_outcome=body.get("expected_safe_outcome", ""),
+        common_failure=body.get("common_failure", ""),
+        risk_level=body.get("risk_level", "medium"),
+        status="draft",
+    )
+    wf.touch()
+    return storage.create_decision_workflow(wf).to_dict()
+
+
+@router.get("/setup/decision-workflows/{wf_id}")
+def get_decision_workflow(wf_id: str, _org: str = Depends(require_auth)) -> dict:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    return wf.to_dict()
+
+
+@router.patch("/setup/decision-workflows/{wf_id}")
+def update_decision_workflow(wf_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    for key in ("name", "workflow_type", "description", "ai_system_id",
+                "primary_source_system_id", "policy_source_system_id",
+                "expected_safe_outcome", "common_failure", "risk_level", "status"):
+        if key in body:
+            setattr(wf, key, body[key])
+    wf.touch()
+    return storage.update_decision_workflow(wf).to_dict()
+
+
+# ── Workflow Evidence Sources ──
+
+# Default evidence sources for each workflow type
+_WORKFLOW_EVIDENCE_DEFAULTS: dict[str, list[dict]] = {
+    "refund_or_policy_answer": [
+        {"source_type": "customer_support_record", "name": "Customer Support Record", "required": True,
+         "captures": "Customer message, case ID, channel, timestamp, and source ticket reference.",
+         "why_include": "Proves what the customer asked and where the decision happened.",
+         "proof_enabled": "Proves the exact request the bot actually saw.",
+         "does_not_capture": "Agent staffing, queue timing, unrelated CRM history."},
+        {"source_type": "policy_knowledge_source", "name": "Policy Knowledge Source", "required": True,
+         "captures": "The official policy response or policy version the bot retrieved.",
+         "why_include": "A policy mismatch is the causal evidence for the wrong answer.",
+         "proof_enabled": "Enables cassette replay without live policy-service calls.",
+         "does_not_capture": "Policy authoring workflow or approval chain."},
+        {"source_type": "ai_system_output", "name": "AI System Output", "required": True,
+         "captures": "Model call, prompt, response, tool call proposals, and final decision.",
+         "why_include": "This is the decision system being reviewed.",
+         "proof_enabled": "Shows what the AI decided and why.",
+         "does_not_capture": "Training data or unrelated model internals."},
+        {"source_type": "prompt_policy_config", "name": "Prompt / Policy Config", "required": True,
+         "captures": "Prompt version, routing rule, model configuration, feature flag, and policy version.",
+         "why_include": "The bot must be evaluated against the configuration in force at decision time.",
+         "proof_enabled": "Lets Notary compare behavior across versions and releases.",
+         "does_not_capture": "Prompt authoring workflow unless explicitly included."},
+        {"source_type": "human_review_queue", "name": "Human Review Queue", "required": False,
+         "captures": "Expected outcome label, human override, reviewer role, approval reason.",
+         "why_include": "Provides the customer-approved answer key for proof.",
+         "proof_enabled": "Enables Proof of Mitigation and Proof of Readiness.",
+         "does_not_capture": "Reviewer productivity or case assignment."},
+        {"source_type": "release_ci_system", "name": "Release / CI System", "required": False,
+         "captures": "Agent version, git commit, build ID, release candidate.",
+         "why_include": "Connects Scenarios to Release Gate checks.",
+         "proof_enabled": "Shows which release passed or failed.",
+         "does_not_capture": "Arbitrary CI metadata."},
+    ],
+    "lending_decision": [
+        {"source_type": "loan_application", "name": "Loan Application Record", "required": True,
+         "captures": "Application data, applicant details, loan amount, purpose.",
+         "why_include": "The decision is based on this application.",
+         "proof_enabled": "Proves the exact application the model evaluated.",
+         "does_not_capture": "Applicant credit history not used in decision."},
+        {"source_type": "ai_system_output", "name": "AI System Output", "required": True,
+         "captures": "Model call, score, decision, and reason codes.",
+         "why_include": "This is the decision system under review.",
+         "proof_enabled": "Shows model output and decision rationale.",
+         "does_not_capture": "Training data or model internals."},
+        {"source_type": "underwriting_policy", "name": "Underwriting Policy Config", "required": True,
+         "captures": "Policy version, risk tiers, rules applied.",
+         "why_include": "The decision must be evaluated against policy in force.",
+         "proof_enabled": "Proves which policy version governed the decision.",
+         "does_not_capture": "Policy draft history."},
+    ],
+}
+
+_FLATTENED_SOURCE_TYPES = [src for cat in _WORKFLOW_EVIDENCE_DEFAULTS.values() for src in cat]
+
+
+@router.get("/setup/decision-workflows/{wf_id}/evidence-sources")
+def list_evidence_sources(wf_id: str, _org: str = Depends(require_auth)) -> list[dict]:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    existing = storage.list_workflow_evidence_sources(wf_id)
+    if existing:
+        return [s.to_dict() for s in existing]
+    # Seed defaults based on workflow type
+    defaults = _WORKFLOW_EVIDENCE_DEFAULTS.get(wf.workflow_type, _WORKFLOW_EVIDENCE_DEFAULTS.get("refund_or_policy_answer", []))
+    sources = []
+    for d in defaults:
+        src = WorkflowEvidenceSource(
+            id=f"wes-{uuid.uuid4().hex[:12]}",
+            workflow_id=wf_id,
+            org_id=wf.org_id,
+            environment_id=wf.environment_id,
+            source_type=d["source_type"],
+            name=d["name"],
+            required=d.get("required", False),
+            selected=d.get("required", False),  # required sources auto-selected
+            captures=d.get("captures", ""),
+            why_include=d.get("why_include", ""),
+            proof_enabled=d.get("proof_enabled", ""),
+            does_not_capture=d.get("does_not_capture", ""),
+            status="selected" if d.get("required", False) else "suggested",
+        )
+        sources.append(src)
+    return [s.to_dict() for s in storage.save_workflow_evidence_sources(wf_id, sources)]
+
+
+@router.put("/setup/decision-workflows/{wf_id}/evidence-sources")
+def save_evidence_sources(wf_id: str, body: list[dict[str, Any]], _org: str = Depends(require_auth)) -> list[dict]:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    sources = []
+    for item in body:
+        src = WorkflowEvidenceSource(
+            id=item.get("id", f"wes-{uuid.uuid4().hex[:12]}"),
+            workflow_id=wf_id,
+            org_id=wf.org_id,
+            environment_id=wf.environment_id,
+            source_type=item.get("source_type", ""),
+            name=item.get("name", ""),
+            system_id=item.get("system_id", ""),
+            required=item.get("required", False),
+            selected=item.get("selected", False),
+            captures=item.get("captures", ""),
+            why_include=item.get("why_include", ""),
+            proof_enabled=item.get("proof_enabled", ""),
+            does_not_capture=item.get("does_not_capture", ""),
+            status="selected" if item.get("selected", False) else "suggested",
+        )
+        sources.append(src)
+    return [s.to_dict() for s in storage.save_workflow_evidence_sources(wf_id, sources)]
+
+
 # ── Setup Status ──
 
 
 @router.get("/setup/status")
 def get_setup_status(_org: str = Depends(require_auth)) -> dict:
+    """Return setup completion status for the new workflow-centered flow."""
     org = _org_id()
-    systems = storage.list_ai_systems(org)
-    active_systems = [s for s in systems if s.status == "active"]
+    wfs = storage.list_decision_workflows(org)
+    active_wf = next((w for w in wfs if w.status != "draft"), None)
+    wf_id = active_wf.id if active_wf else ""
+    has_workflow = bool(wfs)
+    ai_systems = storage.list_ai_systems(org)
+    has_ai_system = bool(ai_systems)
+    evidence_sources = storage.list_workflow_evidence_sources(wf_id) if wf_id else []
+    has_evidence = any(s.selected for s in evidence_sources)
+    connectors = []
+    for s in ai_systems:
+        connectors.extend(storage.list_capture_connectors(s.id))
+    has_capture = any(c.status != "not_configured" for c in connectors)
+    vrs = storage.list_vrs(org)
+    has_records = bool(vrs)
+    has_replayable = any(vr.replayability != ReplayabilityStatus.unknown for vr in vrs)
+    candidates = storage.list_scenario_candidates(org)
+    has_candidates = bool(candidates)
+    policies = storage.list_readiness_policies(org)
+    has_release_gate = bool(policies)
+
     return {
-        "total_systems": len(systems),
-        "active_systems": len(active_systems),
-        "systems_in_setup": [s.to_dict() for s in systems if s.status != "active"],
+        "workflow_created": has_workflow,
+        "ai_system_registered": has_ai_system,
+        "evidence_boundary_defined": has_evidence,
+        "capture_method_configured": has_capture,
+        "first_records_received": has_records,
+        "replayability_reviewed": has_replayable,
+        "scenario_created": has_candidates,
+        "release_gate_created": has_release_gate,
+        "workflows": [wf.to_dict() for wf in wfs],
+        "ai_systems": [s.to_dict() for s in ai_systems],
+        "vrs_total": len(vrs),
+        "has_active_workflow": active_wf is not None,
+        "active_workflow_id": wf_id,
     }

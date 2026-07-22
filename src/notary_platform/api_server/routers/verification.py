@@ -8,7 +8,7 @@ entries, and webhook intake.
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -356,3 +356,35 @@ def get_label_heuristics() -> dict:
              "target": "medium", "trigger": "Default assessment", "confidence": "0.5"},
         ]
     }
+
+
+@router.post("/verification-records/import")
+def import_verification_records(
+    body: dict[str, Any],
+    _org: str = Depends(require_auth),
+) -> dict[str, Any]:
+    """Import records from JSON/JSONL. Expects {'records': [...], 'workflow_id': '...'}."""
+    records_raw = body.get("records", [])
+    wf_id = body.get("workflow_id", "")
+    results = []
+    for item in records_raw:
+        snapshot = {
+            "schema_version": item.get("schema_version", 1),
+            "source_system_id": item.get("source_system_id", "import"),
+            "source_record_ref": item.get("source_record_ref", ""),
+            "business_function": item.get("business_function", wf_id),
+            "expected_outcome": item.get("expected_outcome", ""),
+            "elements": item.get("elements", []),
+        }
+        ingestion = IngestionService(_registry)
+        vr = ingestion.create_from_sdk_snapshot(
+            snapshot,
+            org_id=_org,
+            agent_id=item.get("agent_id", ""),
+        )
+        results.append({
+            "id": vr.id,
+            "replayability": vr.replayability.value,
+            "next_action": vr.next_action,
+        })
+    return {"imported": len(results), "records": results}

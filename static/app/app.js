@@ -509,10 +509,13 @@ function openReleaseGateDetail(id) {
 
 function setupCanNext(step) {
   const id = SETUP_STEPS[step] && SETUP_STEPS[step].id;
-  if (id === "register") return S.onbSystems.length > 0;
-  if (id === "systems") { const s = S.setupSystems; return s ? s.some(x => x.selected) : true; }
+  if (id === "workflow") return !!S.setupWorkflow;
+  if (id === "ai-system") return !!S.setupAiSystem;
+  if (id === "evidence") { const s = S.setupEvidenceSources; return s && s.some(x => x.selected); }
   if (id === "capture") return !!S.setupCaptureMethod;
-  if (id === "send") return !!S.onbReceived;
+  if (id === "send" || id === "replay") { const v = S.onbReceived; return !!v; }
+  if (id === "scenario") return true;
+  if (id === "release-gate") return true;
   return true;
 }
 
@@ -531,89 +534,67 @@ function selectCaptureMethod(id) {
   renderSetupStep(S.setupStep || 0);
 }
 
-function confirmWorkflow() {
-  S.setupWorkflowConfirmed = true;
-  renderSetupStep(S.setupStep || 0);
-}
-
 const SETUP_STEPS = [
-  { id: "register", label: "Register AI System", desc: "Add the AI systems you run" },
-  { id: "systems", label: "Evidence Sources", desc: "Pick the systems that feed each decision" },
-  { id: "capture", label: "Instrument & Collect", desc: "Install the SDK or wire an endpoint" },
-  { id: "send", label: "Send First Record", desc: "Confirm Notary receives a decision" },
-  { id: "readiness", label: "Replay Readiness", desc: "Confirm the record can be replayed" },
+  { id: "workflow", label: "Define Decision Workflow", desc: "What AI decision are you assuring?" },
+  { id: "ai-system", label: "Register AI System", desc: "The system making this decision" },
+  { id: "evidence", label: "Decision Evidence Sources", desc: "What evidence explains the decision" },
+  { id: "capture", label: "Choose Capture Method", desc: "How Notary receives records" },
+  { id: "send", label: "Send or Import Records", desc: "Create first Verification Records" },
+  { id: "replay", label: "Review Replayability", desc: "Can it be deterministically replayed?" },
+  { id: "scenario", label: "Promote Scenario", desc: "Turn record into release-gate scenario" },
+  { id: "release-gate", label: "Create Release Gate", desc: "Gate releases with readiness policy" },
 ];
 
-const SETUP_SYSTEMS = [
+const SETUP_WORKFLOW_TYPES = [
+  { id: "refund_or_policy_answer", label: "Refund or Policy Answer", desc: "Should this customer get a refund or escalation?" },
+  { id: "support_escalation", label: "Support Escalation", desc: "Should this chat escalate to a human?" },
+  { id: "lending_decision", label: "Lending Decision", desc: "Approve, deny, or review this loan?" },
+  { id: "insurance_claim_triage", label: "Insurance Claim Triage", desc: "Pay, deny, or escalate this claim?" },
+  { id: "healthcare_prior_auth", label: "Healthcare Prior Auth", desc: "Approve or escalate this prior-auth?" },
+  { id: "hiring_screening", label: "Hiring Screening", desc: "Advance this candidate to review?" },
+  { id: "custom", label: "Custom Workflow", desc: "Define your own decision workflow" },
+];
+
+const SETUP_CAPTURE_METHODS = [
   {
-    id: "support-tickets",
-    name: "Customer Support System",
-    selected: true,
-    tier: "required",
-    captures: "Customer message, case metadata, and channel (e.g. Salesforce Service Cloud case).",
-    why: "The AI decision is made on this support case for this customer.",
-    proof: "Proves the exact request the bot actually saw.",
-    not: "Does not capture agent staffing, queue timing, or CRM history.",
+    id: "sdk",
+    title: "Python SDK",
+    best: "Instrumented Python AI agents.",
+    captures: "LLM calls, tool calls, decisions, timestamps, seeds, and sealed cassettes in-process.",
+    not: "Non-Python backends or third-party systems you cannot instrument.",
+    action: "openSDKSetup()",
   },
   {
-    id: "policy-api",
-    name: "Policy Knowledge Source",
-    selected: true,
-    tier: "required",
-    captures: "The official policy response the bot retrieved (e.g. Bereavement Policy API).",
-    why: "A policy mismatch is the causal evidence for the wrong answer.",
-    proof: "Enables cassette replay without live policy-service calls.",
-    not: "Does not capture policy authoring workflow or approvals.",
+    id: "api",
+    title: "API Submission",
+    best: "Backend systems sending Verification Records directly.",
+    captures: "Structured decision evidence, labels, and references.",
+    not: "In-process model internals unless you serialize them.",
+    action: "openAPISubmissionSetup()",
   },
   {
-    id: "prompt-config",
-    name: "Prompt / Policy Config",
-    selected: true,
-    tier: "required",
-    captures: "Prompt version and policy version in force at decision time.",
-    why: "The bot must be evaluated against the config that was actually live.",
-    proof: "Proves which prompt and policy version produced the decision.",
-    not: "Does not capture unrelated config drafts or feature flags.",
+    id: "webhook",
+    title: "Webhook",
+    best: "Source-system event forwarding.",
+    captures: "Events that represent a decision, complaint, escalation, or override.",
+    not: "Arbitrary operational telemetry.",
+    action: "openWebhookSetup()",
   },
   {
-    id: "ai-agent",
-    name: "AI Support Agent",
-    selected: true,
-    tier: "required",
-    captures: "Model, prompt, response, and final decision (escalate vs answer).",
-    why: "This is the decision system whose behavior is under review.",
-    proof: "Shows exactly what the bot decided and on what basis.",
-    not: "Does not capture model training data or general model metrics.",
+    id: "manual",
+    title: "Manual Submission",
+    best: "Complaints, overrides, disputes, or one-off reviews.",
+    captures: "Human-provided expected outcome and evidence summary.",
+    not: "High-volume automated decisions.",
+    action: "openManualSubmissionForm()",
   },
   {
-    id: "human-review",
-    name: "Support QA / Human Review",
-    selected: false,
-    tier: "optional",
-    captures: "Expected correct outcome label or override.",
-    why: "A QA reviewer supplies the ground-truth outcome the bot should have produced.",
-    proof: "Provides the human-approved expected outcome for replay and fix verification.",
-    not: "Does not capture reviewer productivity or case assignment.",
-  },
-  {
-    id: "crm",
-    name: "CRM / Customer Communications",
-    selected: false,
-    tier: "excluded",
-    captures: "Notifications and follow-up activity.",
-    why: "Out of scope for AI Decision Assurance.",
-    proof: "—",
-    not: "Not captured because it does not affect the decision itself.",
-  },
-  {
-    id: "ops",
-    name: "Generic Ops Logs / SLA Monitoring",
-    selected: false,
-    tier: "excluded",
-    captures: "System latency, throughput, uptime.",
-    why: "Out of scope for AI Decision Assurance.",
-    proof: "—",
-    not: "Not captured because it explains infrastructure, not the decision.",
+    id: "import",
+    title: "Batch / Log Import",
+    best: "Historical exports (Zendesk, Salesforce, CSV, JSONL).",
+    captures: "Existing conversations, transcripts, bot responses, case metadata, and human corrections.",
+    not: "Missing cassette/tool responses that were never logged.",
+    action: "openImportSetup()",
   },
 ];
 
@@ -703,41 +684,98 @@ function renderSetupTrackerInner(step) {
     </div>`;
 }
 
-function renderSetupWorkflowStep() {
-  const confirmed = S.setupWorkflowConfirmed;
+async function renderSetupWorkflowStep() {
+  const saved = S.setupWorkflow || {};
+  const types = SETUP_WORKFLOW_TYPES;
+  const existing = await apiGet("/setup/decision-workflows?environment_id=" + S.env).catch(() => []);
+  S.setupWorkflows = existing;
   return `
     <div class="setup-step-content">
-      <h2>Choose the decision workflow to assure</h2>
-      <p class="setup-lead">Notary turns a captured AI failure into sealed, replayable evidence. Start with one high-stakes decision workflow.</p>
-      <div class="workflow-grid">
-        <div class="workflow-card selected">
-          <div class="workflow-org">Meridian Credit Union</div>
-          <h3>Thin-file personal loan adverse-action</h3>
-          <p>A thin-file applicant was denied when missing bureau evidence should have routed the case to underwriting review.</p>
-          <div class="workflow-meta">
-            <span><strong>Original AI decision:</strong> DENY</span>
-            <span><strong>Expected outcome:</strong> UNDERWRITING_REVIEW</span>
+      <h2>What AI decision do you want to assure?</h2>
+      <p class="setup-lead">Pick the decision type Notary will capture, replay, and gate. This workflow defines what evidence matters and what "safe" looks like.</p>
+      <div class="np-form">
+        <div class="np-field"><label>Workflow name *</label><input id="wf-name" value="${esc(saved.name || "")}" placeholder="e.g. Bereavement refund policy answer"></div>
+        <div class="np-field"><label>Workflow type</label>
+          <select id="wf-type">
+            ${types.map(t => `<option value="${t.id}" ${saved.workflow_type === t.id ? "selected" : ""}>${esc(t.label)} — ${esc(t.desc)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="np-field"><label>What decision does the AI make?</label>
+          <textarea id="wf-description" rows="2" placeholder="e.g. The bot decides whether to offer a refund, escalate to human, or answer based on policy.">${esc(saved.description || "")}</textarea>
+        </div>
+        <div class="np-field"><label>What can go wrong?</label>
+          <textarea id="wf-failure" rows="2" placeholder="e.g. Bot gives a customer a refund policy that does not exist.">${esc(saved.common_failure || "")}</textarea>
+        </div>
+        <div class="np-field"><label>What should happen instead? (expected safe outcome)</label>
+          <input id="wf-outcome" value="${esc(saved.expected_safe_outcome || "")}" placeholder="e.g. ESCALATE_TO_HUMAN"></div>
+        <div class="integ-form-row">
+          <div class="np-field" style="flex:1"><label>Risk level</label>
+            <select id="wf-risk">
+              <option value="low" ${saved.risk_level === "low" ? "selected" : ""}>Low</option>
+              <option value="medium" ${(!saved.risk_level || saved.risk_level === "medium") ? "selected" : ""}>Medium</option>
+              <option value="high" ${saved.risk_level === "high" ? "selected" : ""}>High</option>
+              <option value="critical" ${saved.risk_level === "critical" ? "selected" : ""}>Critical</option>
+            </select>
           </div>
-          <div class="workflow-risk">Risk: fair lending / adverse action / customer harm</div>
-          ${confirmed ? `<span class="badge badge-built" style="margin-top:12px">CONFIRMED</span>` : `<button class="btn btn-sm" style="margin-top:12px" onclick="confirmWorkflow()">Confirm Workflow</button>`}
         </div>
-        <div class="workflow-card planned">
-          <h3>Other workflows</h3>
-          <p>Additional decision workflows can be added once the Meridian demo path is proven.</p>
-          <span class="badge badge-planned">Planned</span>
-        </div>
+        <button class="btn" onclick="saveWorkflowStep()" data-testid="save-workflow-btn">${saved.id ? "Update Workflow" : "Save Workflow"}</button>
       </div>
+      ${existing.length ? `<div class="section-title" style="margin-top:20px">Saved Workflows</div>
+        ${existing.map(w => `<div class="int-card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>${esc(w.name)}</strong> <span class="badge badge-${w.status === "ready" ? "built" : "planned"}">${esc(w.status)}</span>
+          <div style="font-size:11px;color:var(--muted)">${esc(w.workflow_type)} · ${esc(w.expected_safe_outcome)} · Risk: ${esc(w.risk_level)}</div></div>
+          <button class="btn btn-sm btn-outline" onclick="loadWorkflow('${w.id}')">Edit</button>
+        </div></div>`).join("")}` : ""}
     </div>`;
 }
 
-function renderSetupBoundaryStep() {
+function loadWorkflow(id) {
+  const wf = S.setupWorkflows.find(w => w.id === id);
+  if (wf) { S.setupWorkflow = wf; renderSetupStep(0); }
+}
+
+async function saveWorkflowStep() {
+  const name = q("#wf-name").value.trim();
+  if (!name) { notify("Workflow name is required", "error"); return; }
+  const body = {
+    name,
+    workflow_type: q("#wf-type").value,
+    description: q("#wf-description").value,
+    common_failure: q("#wf-failure").value,
+    expected_safe_outcome: q("#wf-outcome").value,
+    risk_level: q("#wf-risk").value,
+    environment_id: S.env,
+  };
+  const existing = S.setupWorkflow;
+  try {
+    let result;
+    if (existing && existing.id) {
+      result = await apiPatch("/setup/decision-workflows/" + existing.id, body);
+    } else {
+      result = await apiPost("/setup/decision-workflows", body);
+    }
+    S.setupWorkflow = result;
+    notify("Decision workflow saved", "success");
+    renderSetupStep(S.setupStep);
+  } catch (e) {
+    notify("Failed to save workflow: " + e.message, "error");
+  }
+}
+
+async function renderEvidenceSourcesStep() {
+  const wf = S.setupWorkflow;
+  if (!wf || !wf.id) {
+    return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Save a decision workflow first to see its suggested evidence sources.</p></div>`;
+  }
+  const sources = await apiGet("/setup/decision-workflows/" + wf.id + "/evidence-sources").catch(() => []);
+  S.setupEvidenceSources = sources;
+  const selected = sources.filter(s => s.selected).length;
+  const total = sources.length;
   return `
     <div class="setup-step-content">
-      <h2>Define the AI decision boundary</h2>
-      <p class="setup-lead">Notary is AI Decision Assurance, not process mining. We capture only what affects the AI decision.</p>
-      <div class="scope-grid">
-        <div class="scope-block in-scope">
-          <h3>In scope because it affects the AI decision</h3>
+      <h2>What evidence does this decision depend on?</h2>
+      <p class="setup-lead">Pick the sources that explain the AI decision. Notary seals decision evidence, not operational telemetry. For workflow: <strong>${esc(wf.name)}</strong></p>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${selected}/${total} sources selected</div>
           <ul>
             <li>Applicant facts.</li>
             <li>Credit bureau / bureau evidence response.</li>
@@ -764,28 +802,31 @@ function renderSetupBoundaryStep() {
     </div>`;
 }
 
-function renderSetupSystemsStep() {
-  const systems = S.setupSystems || SETUP_SYSTEMS;
-  return `
-    <div class="setup-step-content">
-      <h2>Select evidence sources</h2>
-      <p class="setup-lead">For your registered system, pick the upstream systems that feed its decisions. These define the decision boundary — the evidence Notary seals. Operational telemetry is not captured.</p>
-      <div class="systems-grid">
-        ${systems.map(sys => `
-          <div class="system-card ${sys.tier} ${sys.selected ? 'selected' : ''}" ${sys.tier !== "excluded" ? `onclick="toggleSetupSystem('${sys.id}')" style="cursor:pointer"` : ""}>
-            <div class="system-header">
-              <strong>${esc(sys.name)}</strong>
-              <span class="system-tier ${sys.tier}">${sys.tier}</span>
-            </div>
-            <div class="system-field"><span class="system-label">Captures</span><span>${esc(sys.captures)}</span></div>
-            <div class="system-field"><span class="system-label">Why include it</span><span>${esc(sys.why)}</span></div>
-            <div class="system-field"><span class="system-label">Proof it enables</span><span>${esc(sys.proof)}</span></div>
-            <div class="system-field"><span class="system-label">Does not capture</span><span>${esc(sys.not)}</span></div>
-            ${sys.tier !== "excluded" ? `<div style="margin-top:8px"><span class="${sys.selected ? 'badge badge-built' : 'badge badge-planned'}">${sys.selected ? 'Selected' : 'Click to include'}</span></div>` : ""}
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
+async function toggleEvidenceSource(id) {
+  S.setupEvidenceSources = (S.setupEvidenceSources || []).map(s =>
+    s.id === id && !s.required ? {...s, selected: !s.selected, status: s.selected ? "suggested" : "selected"} : s
+  );
+  await renderSetupStep(2);
+}
+
+async function saveEvidenceSources() {
+  const wf = S.setupWorkflow;
+  if (!wf || !wf.id) return;
+  try {
+    const result = await apiPut("/setup/decision-workflows/" + wf.id + "/evidence-sources", S.setupEvidenceSources);
+    S.setupEvidenceSources = result;
+    notify("Evidence sources saved", "success");
+    renderSetupStep(S.setupStep);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+function toggleSetupSystem(id) {
+  S.setupSystems = (S.setupSystems || []).map(s =>
+    s.id === id && s.tier !== "excluded" ? {...s, selected: !s.selected} : s
+  );
+  renderSetupStep(2);
 }
 
 function captureToken() {
@@ -815,8 +856,8 @@ function renderCaptureSnippet(method) {
 function renderSetupCaptureStep() {
   return `
     <div class="setup-step-content">
-      <h2>Instrument & collect decisions</h2>
-      <p class="setup-lead">Pick how decisions reach Notary. You'll get a copy-paste snippet pre-filled with your system's token and ingest endpoint.</p>
+      <h2>How will Notary receive decision records?</h2>
+      <p class="setup-lead">Pick how decisions reach Notary. You'll get a copy-paste snippet pre-filled with your token and endpoint.</p>
       <div class="capture-grid">
         ${SETUP_CAPTURE_METHODS.map(m => `
           <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer" data-testid="capture-method-${m.id}">
@@ -832,122 +873,264 @@ function renderSetupCaptureStep() {
     </div>`;
 }
 
-function saveOnbSystem() {
-  const nameEl = q("#onb-name");
-  const name = nameEl ? nameEl.value.trim() : "";
-  if (!name) { notify("System name is required", "error"); return; }
-  const token = "ntry-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
-  S.onbSystems.push({
-    id: "sys-" + Math.random().toString(36).slice(2, 7),
-    name,
-    type: q("#onb-type").value,
-    env: q("#onb-env").value,
-    token,
-  });
-  notify("AI system registered: " + name, "success");
-  renderSetupStep(0);
-}
-
-function removeOnbSystem(id) {
-  S.onbSystems = S.onbSystems.filter(s => s.id !== id);
-  renderSetupStep(0);
-}
-
-function renderOnbRegisterStep() {
-  const sys = S.onbSystems;
+async function renderOnbRegisterStep() {
+  const saved = S.setupAiSystem || {};
+  const existing = await apiGet("/setup/ai-systems?environment_id=" + S.env).catch(() => []);
+  S.setupAiSystems = existing;
+  const wf = S.setupWorkflow;
   return `
     <div class="setup-step-content">
-      <h2>Register the AI systems you run</h2>
-      <p class="setup-lead">Add an AI system you want to assure. Each system gets its own ingest token and endpoint — like creating a project in an observability tool. You decide what you have; Notary makes no assumptions.</p>
+      <h2>Register the AI system making this decision</h2>
+      <p class="setup-lead">${wf ? `For workflow <strong>${esc(wf.name)}</strong>, register the AI system that makes or recommends the decision.` : "The AI system is what makes or recommends the decision Notary assures."}</p>
       <div class="onb-register-grid">
         <div class="ic-form-card">
           <div class="np-form">
-            <div class="np-field"><label>System name *</label><input id="onb-name" placeholder="e.g. Bereavement Support Bot" data-testid="onb-name-input"></div>
+            <div class="np-field"><label>System name *</label><input id="ais-name" value="${esc(saved.name || "")}" placeholder="e.g. Bereavement Support Bot"></div>
             <div class="integ-form-row">
-              <div class="np-field" style="flex:1"><label>Type</label>
-                <select id="onb-type" data-testid="onb-type-select">
-                  <option value="agent">Agent</option>
-                  <option value="model_service">Model Service</option>
-                  <option value="decision_engine">Decision Engine</option>
-                  <option value="ai_enabled_app">AI-Enabled App</option>
+              <div class="np-field" style="flex:1"><label>System type</label>
+                <select id="ais-type">
+                  <option value="ai_agent" ${saved.system_type === "ai_agent" ? "selected" : ""}>AI Agent — Makes decisions and calls tools independently</option>
+                  <option value="ai_enabled_app" ${saved.system_type === "ai_enabled_app" ? "selected" : ""}>AI-Enabled App — Business app with embedded AI</option>
+                  <option value="decision_engine" ${saved.system_type === "decision_engine" ? "selected" : ""}>Decision Engine — Rules/model service returning decisions</option>
+                  <option value="model_service" ${saved.system_type === "model_service" ? "selected" : ""}>Model Service — Model endpoint used by another system</option>
                 </select>
               </div>
-              <div class="np-field" style="flex:1"><label>Environment</label>
-                <select id="onb-env" data-testid="onb-env-select"><option value="production">Production</option><option value="staging">Staging</option><option value="development">Development</option></select>
-              </div>
+              <div class="np-field" style="flex:1"><label>Current version</label>
+                <input id="ais-version" value="${esc(saved.deployment_version || "")}" placeholder="e.g. v42"></div>
             </div>
-            <button class="btn" onclick="saveOnbSystem()" data-testid="onb-register-btn">Register System</button>
+            <div class="integ-form-row">
+              <div class="np-field" style="flex:1"><label>Risk classification</label>
+                <select id="ais-risk">
+                  <option value="" ${!saved.risk_classification ? "selected" : ""}>— Select —</option>
+                  <option value="low" ${saved.risk_classification === "low" ? "selected" : ""}>Low</option>
+                  <option value="medium" ${saved.risk_classification === "medium" ? "selected" : ""}>Medium</option>
+                  <option value="high" ${saved.risk_classification === "high" ? "selected" : ""}>High</option>
+                  <option value="critical" ${saved.risk_classification === "critical" ? "selected" : ""}>Critical</option>
+                </select>
+              </div>
+              <div class="np-field" style="flex:1"><label>Business owner</label>
+                <input id="ais-owner" value="${esc(saved.business_owner || "")}" placeholder="e.g. support-team@"></div>
+            </div>
+            <button class="btn" onclick="saveAiSystemStep()">${saved.id ? "Update System" : "Register System"}</button>
           </div>
         </div>
         <div class="onb-systems">
-          <div class="section-title" style="margin-top:0">Registered systems (${sys.length})</div>
-          ${sys.length ? sys.map(s => `
-            <div class="onb-system-row" data-testid="onb-system-${s.id}">
+          <div class="section-title" style="margin-top:0">Registered AI systems (${existing.length})</div>
+          ${existing.length ? existing.map(s => `
+            <div class="onb-system-row">
               <div style="min-width:0">
                 <strong>${esc(s.name)}</strong>
-                <div class="onb-system-meta">${esc(s.type)} · ${esc(s.env)}</div>
-                <div class="onb-system-token">TOKEN <code>${esc(s.token.slice(0, 12))}••••</code></div>
+                <div class="onb-system-meta">${esc(s.system_type)} · ${esc(s.deployment_version || "no version")} · ${s.status}</div>
               </div>
-              <button class="btn btn-sm btn-outline" onclick="removeOnbSystem('${s.id}')">Remove</button>
-            </div>`).join("") : `<div class="empty-state compact"><p>No systems yet. Register your first AI system to continue.</p></div>`}
+              <button class="btn btn-sm btn-outline" onclick="loadAiSystem('${s.id}')">Edit</button>
+            </div>`).join("") : `<div class="empty-state compact"><p>No AI systems yet. Register the system that makes the decision.</p></div>`}
         </div>
       </div>
     </div>`;
 }
 
-function sendOnbTestRecord() {
-  if (S.onbSending) return;
-  S.onbSending = true;
-  renderSetupStep(3);
-  setTimeout(() => {
-    S.onbSending = false;
-    S.onbReceived = {
-      id: "vr-" + Math.random().toString(36).slice(2, 10),
-      decision: "DENY",
-      expected: "UNDERWRITING_REVIEW",
-      root_hash: "sha256:" + Math.random().toString(16).slice(2, 18),
-      replayability: "replayable",
-      systems: ["Loan Origination", "Credit Bureau", "Policy Rules", "AI Agent"],
-    };
-    notify("First verification record received", "success");
-    renderSetupStep(3);
-  }, 1700);
+function loadAiSystem(id) {
+  const s = S.setupAiSystems.find(a => a.id === id);
+  if (s) { S.setupAiSystem = s; renderSetupStep(1); }
 }
 
-function renderOnbSendStep() {
+async function saveAiSystemStep() {
+  const name = q("#ais-name").value.trim();
+  if (!name) { notify("System name is required", "error"); return; }
+  const body = {
+    name,
+    system_type: q("#ais-type").value,
+    deployment_version: q("#ais-version").value,
+    risk_classification: q("#ais-risk").value,
+    business_owner: q("#ais-owner").value,
+    environment_id: S.env,
+  };
+  const existing = S.setupAiSystem;
+  try {
+    let result;
+    if (existing && existing.id) {
+      result = await apiPut("/setup/ai-systems/" + existing.id, body);
+    } else {
+      result = await apiPost("/setup/ai-systems", body);
+    }
+    S.setupAiSystem = result;
+    if (S.setupWorkflow) {
+      await apiPatch("/setup/decision-workflows/" + S.setupWorkflow.id, { ai_system_id: result.id });
+      S.setupWorkflow.ai_system_id = result.id;
+    }
+    notify("AI system registered", "success");
+    renderSetupStep(S.setupStep);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function renderOnbSendStep() {
+  const wf = S.setupWorkflow;
+  const ais = S.setupAiSystem;
   const rec = S.onbReceived;
   const sending = S.onbSending;
-  if (rec) {
+  const importMode = S.setupCaptureMethod === "import";
+  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
+  const hasVrs = vrs.length > 0 && vrs.some(v => v.source_type !== "demo_seed");
+  if (rec || hasVrs) {
+    const latest = rec || vrs[vrs.length - 1];
     return `
       <div class="setup-step-content">
-        <h2>First record received</h2>
-        <p class="setup-lead">Notary sealed your decision as a tamper-evident, replayable Verification Record.</p>
+        <h2>First records received</h2>
+        <p class="setup-lead">Notary sealed your decision${latest.id ? " as " + esc(latest.id) : ""}. ${vrs.length} total record${vrs.length !== 1 ? "s" : ""}.</p>
         <div class="onb-received">
           <div class="onb-received-head"><span class="onb-live-dot ok"></span> Record received</div>
           <div class="packet-grid">
-            <div class="packet-field"><span>Record ID</span><span class="mono">${esc(rec.id)}</span></div>
-            <div class="packet-field"><span>Decision</span><span class="packet-decision decision-fail">${esc(rec.decision)}</span></div>
-            <div class="packet-field"><span>Expected</span><span class="packet-decision decision-pass">${esc(rec.expected)}</span></div>
-            <div class="packet-field"><span>Root hash / seal</span><span class="mono">${esc(rec.root_hash)}</span></div>
-            <div class="packet-field"><span>Replay readiness</span><span>${esc(rec.replayability)}</span></div>
-          </div>
-          <div class="action-row" style="margin-top:16px">
-            <button class="btn btn-green" onclick="openReplayDrawer()" data-testid="onb-watch-replay-btn">Watch it replay</button>
-            <button class="btn btn-outline" onclick="renderSetupStep(4)">Continue</button>
+            <div class="packet-field"><span>Record ID</span><span class="mono">${esc(latest.id || "—")}</span></div>
+            <div class="packet-field"><span>Replayability</span><span>${esc(latest.replayability || "pending")}</span></div>
+            <div class="packet-field"><span>Records total</span><span>${vrs.length}</span></div>
           </div>
         </div>
       </div>`;
   }
-  return `
-    <div class="setup-step-content">
-      <h2>Send your first verification record</h2>
-      <p class="setup-lead">Run your instrumented app, or send a test record now. This panel is listening and updates the moment a record arrives.</p>
-      <div class="onb-waiting ${sending ? 'active' : ''}">
-        <div class="onb-radar"><span></span><span></span><span></span></div>
-        <div class="onb-live"><span class="onb-live-dot ${sending ? '' : 'idle'}"></span> ${sending ? "Receiving record…" : "Waiting for your first verification record…"}</div>
-        <button class="btn" onclick="sendOnbTestRecord()" ${sending ? 'disabled' : ''} data-testid="onb-send-test-btn">${sending ? 'Sending…' : 'Send test record'}</button>
-      </div>
-    </div>`;
+  if (importMode) {
+    return '<div class="setup-step-content">' +
+      '<h2>Import records from export files</h2>' +
+      '<p class="setup-lead">Upload a JSON or JSONL export from Zendesk, Salesforce, ServiceNow, Intercom, or any JSON decision-log export.</p>' +
+      '<div class="np-form">' +
+      '<div class="np-field"><label>Source system / export type</label>' +
+      '<select id="import-source-type">' +
+      '<option value="zendesk_export">Zendesk ticket export</option>' +
+      '<option value="salesforce_export">Salesforce Service Cloud export</option>' +
+      '<option value="servicenow_export">ServiceNow case export</option>' +
+      '<option value="intercom_export">Intercom conversation export</option>' +
+      '<option value="jsonl_export">JSONL decision log</option>' +
+      '<option value="csv_export">CSV export</option>' +
+      '</select></div>' +
+      '<div class="np-field"><label>Paste JSON records (array of record objects)</label>' +
+      '<textarea id="import-json" rows="8" placeholder=\'[{"source_record_ref":"TKT-123","business_function":"customer_support","elements":[{"kind":"input","payload":{"text":"Can I get a refund?"}},{"kind":"decision","payload":{"decision":"OFFER_REFUND"}}]}]\'></textarea>' +
+      '</div>' +
+      '<button class="btn" onclick="importRecords()">Import Records</button>' +
+      '</div>' +
+      '<div style="margin-top:16px;font-size:12px;color:var(--muted)">Field mapping: source_record_ref, business_function, expected_outcome, agent_id, and elements are auto-mapped.</div>' +
+      '</div>';
+  }
+  return '<div class="setup-step-content">' +
+    '<h2>Send or import your first Verification Records</h2>' +
+    '<p class="setup-lead">' + (ais ? "Run your instrumented " + esc(ais.name) : "Run your instrumented app") + ' or send a test record below.</p>' +
+    '<div style="margin-bottom:16px">' +
+    '<button class="btn btn-outline" onclick="sendTestCapture()" ' + (sending ? 'disabled' : '') + '>Send test record</button>' +
+    '<span style="margin-left:8px;font-size:12px;color:var(--muted)">Creates a sample Verification Record</span>' +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--muted)">Records appear here automatically. Go to Verification Records to view all records.</div>' +
+    '<div class="onb-waiting ' + (sending ? 'active' : '') + '">' +
+    '<div class="onb-radar"><span></span><span></span><span></span></div>' +
+    '<div class="onb-live"><span class="onb-live-dot ' + (sending ? '' : 'idle') + '"></span> ' + (sending ? "Receiving record..." : "Waiting for your first verification record...") + '</div>' +
+    '<button class="btn" onclick="sendTestCapture()" ' + (sending ? 'disabled' : '') + '>' + (sending ? 'Sending...' : 'Send test record') + '</button>' +
+    '</div></div>';
+}
+
+async function sendTestCapture() {
+  if (S.onbSending) return;
+  S.onbSending = true;
+  renderSetupStep(4);
+  try {
+    const snapshot = {
+      schema_version: 1,
+      source_system_id: "setup-wizard",
+      source_record_ref: "SETUP-TEST-" + Date.now(),
+      business_function: S.setupWorkflow ? S.setupWorkflow.id : "setup-test",
+      elements: [
+        {kind: "input", sequence: 0, payload: {text: "Can I get a bereavement refund after booking?"}},
+        {kind: "tool", sequence: 1, payload: {method: "GET", url: "/policy/bereavement", response: {retroactive_refund_allowed: false}}},
+        {kind: "decision", sequence: 2, payload: {decision: "OFFER_REFUND"}},
+      ],
+    };
+    const r = await apiPost("/v1/verification-records/from-snapshot", snapshot);
+    S.onbReceived = r;
+    notify("Test record created: " + r.id, "success");
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+  S.onbSending = false;
+  renderSetupStep(4);
+}
+
+async function importRecords() {
+  const raw = q("#import-json") ? q("#import-json").value.trim() : "";
+  if (!raw) { notify("Paste JSON records first", "error"); return; }
+  try {
+    const records = JSON.parse(raw);
+    const arr = Array.isArray(records) ? records : [records];
+    const result = await apiPost("/v1/verification-records/import", {
+      records: arr,
+      workflow_id: S.setupWorkflow ? S.setupWorkflow.id : "",
+    });
+    notify("Imported " + result.imported + " records", "success");
+    S.onbReceived = result.records[result.records.length - 1];
+    renderSetupStep(4);
+  } catch (e) {
+    notify("Import failed: " + e.message, "error");
+  }
+}
+
+async function createScenarioCandidate(vrId) {
+  try {
+    const result = await apiPost("/v1/scenario-candidates", {
+      source_vr_id: vrId,
+      business_title: "Setup candidate " + vrId.slice(0, 12),
+      environment_id: S.env,
+    });
+    notify("Scenario candidate created", "success");
+    renderSetupStep(6);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function promoteScenarioCandidate(id) {
+  try {
+    await apiPut("/v1/scenario-candidates/" + id, {state: "promoted"});
+    const cand = await apiGet("/v1/scenario-candidates/" + id);
+    await apiPost("/v1/scenarios", {
+      source_vr_id: cand.source_vr_id,
+      business_title: cand.business_title,
+      expected_outcome: "",
+      environment_id: S.env,
+    });
+    notify("Scenario promoted", "success");
+    renderSetupStep(6);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function createReleaseGate() {
+  const name = q("#rg-name") ? q("#rg-name").value.trim() : "";
+  if (!name) { notify("Policy name is required", "error"); return; }
+  const checks = document.querySelectorAll(".rg-scenario:checked");
+  const scenarioIds = Array.from(checks).map(c => c.value);
+  if (!scenarioIds.length) { notify("Select at least one scenario", "error"); return; }
+  try {
+    await apiPost("/v1/readiness-policies", {
+      name,
+      required_scenario_ids: scenarioIds,
+      pass_condition: "all_pass",
+      environment_id: S.env,
+    });
+    notify("Release gate created with " + scenarioIds.length + " scenarios", "success");
+    renderSetupStep(7);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+function openImportSetup() {
+  renderDrawer("Batch / Log Import", '<div class="section-sub">Paste JSON records in the setup step 4 to import. Supports Zendesk, Salesforce, ServiceNow, Intercom, CSV, and JSONL formats.</div>');
+}
+
+function openWebhookSetup() {
+  renderDrawer("Webhook Setup", '<div class="section-sub">Webhook endpoint: POST /v1/webhooks/decision-records/{connector_id}</div><div class="section-title" style="margin-top:16px">Headers</div>' + renderCodeBlock("Authorization: Bearer <token>\nContent-Type: application/json") + '<div class="section-title" style="margin-top:16px">Payload</div>' + renderCodeBlock('{\n  "source_record_ref": "TKT-1234",\n  "events": [{"kind": "decision", "payload": {"decision": "DENY"}}]\n}'));
+}
+
+function openManualSubmissionForm() {
+  renderDrawer("Manual Submission", '<div class="section-sub">Submit a decision directly from the Verification Records screen — best for complaints, overrides, and one-off reviews.');
 }
 
 // --- Replay player (reusable across scenarios) ---
@@ -1358,87 +1541,95 @@ async function sendHarborlineTestCapture() {
   }
 }
 
-function renderSetupTestStep() {
-  const cap = S.setupTestCapture;
-  return `
-    <div class="setup-step-content">
-      <h2>Send a test capture</h2>
-      <p class="setup-lead">Create a sample Meridian capture packet and confirm the evidence is sealed and replayable.</p>
-      ${cap ? `
-        <div class="test-capture-packet">
-          <h3>Captured packet</h3>
-          <div class="packet-grid">
-            <div class="packet-field"><span>Record ID</span><span>${esc(cap.id)}</span></div>
-            <div class="packet-field"><span>Applicant ID</span><span>${esc(cap.applicant_id)}</span></div>
-            <div class="packet-field"><span>Decision</span><span class="packet-decision decision-fail">${esc(cap.decision)}</span></div>
-            <div class="packet-field"><span>Expected outcome</span><span class="packet-decision decision-pass">${esc(cap.expected)}</span></div>
-            <div class="packet-field"><span>Captured systems</span><span>${cap.systems.map(s => esc(s)).join(", ")}</span></div>
-            <div class="packet-field"><span>Root hash / seal</span><span class="mono">${esc(cap.root_hash)}</span></div>
-            <div class="packet-field"><span>Replay readiness</span><span>${esc(cap.replayability)}</span></div>
-          </div>
-          <div class="action-row" style="margin-top:12px">
-            <button class="btn" onclick="nav('verification-records')">Open Verification Records</button>
-            <button class="btn btn-outline" onclick="S.setupTestCapture=null; renderSetupStep(4)">Send Another</button>
-          </div>
-        </div>
-      ` : `
-        <div class="empty-state compact">
-          <h3>Meridian test capture</h3>
-          <p>This will create one Verification Record for applicant HLCU-PL-0427 with a sealed cassette and root hash.</p>
-          <button id="harborline-test-capture-btn" class="btn" onclick="sendHarborlineTestCapture()">Send Test Capture</button>
-        </div>
-      `}
-    </div>`;
+async function renderSetupReplayStep() {
+  const wf = S.setupWorkflow;
+  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
+  const nonDemo = vrs.filter(v => v.source_type !== "demo_seed");
+  const target = nonDemo[nonDemo.length - 1] || vrs[vrs.length - 1];
+  if (!target) {
+    return '<div class="setup-step-content"><h2>Review replayability</h2><p class="setup-lead">No Verification Records found. Send or import records first.</p></div>';
+  }
+  const replayState = target.replayability || "unknown";
+  const missing = target.missing_prerequisites || [];
+  const statusColor = replayState === "replayable" ? "var(--green)" : replayState === "requires_human_label" ? "var(--amber)" : "var(--red)";
+  return '<div class="setup-step-content">' +
+    '<h2>Review replayability</h2>' +
+    '<p class="setup-lead">Notary assessed your latest record for deterministic replay.' + (wf ? ' Workflow: ' + esc(wf.name) : '') + '</p>' +
+    '<div class="int-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center">' +
+    '<div><h4>' + esc(target.id || "Verification Record") + '</h4><p>Created ' + esc(target.created_at || "") + '</p></div>' +
+    '<span class="badge" style="background:' + statusColor + ';color:#fff">' + esc(replayState) + '</span>' +
+    '</div>' +
+    '<div class="packet-grid" style="margin-top:12px">' +
+    '<div class="packet-field"><span>Replayability</span><span>' + esc(replayState) + '</span></div>' +
+    '<div class="packet-field"><span>Events captured</span><span>' + (target.events ? target.events.length : 0) + '</span></div>' +
+    '<div class="packet-field"><span>Missing prerequisites</span><span>' + (missing.length ? missing.join(", ") : "None") + '</span></div>' +
+    '</div>' +
+    '</div>' +
+    (replayState === "requires_human_label" ? '<div style="margin-top:12px"><p style="font-size:12px;color:var(--amber)">Add an expected outcome label to enable replay.</p></div>' : '') +
+    (replayState === "missing_context" ? '<div style="margin-top:12px"><p style="font-size:12px;color:var(--red)">Missing: ' + missing.join(", ") + '</p></div>' : '') +
+    (replayState === "replayable" ? '<div style="margin-top:12px"><button class="btn btn-green" onclick="openReplayDrawer()">Watch replay</button></div>' : '') +
+    '</div>';
 }
 
-function renderSetupReadinessStep() {
-  const cap = S.onbReceived || S.setupTestCapture;
-  const hasVR = cap && cap.root_hash && cap.id;
-  const items = [
-    { label: "AI decision captured", ok: hasVR },
-    { label: "External response cassette sealed", ok: hasVR },
-    { label: "Policy version captured", ok: hasVR },
-    { label: "Expected outcome labeled", ok: hasVR },
-    { label: "Replayable from sealed cassette", ok: hasVR },
-    { label: "Ready for incident / release gate", ok: hasVR },
-  ];
-  return `
-    <div class="setup-step-content">
-      <h2>Replay readiness checklist</h2>
-      <p class="setup-lead">Before a record becomes an incident or gates a release, Notary confirms it can be deterministically replayed.</p>
-      <div class="readiness-checklist">
-        ${items.map(item => `
-          <div class="readiness-item">
-            <span class="readiness-check ${item.ok ? 'ok' : ''}">${item.ok ? '&#10003;' : '&#9675;'}</span>
-            <span class="readiness-label">${esc(item.label)}</span>
-          </div>
-        `).join("")}
-      </div>
-      ${cap ? `
-        <div class="action-row" style="margin-top:18px">
-          <button class="btn btn-green" onclick="openReplayDrawer()">Watch replay</button>
-          <button class="btn" onclick="nav('verification-records')">View Verification Records</button>
-          <button class="btn btn-outline" onclick="nav('incidents')">Open Incidents</button>
-        </div>
-      ` : `
-        <div class="action-row" style="margin-top:18px">
-          <button class="btn btn-outline" onclick="renderSetupStep(3)">Send a record first</button>
-        </div>
-      `}
-    </div>`;
+async function renderSetupScenarioStep() {
+  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
+  const candidates = await apiGet("/v1/scenario-candidates?environment_id=" + S.env).catch(() => []);
+  const nonDemo = vrs.filter(v => v.source_type !== "demo_seed");
+  const lastVr = nonDemo[nonDemo.length - 1];
+  const readyCandidates = candidates.filter(c => c.state === "ready" || c.state === "promoted");
+  return '<div class="setup-step-content">' +
+    '<h2>Turn records into release-gate scenarios</h2>' +
+    '<p class="setup-lead">Promote Verification Records to Scenario Candidates, then promote to permanent Scenarios for release gating.</p>' +
+    (candidates.length ? '<div class="section-title">Scenario Candidates (' + candidates.length + ')</div>' +
+      candidates.map(c => '<div class="int-card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<div><strong>' + esc(c.business_title || c.source_vr_id) + '</strong>' +
+        '<div style="font-size:11px;color:var(--muted)">State: ' + esc(c.state) + ' · Replay: ' + esc(c.replayability) + '</div></div>' +
+        (c.state === "ready" ? '<button class="btn btn-sm btn-green" onclick="promoteScenarioCandidate(\'' + c.id + '\')">Promote</button>' :
+         c.state === "promoted" ? '<span class="badge badge-built">PROMOTED</span>' :
+         '<span class="badge badge-planned">' + esc(c.state) + '</span>') +
+        '</div></div>').join("") : '') +
+    (lastVr && !candidates.some(c => c.source_vr_id === lastVr.id) ?
+      '<div style="margin-top:16px"><button class="btn btn-outline" onclick="createScenarioCandidate(\'' + lastVr.id + '\')">Create Candidate from latest record</button></div>' : '') +
+    (readyCandidates.length ? '<div style="margin-top:16px"><span class="badge badge-built">' + readyCandidates.length + ' ready to promote</span></div>' : '') +
+    '</div>';
 }
 
-function renderSetupStep(step) {
+async function renderSetupReleaseGateStep() {
+  const scenarios = await apiGet("/v1/scenarios?environment_id=" + S.env).catch(() => []);
+  const policies = await apiGet("/v1/readiness-policies?environment_id=" + S.env).catch(() => []);
+  return '<div class="setup-step-content">' +
+    '<h2>Add scenarios to a Release Gate</h2>' +
+    '<p class="setup-lead">Create a Readiness Policy that gates releases based on required Scenarios.</p>' +
+    '<div class="np-form">' +
+    '<div class="np-field"><label>Policy name</label><input id="rg-name" placeholder="e.g. High-risk support policy gate"></div>' +
+    (scenarios.length ? '<div class="np-field"><label>Required scenarios (select all that apply)</label>' +
+      scenarios.map(s => '<label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px">' +
+        '<input type="checkbox" class="rg-scenario" value="' + s.id + '"> ' + esc(s.business_title || s.id) +
+        '</label>').join("") + '</div>' :
+      '<p style="font-size:12px;color:var(--muted)">No scenarios promoted yet. Complete step 6 first.</p>') +
+    '<button class="btn" style="margin-top:12px" onclick="createReleaseGate()" ' + (scenarios.length ? '' : 'disabled') + '>Create Release Gate</button>' +
+    '</div>' +
+    (policies.length ? '<div class="section-title" style="margin-top:20px">Existing Policies</div>' +
+      policies.map(p => '<div class="int-card" style="margin-top:8px"><strong>' + esc(p.name || p.id) + '</strong>' +
+        '<div style="font-size:11px;color:var(--muted)">' + (p.required_scenario_ids || []).length + ' scenarios · ' + esc(p.pass_condition || "all_pass") + '</div></div>').join("") : '') +
+    '</div>';
+}
+
+async function renderSetupStep(step) {
   S.setupStep = step;
   const contentEl = q("#setup-step-content");
   if (!contentEl) return;
   let content = "";
   switch (SETUP_STEPS[step].id) {
-    case "register": content = renderOnbRegisterStep(); break;
-    case "systems": content = renderSetupSystemsStep(); break;
+    case "workflow": content = await renderSetupWorkflowStep(); break;
+    case "ai-system": content = await renderOnbRegisterStep(); break;
+    case "evidence": content = await renderEvidenceSourcesStep(); break;
     case "capture": content = renderSetupCaptureStep(); break;
-    case "send": content = renderOnbSendStep(); break;
-    case "readiness": content = renderSetupReadinessStep(); break;
+    case "send": content = await renderOnbSendStep(); break;
+    case "replay": content = await renderSetupReplayStep(); break;
+    case "scenario": content = await renderSetupScenarioStep(); break;
+    case "release-gate": content = await renderSetupReleaseGateStep(); break;
   }
   contentEl.innerHTML = content;
   const navSlot = q("#setup-nav-slot");
@@ -1448,18 +1639,14 @@ function renderSetupStep(step) {
 }
 
 async function renderSetup(c) {
-  if (!S.setupSystems) {
-    S.setupSystems = SETUP_SYSTEMS.map(s => ({...s}));
-  }
   c.innerHTML = sk(40);
-  const adapters = await apiGet("/v1/platform/adapters").catch(() => []);
   const step = typeof S.setupStep === "number" ? S.setupStep : 0;
   c.innerHTML = `
     <div class="setup-hero">
       <div class="setup-hero-copy">
-        <div class="eyebrow">Guided onboarding</div>
-        <h2>Connect your AI systems to Notary</h2>
-        <p>Register the AI systems you run, instrument them to capture decisions, and confirm your first sealed Verification Record — the same way you'd onboard an observability tool. No workflow selection, no assumptions about your business.</p>
+        <div class="eyebrow">Decision Workflow Onboarding</div>
+        <h2>Set up AI Decision Assurance</h2>
+        <p>Define the AI decision you want to assure, register the system that makes it, choose what evidence matters, and create a Release Gate — all in one flow.</p>
       </div>
     </div>
     <div class="setup-shell">
@@ -1469,13 +1656,6 @@ async function renderSetup(c) {
         <div id="setup-nav-slot"></div>
       </div>
     </div>
-    <div class="section-title" style="margin-top:32px">Capture Adapter Registry</div>
-    <div class="section-sub">What capture methods are available today vs planned</div>
-    ${renderTable(["Adapter", "Status", "Description"], adapters.map(ad => [
-      `<span style="font-weight:700;color:var(--text)">${ad.label}</span>`,
-      statusBadge(ad.status),
-      `<span style="font-size:11px">${esc(ad.desc)}</span>`,
-    ]), {emptyDetail: "Adapter registry unavailable"})}
   `;
   renderSetupStep(step);
 }

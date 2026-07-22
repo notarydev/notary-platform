@@ -1209,6 +1209,53 @@ class DecisionFamilyCandidate:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
 
+@dataclass
+class DecisionWorkflow:
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    name: str = ""
+    workflow_type: str = ""
+    description: str = ""
+    ai_system_id: str = ""
+    primary_source_system_id: str = ""
+    policy_source_system_id: str = ""
+    expected_safe_outcome: str = ""
+    common_failure: str = ""
+    risk_level: str = "medium"
+    status: str = "draft"  # draft | configuring | ready | blocked
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    def touch(self) -> None:
+        self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+@dataclass
+class WorkflowEvidenceSource:
+    id: str
+    workflow_id: str
+    org_id: str = "demo-org"
+    environment_id: str = ""
+    source_type: str = ""
+    name: str = ""
+    system_id: str = ""
+    required: bool = False
+    selected: bool = False
+    captures: str = ""
+    why_include: str = ""
+    proof_enabled: str = ""
+    does_not_capture: str = ""
+    status: str = "suggested"  # suggested | selected | skipped | connected
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
 # Attach generic from_dict to all dataclasses for storage reconstruction.
 _DATACLASS_MODELS = [
     Organization,
@@ -1243,6 +1290,8 @@ _DATACLASS_MODELS = [
     CoverageAssessment,
     CaptureValidationRun,
     DecisionFamilyCandidate,
+    DecisionWorkflow,
+    WorkflowEvidenceSource,
 ]
 for _model_cls in _DATACLASS_MODELS:
     if not hasattr(_model_cls, "from_dict"):
