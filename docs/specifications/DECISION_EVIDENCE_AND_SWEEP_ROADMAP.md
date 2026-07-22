@@ -1036,11 +1036,10 @@ Before each merge, run at minimum:
 ```bash
 pytest
 ruff check .
-ruff format --check .
 mypy src
 ```
 
-Run browser tests for any API response shape or UI change. Run remote-storage integration tests for any repository, persistence, migration, or worker change.
+Run `ruff format --check` against every changed Python file. Repository-wide formatting normalization must be a separate mechanical change when the existing baseline is not clean. Run browser tests for any API response shape or UI change. Run remote-storage integration tests for any repository, persistence, migration, or worker change.
 
 ## 11. Coding-Agent Execution Rules
 
