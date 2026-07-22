@@ -35,6 +35,7 @@ from notary_platform.setup_engine import (
     ReleaseGatePlanner,
     ScenarioCandidateService,
     SetupReadinessService,
+    get_workflow_template,
     get_workflow_templates,
     parse_discovery_input,
 )
@@ -628,6 +629,54 @@ _release_gate_planner = ReleaseGatePlanner()
 _readiness_svc = SetupReadinessService()
 
 
+def _ensure_plan_workflow(plan: Any) -> Any:
+    """Attach a workflow and selection rules to plans created by Discovery.
+
+    Older plans and the lightweight Discovery entry point may not carry a
+    workflow id. Heal those plans at the boundary so preview and commit never
+    silently become a no-op because there are no selection rules.
+    """
+    if plan.workflow_id and storage.get_decision_workflow(plan.workflow_id):
+        return plan
+
+    template = get_workflow_template(plan.workflow_type) or get_workflow_template("refund_or_policy_answer")
+    workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
+    workflow = DecisionWorkflow(
+        id=workflow_id,
+        org_id=plan.org_id,
+        environment_id=plan.environment_id,
+        name=plan.workflow_name or (template or {}).get("name", "Decision Discovery"),
+        workflow_type=plan.workflow_type or (template or {}).get("workflow_type", "refund_or_policy_answer"),
+        description=(template or {}).get("description", "Imported AI decision events selected for assurance review."),
+        expected_safe_outcome=(template or {}).get("expected_safe_outcome", ""),
+        common_failure=(template or {}).get("bad_outcome", ""),
+        risk_level=(template or {}).get("risk_level", "medium"),
+        status="configuring",
+    )
+    workflow.touch()
+    storage.create_decision_workflow(workflow)
+
+    rule_definitions = (template or {}).get("record_selection_rules") or _DEFAULT_RECORD_RULES
+    rules = [
+        RecordSelectionRule(
+            id=f"rsr-{uuid.uuid4().hex[:12]}",
+            workflow_id=workflow_id,
+            org_id=plan.org_id,
+            trigger_type=rule.get("trigger_type", ""),
+            label=rule.get("label", ""),
+            description=rule.get("description", ""),
+            enabled=rule.get("enabled", True),
+            condition=json.dumps(rule.get("condition", {})),
+        )
+        for rule in rule_definitions
+    ]
+    storage.save_record_selection_rules(workflow_id, rules)
+    plan.workflow_id = workflow_id
+    plan.touch()
+    _engine_svc.update_plan(plan.id, workflow_id=workflow_id)
+    return plan
+
+
 @router.get("/setup/workflow-templates")
 def list_workflow_templates() -> list[dict]:
     return get_workflow_templates()
@@ -649,6 +698,7 @@ def create_plan(body: dict[str, Any], _org: str = Depends(require_auth)) -> dict
         workflow_type=body.get("workflow_type", ""),
         workflow_name=body.get("workflow_name", ""),
     )
+    _ensure_plan_workflow(plan)
     return plan.to_dict()
 
 
@@ -713,6 +763,7 @@ def plan_record_selection_rules(plan_id: str, _org: str = Depends(require_auth))
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     if not plan.workflow_id:
         return []
     existing = storage.list_record_selection_rules(plan.workflow_id)
@@ -767,6 +818,7 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     records = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
     records = [_record_svc.normalize_record(record, field_mapping) for record in records]
@@ -814,6 +866,7 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     records_raw = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
     selected_refs = {str(ref) for ref in body.get("selected_source_record_refs", [])}

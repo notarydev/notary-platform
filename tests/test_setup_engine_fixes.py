@@ -131,6 +131,31 @@ class TestSetupEngineFixes:
         data = preview.json()
         assert data["total_records"] == 1
 
+    def test_discovery_plan_is_ready_for_preview_without_manual_workflow_setup(self) -> None:
+        """The Discovery entry point must not silently have zero selection rules."""
+        plan_resp = client.post("/v1/setup/plans", json={
+            "workflow_name": "Decision Discovery",
+            "workflow_type": "custom",
+        })
+        assert plan_resp.status_code == 200, plan_resp.text
+        plan = plan_resp.json()
+        assert plan["workflow_id"].startswith("wf-")
+
+        preview = client.post(
+            f"/v1/setup/plans/{plan['id']}/imports/preview",
+            json={
+                "records": [{
+                    "source_record_ref": "DISCOVERY-E2E-001",
+                    "business_function": "refund policy",
+                    "expected_outcome": "ESCALATE_TO_HUMAN",
+                    "elements": [{"kind": "decision", "payload": {"decision": "OFFER_REFUND"}}],
+                }],
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["matched_count"] == 1
+        assert preview.json()["findings"][0]["source_record_ref"] == "DISCOVERY-E2E-001"
+
     def test_import_commit_with_field_mapping(self) -> None:
         """Import commit must apply field_mapping and preserve correctly mapped values."""
         plan_resp = client.post("/v1/setup/plans", json={"workflow_name": "CommitMapTest"})
