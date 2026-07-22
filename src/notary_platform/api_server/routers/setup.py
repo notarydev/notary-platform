@@ -16,7 +16,6 @@ from notary_platform.api_server.auth import require_auth
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.models import (
     AISystem,
-    AssuranceSetupPlan,
     CaptureConnector,
     CaptureValidationRun,
     CoverageAssessment,
@@ -506,14 +505,22 @@ def save_evidence_sources(wf_id: str, body: list[dict[str, Any]], _org: str = De
 # ── Record Selection Rules ──
 
 _DEFAULT_RECORD_RULES: list[dict] = [
-    {"trigger_type": "policy_answer", "label": "Bot gives policy/refund/fare answer", "description": "Bot response contains refund, fare, billing, legal, or policy language.", "enabled": True},
-    {"trigger_type": "customer_dispute", "label": "Customer disputes bot answer", "description": "Customer replied negatively to bot, opened dispute, or asked for manager.", "enabled": True},
-    {"trigger_type": "human_override", "label": "Human agent overrides bot", "description": "Human changed or corrected the outcome the bot produced.", "enabled": True},
-    {"trigger_type": "handoff_requested", "label": "Human handoff requested but bot continued", "description": "Customer asked to speak to a human but the bot continued responding.", "enabled": True},
-    {"trigger_type": "policy_mismatch", "label": "Bot answer conflicts with policy source", "description": "Policy lookup response contradicts the bot's answer to the customer.", "enabled": True},
-    {"trigger_type": "missing_policy_lookup", "label": "Policy lookup missing or failed", "description": "Bot gave a policy answer without retrieving the current policy.", "enabled": True},
-    {"trigger_type": "low_confidence", "label": "Low confidence or missing model response", "description": "Bot confidence below threshold or model did not respond.", "enabled": True},
-    {"trigger_type": "sample", "label": "Random sample of normal conversations", "description": "Sample 0.1% of conversations that matched no other rule.", "enabled": False},
+    {"trigger_type": "policy_answer", "label": "Bot gives policy/refund/fare answer",
+     "description": "Bot response contains refund, fare, billing, legal, or policy language.", "enabled": True},
+    {"trigger_type": "customer_dispute", "label": "Customer disputes bot answer",
+     "description": "Customer replied negatively to bot, opened dispute, or asked for manager.", "enabled": True},
+    {"trigger_type": "human_override", "label": "Human agent overrides bot",
+     "description": "Human changed or corrected the outcome the bot produced.", "enabled": True},
+    {"trigger_type": "handoff_requested", "label": "Human handoff requested but bot continued",
+     "description": "Customer asked to speak to a human but the bot continued responding.", "enabled": True},
+    {"trigger_type": "policy_mismatch", "label": "Bot answer conflicts with policy source",
+     "description": "Policy lookup response contradicts the bot's answer to the customer.", "enabled": True},
+    {"trigger_type": "missing_policy_lookup", "label": "Policy lookup missing or failed",
+     "description": "Bot gave a policy answer without retrieving the current policy.", "enabled": True},
+    {"trigger_type": "low_confidence", "label": "Low confidence or missing model response",
+     "description": "Bot confidence below threshold or model did not respond.", "enabled": True},
+    {"trigger_type": "sample", "label": "Random sample of normal conversations",
+     "description": "Sample 0.1% of conversations that matched no other rule.", "enabled": False},
 ]
 
 
@@ -794,7 +801,7 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
 
 @router.post("/setup/plans/{plan_id}/imports/commit")
 def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
-    from notary_platform.api_server.routers.ingestion import _registry
+    from notary_platform.api_server.routers.ingestion import get_registry
     from notary_platform.services import IngestionService
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
@@ -842,7 +849,7 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
             "model_name": item.get("model_name", ""),
             "policy_version": item.get("policy_version", ""),
         }
-        ingestion = IngestionService(_registry)
+        ingestion = IngestionService(get_registry())
         try:
             vr = ingestion.create_from_sdk_snapshot(snapshot, org_id=plan.org_id)
             created.append({

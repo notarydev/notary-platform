@@ -19,6 +19,7 @@ from notary_platform.config import SETTINGS
 from notary_platform.models import (
     Agent,
     AISystem,
+    AssuranceSetupPlan,
     CaptureConnector,
     CapturePolicy,
     CaptureValidationRun,
@@ -34,6 +35,7 @@ from notary_platform.models import (
     ProofCertificate,
     ReadinessCheck,
     ReadinessPolicy,
+    RecordSelectionRule,
     ReleaseGateResult,
     ReplayExecutionEvent,
     ReplayRun,
@@ -42,8 +44,6 @@ from notary_platform.models import (
     ScenarioRun,
     SystemConnection,
     VerificationRecord,
-    RecordSelectionRule,
-    AssuranceSetupPlan,
     WorkflowEvidenceSource,
 )
 

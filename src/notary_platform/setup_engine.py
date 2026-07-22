@@ -14,18 +14,12 @@ from typing import Any
 
 from notary_platform.models import (
     AssuranceSetupPlan,
-    CapturePolicy,
-    DecisionWorkflow,
-    EvidenceContract,
-    ImportPolicy,
     ImportPreview,
-    RecordSelectionRule,
     RecordSelectionResult,
+    RecordSelectionRule,
     SetupReadinessAssessment,
-    WorkflowEvidenceSource,
     WorkflowTemplate,
 )
-
 
 # ── Templates ──
 
@@ -37,7 +31,10 @@ def _seed_templates() -> None:
             id="wf-tmpl-refund-policy",
             workflow_type="refund_or_policy_answer",
             name="Refund or Policy Answer",
-            description="An AI support bot answers refund, fare, billing, or policy questions. The decision is whether to answer directly or escalate to a human.",
+            description=(
+                "An AI support bot answers refund, fare, billing, or policy questions. "
+                "The decision is whether to answer directly or escalate to a human."
+            ),
             decision_description="Should the AI answer the customer directly or escalate to a human?",
             bad_outcome="The bot offers a refund or policy that does not exist or contradicts the official policy source.",
             expected_safe_outcome="ESCALATE_TO_HUMAN",
@@ -69,14 +66,22 @@ def _seed_templates() -> None:
                  "does_not_capture": "Arbitrary CI metadata."},
             ],
             record_selection_rules=[
-                {"trigger_type": "policy_answer", "label": "Bot gives policy/refund/fare answer", "description": "Bot response contains refund, fare, billing, legal, or policy language.", "enabled": True},
-                {"trigger_type": "customer_dispute", "label": "Customer disputes bot answer", "description": "Customer replied negatively to bot, opened dispute, or asked for manager.", "enabled": True},
-                {"trigger_type": "human_override", "label": "Human agent overrides bot", "description": "Human changed or corrected the outcome the bot produced.", "enabled": True},
-                {"trigger_type": "handoff_requested", "label": "Human handoff requested but bot continued", "description": "Customer asked to speak to a human but the bot continued responding.", "enabled": True},
-                {"trigger_type": "policy_mismatch", "label": "Bot answer conflicts with policy source", "description": "Policy lookup response contradicts the bot's answer to the customer.", "enabled": True},
-                {"trigger_type": "missing_policy_lookup", "label": "Policy lookup missing or failed", "description": "Bot gave a policy answer without retrieving the current policy.", "enabled": True},
-                {"trigger_type": "low_confidence", "label": "Low confidence or missing model response", "description": "Bot confidence below threshold or model did not respond.", "enabled": True},
-                {"trigger_type": "sample", "label": "Random sample of normal conversations", "description": "Sample 0.1% of conversations that matched no other rule.", "enabled": False},
+                {"trigger_type": "policy_answer", "label": "Bot gives policy/refund/fare answer",
+                 "description": "Bot response contains refund, fare, billing, legal, or policy language.", "enabled": True},
+                {"trigger_type": "customer_dispute", "label": "Customer disputes bot answer",
+                 "description": "Customer replied negatively to bot, opened dispute, or asked for manager.", "enabled": True},
+                {"trigger_type": "human_override", "label": "Human agent overrides bot",
+                 "description": "Human changed or corrected the outcome the bot produced.", "enabled": True},
+                {"trigger_type": "handoff_requested", "label": "Human handoff requested but bot continued",
+                 "description": "Customer asked to speak to a human but the bot continued responding.", "enabled": True},
+                {"trigger_type": "policy_mismatch", "label": "Bot answer conflicts with policy source",
+                 "description": "Policy lookup response contradicts the bot's answer to the customer.", "enabled": True},
+                {"trigger_type": "missing_policy_lookup", "label": "Policy lookup missing or failed",
+                 "description": "Bot gave a policy answer without retrieving the current policy.", "enabled": True},
+                {"trigger_type": "low_confidence", "label": "Low confidence or missing model response",
+                 "description": "Bot confidence below threshold or model did not respond.", "enabled": True},
+                {"trigger_type": "sample", "label": "Random sample of normal conversations",
+                 "description": "Sample 0.1% of conversations that matched no other rule.", "enabled": False},
             ],
         ),
         WorkflowTemplate(
@@ -385,7 +390,6 @@ class RecordSelectionService:
             for rule in rules:
                 if not rule.enabled:
                     continue
-                rule_text = rule.label.lower()
                 rule_type = rule.trigger_type
                 if rule_type == "policy_answer" and any(k in text for k in ("refund", "fare", "policy", "billing", "legal")):
                     matched.append(rule.id)
