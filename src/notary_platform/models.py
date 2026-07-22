@@ -1256,6 +1256,152 @@ class WorkflowEvidenceSource:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
 
+@dataclass
+class RecordSelectionRule:
+    id: str
+    workflow_id: str
+    org_id: str = "demo-org"
+    trigger_type: str = ""
+    condition: str = "{}"  # JSON string of condition
+    enabled: bool = True
+    label: str = ""
+    description: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class ImportPreview:
+    total_records: int = 0
+    matched_count: int = 0
+    replayable_count: int = 0
+    needs_label_count: int = 0
+    missing_cassette_count: int = 0
+    evidence_only_count: int = 0
+    scenario_candidate_count: int = 0
+    sample_records: list[dict] = field(default_factory=list)
+    missing_fields: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class WorkflowTemplate:
+    id: str
+    workflow_type: str
+    name: str
+    description: str
+    decision_description: str = ""
+    bad_outcome: str = ""
+    expected_safe_outcome: str = ""
+    risk_level: str = "medium"
+    evidence_sources: list[dict] = field(default_factory=list)
+    capture_methods: list[str] = field(default_factory=lambda: ["sdk", "api", "import"])
+    record_selection_rules: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class AssuranceSetupPlan:
+    id: str
+    org_id: str = "demo-org"
+    environment_id: str = "env:demo"
+    status: str = "draft"  # draft | configuring | ready | error
+    current_step: int = 0
+    objective: str = ""
+    workflow_type: str = ""
+    workflow_name: str = ""
+    workflow_id: str = ""
+    ai_system_id: str = ""
+    evidence_contract: str = "{}"  # JSON: {required:[], optional:[], excluded:[]}
+    capture_policy: str = "{}"
+    import_policy: str = "{}"
+    readiness_policy_id: str = ""
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    def touch(self) -> None:
+        self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+@dataclass
+class EvidenceContract:
+    id: str
+    plan_id: str
+    org_id: str = "demo-org"
+    required_fields: list[str] = field(default_factory=list)
+    optional_fields: list[str] = field(default_factory=list)
+    excluded_fields: list[str] = field(default_factory=list)
+    sensitivity_rules: str = "{}"
+    replay_required_fields: list[str] = field(default_factory=list)
+    proof_required_fields: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class ImportPolicy:
+    id: str
+    plan_id: str
+    org_id: str = "demo-org"
+    source_type: str = ""
+    field_mapping: str = "{}"
+    dedupe_key: str = "source_record_ref"
+    batch_size: int = 1000
+    preview_limit: int = 20
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class RecordSelectionResult:
+    id: str
+    plan_id: str
+    source_row_id: str = ""
+    decision: str = "ignore"  # ignore | capture | promote
+    matched_rules: list[str] = field(default_factory=list)
+    create_vr: bool = False
+    trigger: str = ""
+    reason: str = ""
+    replayability: str = ""
+    scenario_candidate: bool = False
+    created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
+@dataclass
+class SetupReadinessAssessment:
+    plan_id: str
+    can_create_records: bool = False
+    can_replay: bool = False
+    can_issue_proof: bool = False
+    can_create_scenarios: bool = False
+    can_create_release_gate: bool = False
+    missing_prerequisites: list[str] = field(default_factory=list)
+    next_actions: list[str] = field(default_factory=list)
+    estimated_monthly_records: int = 0
+    estimated_replayable: int = 0
+    estimated_needs_label: int = 0
+    estimated_storage_gb: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+
 # Attach generic from_dict to all dataclasses for storage reconstruction.
 _DATACLASS_MODELS = [
     Organization,
@@ -1292,6 +1438,14 @@ _DATACLASS_MODELS = [
     DecisionFamilyCandidate,
     DecisionWorkflow,
     WorkflowEvidenceSource,
+    RecordSelectionRule,
+    ImportPreview,
+    WorkflowTemplate,
+    AssuranceSetupPlan,
+    EvidenceContract,
+    ImportPolicy,
+    RecordSelectionResult,
+    SetupReadinessAssessment,
 ]
 for _model_cls in _DATACLASS_MODELS:
     if not hasattr(_model_cls, "from_dict"):

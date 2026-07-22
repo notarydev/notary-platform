@@ -42,6 +42,8 @@ from notary_platform.models import (
     ScenarioRun,
     SystemConnection,
     VerificationRecord,
+    RecordSelectionRule,
+    AssuranceSetupPlan,
     WorkflowEvidenceSource,
 )
 
@@ -68,6 +70,8 @@ _PERSISTED_COLLECTIONS: dict[str, tuple[str, type[Any]]] = {
     "field_handling_rules": ("_field_handling_rules", FieldHandlingRule),
     "capture_validation_runs": ("_capture_validation_runs", CaptureValidationRun),
     "decision_family_candidates": ("_decision_family_candidates", DecisionFamilyCandidate),
+    "record_selection_rules": ("_record_selection_rules", RecordSelectionRule),
+    "assurance_plans": ("_assurance_plans", AssuranceSetupPlan),
 }
 
 
@@ -334,6 +338,21 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]: ...
 
+    @abc.abstractmethod
+    def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]: ...
+
+    @abc.abstractmethod
+    def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]: ...
+
+    @abc.abstractmethod
+    def get_assurance_plan(self, plan_id: str) -> AssuranceSetupPlan | None: ...
+
+    @abc.abstractmethod
+    def save_assurance_plan(self, plan: AssuranceSetupPlan) -> AssuranceSetupPlan: ...
+
+    @abc.abstractmethod
+    def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -374,6 +393,8 @@ class MemoryStorage(StorageBackend):
         self._decision_family_candidates: dict[str, DecisionFamilyCandidate] = {}
         self._decision_workflows: dict[str, DecisionWorkflow] = {}
         self._workflow_evidence_sources: dict[str, list[WorkflowEvidenceSource]] = {}
+        self._record_selection_rules: dict[str, list[RecordSelectionRule]] = {}
+        self._assurance_plans: dict[str, AssuranceSetupPlan] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -725,6 +746,23 @@ class MemoryStorage(StorageBackend):
     def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]:
         self._workflow_evidence_sources[workflow_id] = sources
         return sources
+
+    def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]:
+        return self._record_selection_rules.get(workflow_id, [])
+
+    def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]:
+        self._record_selection_rules[workflow_id] = rules
+        return rules
+
+    def get_assurance_plan(self, plan_id: str) -> AssuranceSetupPlan | None:
+        return self._assurance_plans.get(plan_id)
+
+    def save_assurance_plan(self, plan: AssuranceSetupPlan) -> AssuranceSetupPlan:
+        self._assurance_plans[plan.id] = plan
+        return plan
+
+    def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]:
+        return [p for p in self._assurance_plans.values() if p.org_id == org_id]
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -1328,6 +1366,11 @@ class PostgresS3Storage(StorageBackend):
     def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: return wf
     def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]: return []
     def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]: return sources
+    def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]: return []
+    def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]: return rules
+    def get_assurance_plan(self, plan_id: str) -> AssuranceSetupPlan | None: return None
+    def save_assurance_plan(self, plan: AssuranceSetupPlan) -> AssuranceSetupPlan: return plan
+    def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]: return []
 
 
 def get_storage() -> StorageBackend:

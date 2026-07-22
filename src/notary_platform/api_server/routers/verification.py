@@ -358,6 +358,54 @@ def get_label_heuristics() -> dict:
     }
 
 
+@router.post("/verification-records/import-preview")
+def import_preview(body: dict[str, Any], _org: str = Depends(require_auth)) -> dict[str, Any]:
+    """Preview what would be imported from JSON/JSONL records.
+    Returns counts without creating any records.
+    """
+    records_raw = body.get("records", [])
+    matched = 0
+    replayable = 0
+    needs_label = 0
+    missing_cassette = 0
+    evidence_only = 0
+    samples = []
+    for item in records_raw[:20]:  # Preview up to 20
+        elements = item.get("elements", [])
+        has_decision = any(e.get("kind") == "decision" for e in elements)
+        has_cassette = any(e.get("kind") in ("tool", "llm", "http") for e in elements)
+        has_expected = bool(item.get("expected_outcome"))
+        if has_decision:
+            matched += 1
+            if has_cassette and has_expected:
+                replayable += 1
+            elif has_cassette and not has_expected:
+                needs_label += 1
+            elif not has_cassette and has_expected:
+                missing_cassette += 1
+            else:
+                evidence_only += 1
+            if len(samples) < 5:
+                samples.append({
+                    "source_record_ref": item.get("source_record_ref", ""),
+                    "has_decision": has_decision,
+                    "has_cassette": has_cassette,
+                    "has_expected": has_expected,
+                })
+    total = len(records_raw)
+    candidate_estimate = max(1, matched // 20) if matched > 20 else 0
+    return {
+        "total_records": total,
+        "matched_count": matched,
+        "replayable_count": replayable,
+        "needs_label_count": needs_label,
+        "missing_cassette_count": missing_cassette,
+        "evidence_only_count": evidence_only,
+        "scenario_candidate_count": candidate_estimate,
+        "sample_records": samples,
+    }
+
+
 @router.post("/verification-records/import")
 def import_verification_records(
     body: dict[str, Any],

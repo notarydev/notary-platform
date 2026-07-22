@@ -16,14 +16,27 @@ from notary_platform.api_server.auth import require_auth
 from notary_platform.api_server.routers.ingestion import storage
 from notary_platform.models import (
     AISystem,
+    AssuranceSetupPlan,
     CaptureConnector,
     CaptureValidationRun,
     CoverageAssessment,
     DecisionFamilyCandidate,
     DecisionWorkflow,
     FieldHandlingRule,
+    RecordSelectionRule,
     ReplayabilityStatus,
     WorkflowEvidenceSource,
+)
+from notary_platform.setup_engine import (
+    AssuranceSetupService,
+    CapturePolicyService,
+    EvidenceContractService,
+    ImportPreviewService,
+    RecordSelectionService,
+    ReleaseGatePlanner,
+    ScenarioCandidateService,
+    SetupReadinessService,
+    get_workflow_templates,
 )
 
 router = APIRouter(tags=["setup"])
@@ -490,6 +503,65 @@ def save_evidence_sources(wf_id: str, body: list[dict[str, Any]], _org: str = De
     return [s.to_dict() for s in storage.save_workflow_evidence_sources(wf_id, sources)]
 
 
+# ── Record Selection Rules ──
+
+_DEFAULT_RECORD_RULES: list[dict] = [
+    {"trigger_type": "policy_answer", "label": "Bot gives policy/refund/fare answer", "description": "Bot response contains refund, fare, billing, legal, or policy language.", "enabled": True},
+    {"trigger_type": "customer_dispute", "label": "Customer disputes bot answer", "description": "Customer replied negatively to bot, opened dispute, or asked for manager.", "enabled": True},
+    {"trigger_type": "human_override", "label": "Human agent overrides bot", "description": "Human changed or corrected the outcome the bot produced.", "enabled": True},
+    {"trigger_type": "handoff_requested", "label": "Human handoff requested but bot continued", "description": "Customer asked to speak to a human but the bot continued responding.", "enabled": True},
+    {"trigger_type": "policy_mismatch", "label": "Bot answer conflicts with policy source", "description": "Policy lookup response contradicts the bot's answer to the customer.", "enabled": True},
+    {"trigger_type": "missing_policy_lookup", "label": "Policy lookup missing or failed", "description": "Bot gave a policy answer without retrieving the current policy.", "enabled": True},
+    {"trigger_type": "low_confidence", "label": "Low confidence or missing model response", "description": "Bot confidence below threshold or model did not respond.", "enabled": True},
+    {"trigger_type": "sample", "label": "Random sample of normal conversations", "description": "Sample 0.1% of conversations that matched no other rule.", "enabled": False},
+]
+
+
+@router.get("/setup/decision-workflows/{wf_id}/record-selection-rules")
+def list_record_selection_rules(wf_id: str, _org: str = Depends(require_auth)) -> list[dict]:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    existing = storage.list_record_selection_rules(wf_id)
+    if existing:
+        return [r.to_dict() for r in existing]
+    rules = []
+    for d in _DEFAULT_RECORD_RULES:
+        rule = RecordSelectionRule(
+            id=f"rsr-{uuid.uuid4().hex[:12]}",
+            workflow_id=wf_id,
+            org_id=wf.org_id,
+            trigger_type=d["trigger_type"],
+            label=d.get("label", ""),
+            description=d.get("description", ""),
+            enabled=d.get("enabled", True),
+            condition="{}",
+        )
+        rules.append(rule)
+    return [r.to_dict() for r in storage.save_record_selection_rules(wf_id, rules)]
+
+
+@router.put("/setup/decision-workflows/{wf_id}/record-selection-rules")
+def save_record_selection_rules(wf_id: str, body: list[dict[str, Any]], _org: str = Depends(require_auth)) -> list[dict]:
+    wf = storage.get_decision_workflow(wf_id)
+    if not wf:
+        raise HTTPException(404, "Decision workflow not found")
+    rules = []
+    for item in body:
+        rule = RecordSelectionRule(
+            id=item.get("id", f"rsr-{uuid.uuid4().hex[:12]}"),
+            workflow_id=wf_id,
+            org_id=wf.org_id,
+            trigger_type=item.get("trigger_type", ""),
+            label=item.get("label", ""),
+            description=item.get("description", ""),
+            enabled=item.get("enabled", True),
+            condition=json.dumps(item.get("condition", {})),
+        )
+        rules.append(rule)
+    return [r.to_dict() for r in storage.save_record_selection_rules(wf_id, rules)]
+
+
 # ── Setup Status ──
 
 
@@ -532,3 +604,227 @@ def get_setup_status(_org: str = Depends(require_auth)) -> dict:
         "has_active_workflow": active_wf is not None,
         "active_workflow_id": wf_id,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# Decision Assurance Setup Engine
+# ═══════════════════════════════════════════════════════════════
+
+_engine_svc = AssuranceSetupService(storage)
+_evidence_svc = EvidenceContractService()
+_capture_svc = CapturePolicyService()
+_record_svc = RecordSelectionService()
+_import_preview_svc = ImportPreviewService()
+_scenario_svc = ScenarioCandidateService()
+_release_gate_planner = ReleaseGatePlanner()
+_readiness_svc = SetupReadinessService()
+
+
+@router.get("/setup/workflow-templates")
+def list_workflow_templates() -> list[dict]:
+    return get_workflow_templates()
+
+
+@router.get("/setup/plans")
+def list_plans(_org: str = Depends(require_auth)) -> list[dict]:
+    org = _org_id()
+    return [p.to_dict() for p in _engine_svc.get_all_plans(org)]
+
+
+@router.post("/setup/plans")
+def create_plan(body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    org = _org_id()
+    env = body.get("environment_id", "env:demo")
+    plan = _engine_svc.create_plan(
+        org_id=org, environment_id=env,
+        objective=body.get("objective", ""),
+        workflow_type=body.get("workflow_type", ""),
+        workflow_name=body.get("workflow_name", ""),
+    )
+    return plan.to_dict()
+
+
+@router.get("/setup/plans/{plan_id}")
+def get_plan(plan_id: str, _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return plan.to_dict()
+
+
+@router.patch("/setup/plans/{plan_id}")
+def patch_plan(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.update_plan(plan_id, **body)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return plan.to_dict()
+
+
+@router.get("/setup/plans/{plan_id}/evidence-sources")
+def plan_evidence_sources(plan_id: str, _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return _evidence_svc.recommend(plan)
+
+
+@router.put("/setup/plans/{plan_id}/evidence-sources")
+def save_plan_evidence_sources(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.update_plan(plan_id, evidence_contract=json.dumps(body))
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return body
+
+
+@router.get("/setup/plans/{plan_id}/capture-methods/recommend")
+def plan_capture_recommendations(plan_id: str, _org: str = Depends(require_auth)) -> list[dict]:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    ai_systems = []
+    if plan.ai_system_id:
+        sys = storage.get_ai_system(plan.ai_system_id)
+        if sys:
+            ai_systems.append(sys.to_dict())
+    return _capture_svc.recommend(plan, ai_systems)
+
+
+@router.put("/setup/plans/{plan_id}/capture-method")
+def save_plan_capture_method(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    method = body.get("capture_method", "")
+    policy = _capture_svc.build_policy(method, plan)
+    _engine_svc.update_plan(plan_id, capture_policy=json.dumps(policy))
+    return policy
+
+
+@router.get("/setup/plans/{plan_id}/record-selection-rules")
+def plan_record_selection_rules(plan_id: str, _org: str = Depends(require_auth)) -> list[dict]:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if not plan.workflow_id:
+        return []
+    existing = storage.list_record_selection_rules(plan.workflow_id)
+    if existing:
+        return [r.to_dict() for r in existing]
+    from notary_platform.setup_engine import WORKFLOW_TEMPLATES
+    tmpl = WORKFLOW_TEMPLATES.get(plan.workflow_type)
+    if not tmpl:
+        return []
+    rules = []
+    for d in tmpl.record_selection_rules:
+        rule = RecordSelectionRule(
+            id=f"rsr-{uuid.uuid4().hex[:12]}",
+            workflow_id=plan.workflow_id,
+            org_id=plan.org_id,
+            trigger_type=d["trigger_type"],
+            label=d.get("label", ""),
+            description=d.get("description", ""),
+            enabled=d.get("enabled", True),
+            condition="{}",
+        )
+        rules.append(rule)
+    return [r.to_dict() for r in storage.save_record_selection_rules(plan.workflow_id, rules)]
+
+
+@router.put("/setup/plans/{plan_id}/record-selection-rules")
+def save_plan_record_selection_rules(plan_id: str, body: list[dict[str, Any]],
+                                      _org: str = Depends(require_auth)) -> list[dict]:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if not plan.workflow_id:
+        raise HTTPException(400, "No workflow connected to plan")
+    rules = []
+    for item in body:
+        rule = RecordSelectionRule(
+            id=item.get("id", f"rsr-{uuid.uuid4().hex[:12]}"),
+            workflow_id=plan.workflow_id,
+            org_id=plan.org_id,
+            trigger_type=item.get("trigger_type", ""),
+            label=item.get("label", ""),
+            description=item.get("description", ""),
+            enabled=item.get("enabled", True),
+            condition=json.dumps(item.get("condition", {})),
+        )
+        rules.append(rule)
+    return [r.to_dict() for r in storage.save_record_selection_rules(plan.workflow_id, rules)]
+
+
+@router.post("/setup/plans/{plan_id}/imports/preview")
+def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    records = body.get("records", [])
+    rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
+    preview = _import_preview_svc.preview(records, rules)
+    result = preview.to_dict()
+    result["estimated_volume"] = _import_preview_svc.estimate_volume(plan.workflow_type or "")
+    return result
+
+
+@router.post("/setup/plans/{plan_id}/imports/commit")
+def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    from notary_platform.api_server.routers.ingestion import IngestionService, _registry
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    records_raw = body.get("records", [])
+    rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
+    results = _record_svc.apply_rules(records_raw, rules)
+    created = []
+    for rslt in results:
+        if not rslt.create_vr:
+            continue
+        item = records_raw[int(rslt.source_row_id.split("-")[-1])] if rslt.source_row_id.startswith("row-") else {}
+        snapshot = {
+            "schema_version": item.get("schema_version", 1),
+            "source_system_id": "import",
+            "source_record_ref": item.get("source_record_ref", rslt.source_row_id),
+            "business_function": plan.workflow_id,
+            "expected_outcome": item.get("expected_outcome", ""),
+            "elements": item.get("elements", []),
+        }
+        ingestion = IngestionService(_registry)
+        try:
+            vr = ingestion.create_from_sdk_snapshot(snapshot, org_id=plan.org_id)
+            created.append({
+                "id": vr.id,
+                "replayability": vr.replayability.value,
+                "trigger": rslt.trigger,
+            })
+        except Exception:
+            pass
+    return {"imported": len(created), "records": created}
+
+
+@router.get("/setup/plans/{plan_id}/readiness")
+def plan_readiness(plan_id: str, _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    assessment = _readiness_svc.assess(plan, storage)
+    return assessment.to_dict()
+
+
+@router.post("/setup/plans/{plan_id}/scenario-candidates/recommend")
+def plan_scenario_candidates(plan_id: str, _org: str = Depends(require_auth)) -> list[dict]:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    vrs = storage.list_vrs(plan.org_id)
+    records = [vr.to_dict() for vr in vrs if vr.source_type != "demo_seed"]
+    return _scenario_svc.recommend_from_records(records)
+
+
+@router.post("/setup/plans/{plan_id}/release-gate/recommend")
+def plan_release_gate(plan_id: str, _org: str = Depends(require_auth)) -> dict:
+    plan = _engine_svc.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    scenarios = storage.list_scenarios(plan.org_id)
+    return _release_gate_planner.recommend([s.to_dict() for s in scenarios])

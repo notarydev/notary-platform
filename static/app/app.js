@@ -26,8 +26,11 @@ const S = {
   error: null,
   setupStep: 0,
   setupWorkflowConfirmed: false,
+  setupWorkflowTemplates: null,
   setupSystems: null,
   setupCaptureMethod: null,
+  setupEvidenceSources: null,
+  setupPlanId: null,
   onbSystems: [],
   onbReceived: null,
   onbSending: false,
@@ -509,14 +512,41 @@ function openReleaseGateDetail(id) {
 
 function setupCanNext(step) {
   const id = SETUP_STEPS[step] && SETUP_STEPS[step].id;
+  if (id === "objective") return !!S.setupWorkflow;
   if (id === "workflow") return !!S.setupWorkflow;
   if (id === "ai-system") return !!S.setupAiSystem;
   if (id === "evidence") { const s = S.setupEvidenceSources; return s && s.some(x => x.selected); }
   if (id === "capture") return !!S.setupCaptureMethod;
+  if (id === "selection-rules") return true;
   if (id === "send" || id === "replay") { const v = S.onbReceived; return !!v; }
-  if (id === "scenario") return true;
-  if (id === "release-gate") return true;
+  if (id === "readiness") return true;
   return true;
+}
+
+async function continueFromStep(step) {
+  const id = SETUP_STEPS[step] && SETUP_STEPS[step].id;
+  if (id === "objective" && S.setupWorkflow && S.setupWorkflow.workflow_type) {
+    const name = q("#objective-name") ? q("#objective-name").value.trim() : S.setupWorkflow.name;
+    if (name && S.setupPlanId) {
+      try {
+        await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
+          workflow_type: S.setupWorkflow.workflow_type,
+          name: name,
+        });
+        S.setupWorkflow.name = name;
+      } catch (e) { /* non-blocking */ }
+    }
+  }
+  if (id === "evidence") {
+    await saveEvidenceSources();
+  }
+  if (id === "selection-rules") {
+    await saveRecordSelectionRules();
+  }
+  if (id === "capture" && S.setupCaptureMethod) {
+    await saveCaptureMethod();
+  }
+  renderSetupStep(step + 1);
 }
 
 function toggleSetupSystem(id) {
@@ -534,15 +564,27 @@ function selectCaptureMethod(id) {
   renderSetupStep(S.setupStep || 0);
 }
 
+async function saveCaptureMethod() {
+  const planId = S.setupPlanId;
+  if (!planId || !S.setupCaptureMethod) return;
+  try {
+    await apiPut("/v1/setup/plans/" + planId + "/capture-method", { capture_method: S.setupCaptureMethod });
+    notify("Capture method saved", "success");
+  } catch (e) {
+    notify("Failed to save capture method: " + e.message, "error");
+  }
+}
+
 const SETUP_STEPS = [
-  { id: "workflow", label: "Define Decision Workflow", desc: "What AI decision are you assuring?" },
+  { id: "objective", label: "Define Objective", desc: "What AI decision are you assuring?" },
+  { id: "workflow", label: "Configure Decision Workflow", desc: "Configure the decision workflow details" },
   { id: "ai-system", label: "Register AI System", desc: "The system making this decision" },
   { id: "evidence", label: "Decision Evidence Sources", desc: "What evidence explains the decision" },
   { id: "capture", label: "Choose Capture Method", desc: "How Notary receives records" },
+  { id: "selection-rules", label: "Record Selection Rules", desc: "Which conversations become records" },
   { id: "send", label: "Send or Import Records", desc: "Create first Verification Records" },
   { id: "replay", label: "Review Replayability", desc: "Can it be deterministically replayed?" },
-  { id: "scenario", label: "Promote Scenario", desc: "Turn record into release-gate scenario" },
-  { id: "release-gate", label: "Create Release Gate", desc: "Gate releases with readiness policy" },
+  { id: "readiness", label: "Readiness Assessment", desc: "Is everything ready for production?" },
 ];
 
 const SETUP_WORKFLOW_TYPES = [
@@ -553,49 +595,6 @@ const SETUP_WORKFLOW_TYPES = [
   { id: "healthcare_prior_auth", label: "Healthcare Prior Auth", desc: "Approve or escalate this prior-auth?" },
   { id: "hiring_screening", label: "Hiring Screening", desc: "Advance this candidate to review?" },
   { id: "custom", label: "Custom Workflow", desc: "Define your own decision workflow" },
-];
-
-const SETUP_CAPTURE_METHODS = [
-  {
-    id: "sdk",
-    title: "Python SDK",
-    best: "Instrumented Python AI agents.",
-    captures: "LLM calls, tool calls, decisions, timestamps, seeds, and sealed cassettes in-process.",
-    not: "Non-Python backends or third-party systems you cannot instrument.",
-    action: "openSDKSetup()",
-  },
-  {
-    id: "api",
-    title: "API Submission",
-    best: "Backend systems sending Verification Records directly.",
-    captures: "Structured decision evidence, labels, and references.",
-    not: "In-process model internals unless you serialize them.",
-    action: "openAPISubmissionSetup()",
-  },
-  {
-    id: "webhook",
-    title: "Webhook",
-    best: "Source-system event forwarding.",
-    captures: "Events that represent a decision, complaint, escalation, or override.",
-    not: "Arbitrary operational telemetry.",
-    action: "openWebhookSetup()",
-  },
-  {
-    id: "manual",
-    title: "Manual Submission",
-    best: "Complaints, overrides, disputes, or one-off reviews.",
-    captures: "Human-provided expected outcome and evidence summary.",
-    not: "High-volume automated decisions.",
-    action: "openManualSubmissionForm()",
-  },
-  {
-    id: "import",
-    title: "Batch / Log Import",
-    best: "Historical exports (Zendesk, Salesforce, CSV, JSONL).",
-    captures: "Existing conversations, transcripts, bot responses, case metadata, and human corrections.",
-    not: "Missing cassette/tool responses that were never logged.",
-    action: "openImportSetup()",
-  },
 ];
 
 const SETUP_CAPTURE_METHODS = [
@@ -649,12 +648,13 @@ function renderSetupStepIndicator(step) {
 function renderSetupNav(step) {
   const canNext = setupCanNext(step);
   const isLast = step === SETUP_STEPS.length - 1;
+  const id = SETUP_STEPS[step] && SETUP_STEPS[step].id;
   return `
     <div class="setup-nav">
       ${step > 0 ? `<button class="btn btn-outline" onclick="renderSetupStep(${step - 1})" data-testid="setup-back-btn">Back</button>` : "<span></span>"}
       ${isLast
         ? `<button class="btn btn-green" onclick="nav('verification-records')" data-testid="setup-finish-btn">Finish — View Records</button>`
-        : `<button class="btn" onclick="renderSetupStep(${step + 1})" ${canNext ? "" : "disabled"} data-testid="setup-next-btn">Continue</button>`}
+        : `<button class="btn" onclick="continueFromStep(${step})" ${canNext ? "" : "disabled"} data-testid="setup-next-btn">Continue</button>`}
     </div>`;
 }
 
@@ -684,48 +684,71 @@ function renderSetupTrackerInner(step) {
     </div>`;
 }
 
-async function renderSetupWorkflowStep() {
+async function renderSetupObjectiveStep() {
   const saved = S.setupWorkflow || {};
-  const types = SETUP_WORKFLOW_TYPES;
-  const existing = await apiGet("/setup/decision-workflows?environment_id=" + S.env).catch(() => []);
-  S.setupWorkflows = existing;
+  const templates = await apiGet("/v1/setup/workflow-templates").catch(() => []);
+  S.setupWorkflowTemplates = templates;
   return `
     <div class="setup-step-content">
       <h2>What AI decision do you want to assure?</h2>
-      <p class="setup-lead">Pick the decision type Notary will capture, replay, and gate. This workflow defines what evidence matters and what "safe" looks like.</p>
-      <div class="np-form">
-        <div class="np-field"><label>Workflow name *</label><input id="wf-name" value="${esc(saved.name || "")}" placeholder="e.g. Bereavement refund policy answer"></div>
-        <div class="np-field"><label>Workflow type</label>
-          <select id="wf-type">
-            ${types.map(t => `<option value="${t.id}" ${saved.workflow_type === t.id ? "selected" : ""}>${esc(t.label)} — ${esc(t.desc)}</option>`).join("")}
-          </select>
+      <p class="setup-lead">Pick a workflow template to define the decision type. Notary uses this to recommend evidence sources, capture methods, and record selection rules.</p>
+      <div class="capture-grid">
+        ${templates.map(t => `
+          <div class="capture-card ${saved.workflow_type === t.id ? 'selected' : ''}" onclick="selectObjectiveTemplate('${t.id}')" style="cursor:pointer" data-testid="template-${t.id}">
+            <h3>${esc(t.label || t.name)}</h3>
+            <div style="font-size:13px;color:var(--text);margin-top:8px">${esc(t.description)}</div>
+            ${saved.workflow_type === t.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
+          </div>
+        `).join("")}
+        ${templates.length === 0 ? SETUP_WORKFLOW_TYPES.map(t => `
+          <div class="capture-card ${saved.workflow_type === t.id ? 'selected' : ''}" onclick="selectObjectiveTemplate('${t.id}')" style="cursor:pointer" data-testid="template-${t.id}">
+            <h3>${esc(t.label)}</h3>
+            <div style="font-size:13px;color:var(--text);margin-top:8px">${esc(t.desc)}</div>
+            ${saved.workflow_type === t.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
+          </div>
+        `).join("") : ""}
+      </div>
+      <div style="margin-top:20px">
+        <div class="np-field"><label>Workflow name</label>
+          <input id="objective-name" value="${esc(saved.name || "")}" placeholder="e.g. Bereavement Refund Policy Answer" style="width:100%">
         </div>
+      </div>
+      ${saved.workflow_type ? `<button class="btn" onclick="saveObjectiveStep()" data-testid="save-objective-btn">Save & Continue</button>` : ""}
+    </div>`;
+}
+
+async function renderSetupWorkflowStep() {
+  const saved = S.setupWorkflow || {};
+  const planId = S.setupPlanId;
+  let plan = {};
+  if (planId) {
+    plan = await apiGet("/v1/setup/plans/" + planId).catch(() => ({}));
+  }
+  return `
+    <div class="setup-step-content">
+      <h2>Configure decision workflow</h2>
+      <p class="setup-lead">Refine the workflow for <strong>${esc(saved.name || plan.name || "")}</strong>. These details help Notary determine what evidence to capture.</p>
+      <div class="np-form">
         <div class="np-field"><label>What decision does the AI make?</label>
-          <textarea id="wf-description" rows="2" placeholder="e.g. The bot decides whether to offer a refund, escalate to human, or answer based on policy.">${esc(saved.description || "")}</textarea>
+          <textarea id="wf-description" rows="2" placeholder="e.g. The bot decides whether to offer a refund, escalate, or answer based on policy.">${esc(saved.description || plan.description || "")}</textarea>
         </div>
         <div class="np-field"><label>What can go wrong?</label>
-          <textarea id="wf-failure" rows="2" placeholder="e.g. Bot gives a customer a refund policy that does not exist.">${esc(saved.common_failure || "")}</textarea>
+          <textarea id="wf-failure" rows="2" placeholder="e.g. Bot gives a customer a refund policy that does not exist.">${esc(saved.common_failure || plan.common_failure || "")}</textarea>
         </div>
         <div class="np-field"><label>What should happen instead? (expected safe outcome)</label>
-          <input id="wf-outcome" value="${esc(saved.expected_safe_outcome || "")}" placeholder="e.g. ESCALATE_TO_HUMAN"></div>
+          <input id="wf-outcome" value="${esc(saved.expected_safe_outcome || plan.expected_safe_outcome || "")}" placeholder="e.g. ESCALATE_TO_HUMAN"></div>
         <div class="integ-form-row">
           <div class="np-field" style="flex:1"><label>Risk level</label>
             <select id="wf-risk">
-              <option value="low" ${saved.risk_level === "low" ? "selected" : ""}>Low</option>
-              <option value="medium" ${(!saved.risk_level || saved.risk_level === "medium") ? "selected" : ""}>Medium</option>
-              <option value="high" ${saved.risk_level === "high" ? "selected" : ""}>High</option>
-              <option value="critical" ${saved.risk_level === "critical" ? "selected" : ""}>Critical</option>
+              <option value="low" ${(saved.risk_level || plan.risk_level) === "low" ? "selected" : ""}>Low</option>
+              <option value="medium" ${(!(saved.risk_level || plan.risk_level) || (saved.risk_level || plan.risk_level) === "medium") ? "selected" : ""}>Medium</option>
+              <option value="high" ${(saved.risk_level || plan.risk_level) === "high" ? "selected" : ""}>High</option>
+              <option value="critical" ${(saved.risk_level || plan.risk_level) === "critical" ? "selected" : ""}>Critical</option>
             </select>
           </div>
         </div>
-        <button class="btn" onclick="saveWorkflowStep()" data-testid="save-workflow-btn">${saved.id ? "Update Workflow" : "Save Workflow"}</button>
+        <button class="btn" onclick="saveWorkflowStep()" data-testid="save-workflow-btn">Save Workflow</button>
       </div>
-      ${existing.length ? `<div class="section-title" style="margin-top:20px">Saved Workflows</div>
-        ${existing.map(w => `<div class="int-card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center">
-          <div><strong>${esc(w.name)}</strong> <span class="badge badge-${w.status === "ready" ? "built" : "planned"}">${esc(w.status)}</span>
-          <div style="font-size:11px;color:var(--muted)">${esc(w.workflow_type)} · ${esc(w.expected_safe_outcome)} · Risk: ${esc(w.risk_level)}</div></div>
-          <button class="btn btn-sm btn-outline" onclick="loadWorkflow('${w.id}')">Edit</button>
-        </div></div>`).join("")}` : ""}
     </div>`;
 }
 
@@ -734,28 +757,62 @@ function loadWorkflow(id) {
   if (wf) { S.setupWorkflow = wf; renderSetupStep(0); }
 }
 
-async function saveWorkflowStep() {
-  const name = q("#wf-name").value.trim();
+async function selectObjectiveTemplate(templateId) {
+  const templates = S.setupWorkflowTemplates || SETUP_WORKFLOW_TYPES;
+  const t = templates.find(x => x.id === templateId);
+  if (!S.setupWorkflow) S.setupWorkflow = {};
+  S.setupWorkflow.workflow_type = templateId;
+  if (t) S.setupWorkflow.name = t.label || t.name;
+  if (S.setupPlanId) {
+    try {
+      const updated = await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
+        workflow_type: templateId,
+        name: S.setupWorkflow.name,
+      });
+      S.setupWorkflow = { ...S.setupWorkflow, ...updated };
+    } catch (e) { /* will retry on save */ }
+  }
+  renderSetupStep(S.setupStep);
+}
+
+async function saveObjectiveStep() {
+  const name = q("#objective-name") ? q("#objective-name").value.trim() : (S.setupWorkflow && S.setupWorkflow.name);
   if (!name) { notify("Workflow name is required", "error"); return; }
+  if (!S.setupWorkflow) S.setupWorkflow = {};
+  S.setupWorkflow.name = name;
+  try {
+    if (S.setupPlanId) {
+      const updated = await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
+        workflow_type: S.setupWorkflow.workflow_type,
+        name: S.setupWorkflow.name,
+      });
+      S.setupWorkflow = { ...S.setupWorkflow, ...updated };
+    }
+    notify("Objective saved", "success");
+    renderSetupStep(S.setupStep);
+  } catch (e) {
+    notify("Failed: " + e.message, "error");
+  }
+}
+
+async function saveWorkflowStep() {
   const body = {
-    name,
-    workflow_type: q("#wf-type").value,
     description: q("#wf-description").value,
     common_failure: q("#wf-failure").value,
     expected_safe_outcome: q("#wf-outcome").value,
     risk_level: q("#wf-risk").value,
-    environment_id: S.env,
   };
-  const existing = S.setupWorkflow;
+  if (S.setupWorkflow && S.setupWorkflow.name) body.name = S.setupWorkflow.name;
+  if (S.setupWorkflow && S.setupWorkflow.workflow_type) body.workflow_type = S.setupWorkflow.workflow_type;
   try {
-    let result;
-    if (existing && existing.id) {
-      result = await apiPatch("/setup/decision-workflows/" + existing.id, body);
+    if (S.setupPlanId) {
+      const result = await apiPatch("/v1/setup/plans/" + S.setupPlanId, body);
+      S.setupWorkflow = { ...(S.setupWorkflow || {}), ...result };
+      notify("Workflow saved", "success");
     } else {
-      result = await apiPost("/setup/decision-workflows", body);
+      notify("No active plan", "error");
+      return;
     }
-    S.setupWorkflow = result;
-    notify("Decision workflow saved", "success");
     renderSetupStep(S.setupStep);
   } catch (e) {
     notify("Failed to save workflow: " + e.message, "error");
@@ -763,40 +820,38 @@ async function saveWorkflowStep() {
 }
 
 async function renderEvidenceSourcesStep() {
-  const wf = S.setupWorkflow;
-  if (!wf || !wf.id) {
-    return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Save a decision workflow first to see its suggested evidence sources.</p></div>`;
+  const planId = S.setupPlanId;
+  if (!planId) {
+    return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Create a plan first to see suggested evidence sources.</p></div>`;
   }
-  const sources = await apiGet("/setup/decision-workflows/" + wf.id + "/evidence-sources").catch(() => []);
+  const sources = await apiGet("/v1/setup/plans/" + planId + "/evidence-sources").catch(() => []);
   S.setupEvidenceSources = sources;
   const selected = sources.filter(s => s.selected).length;
   const total = sources.length;
   return `
     <div class="setup-step-content">
       <h2>What evidence does this decision depend on?</h2>
-      <p class="setup-lead">Pick the sources that explain the AI decision. Notary seals decision evidence, not operational telemetry. For workflow: <strong>${esc(wf.name)}</strong></p>
+      <p class="setup-lead">Pick the sources that explain the AI decision. Notary seals decision evidence, not operational telemetry. ${S.setupWorkflow && S.setupWorkflow.name ? 'For workflow: <strong>' + esc(S.setupWorkflow.name) + '</strong>' : ''}</p>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${selected}/${total} sources selected</div>
-          <ul>
-            <li>Applicant facts.</li>
-            <li>Credit bureau / bureau evidence response.</li>
-            <li>Policy/rules/config version.</li>
-            <li>LLM / decision agent prompt + output.</li>
-            <li>Final AI decision.</li>
-            <li>Human-approved expected outcome.</li>
-            <li>Replay cassette or sandbox validation method.</li>
-            <li>Proof / certificate references.</li>
-          </ul>
+          ${sources.map(s => `
+            <div class="source-row" style="display:flex;align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:${s.selected ? 'var(--bg-card)' : 'var(--bg-secondary)'}">
+              <label class="np-checkbox" style="margin-right:12px;margin-top:2px">
+                <input type="checkbox" ${s.selected ? 'checked' : ''} ${s.required ? 'disabled' : ''} onchange="toggleEvidenceSource('${s.id}')">
+                <span class="np-checkmark"></span>
+              </label>
+              <div style="flex:1">
+                <strong>${esc(s.name)}</strong>
+                <div style="font-size:12px;color:var(--text);margin-top:4px">${esc(s.captures)}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">${esc(s.why_include)}</div>
+                ${!s.required ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Does not capture: ${esc(s.does_not_capture)}</div>` : ''}
+              </div>
+              <span class="badge ${s.selected ? 'badge-built' : 'badge-neutral'}">${s.required ? 'Required' : s.selected ? 'Selected' : 'Optional'}</span>
+            </div>
+          `).join('')}
         </div>
-        <div class="scope-block out-scope">
-          <h3>Out of scope for AI Decision Assurance</h3>
-          <ul>
-            <li>Queue wait time.</li>
-            <li>Employee workload.</li>
-            <li>Generic CRM activity.</li>
-            <li>Notification delivery.</li>
-            <li>SLA analytics.</li>
-            <li>Generic process optimization.</li>
-          </ul>
+        <div style="margin-top:16px;font-size:12px;color:var(--muted);padding:12px;border:1px dashed var(--border);border-radius:8px">
+          <strong>Out of scope for AI Decision Assurance</strong>
+          <div style="margin-top:4px">Queue wait time, Employee workload, Generic CRM activity, Notification delivery, SLA analytics, Generic process optimization.</div>
         </div>
       </div>
     </div>`;
@@ -806,14 +861,14 @@ async function toggleEvidenceSource(id) {
   S.setupEvidenceSources = (S.setupEvidenceSources || []).map(s =>
     s.id === id && !s.required ? {...s, selected: !s.selected, status: s.selected ? "suggested" : "selected"} : s
   );
-  await renderSetupStep(2);
+  await renderSetupStep(S.setupStep);
 }
 
 async function saveEvidenceSources() {
-  const wf = S.setupWorkflow;
-  if (!wf || !wf.id) return;
+  const planId = S.setupPlanId;
+  if (!planId) return;
   try {
-    const result = await apiPut("/setup/decision-workflows/" + wf.id + "/evidence-sources", S.setupEvidenceSources);
+    const result = await apiPut("/v1/setup/plans/" + planId + "/evidence-sources", S.setupEvidenceSources);
     S.setupEvidenceSources = result;
     notify("Evidence sources saved", "success");
     renderSetupStep(S.setupStep);
@@ -826,7 +881,7 @@ function toggleSetupSystem(id) {
   S.setupSystems = (S.setupSystems || []).map(s =>
     s.id === id && s.tier !== "excluded" ? {...s, selected: !s.selected} : s
   );
-  renderSetupStep(2);
+  renderSetupStep(3);
 }
 
 function captureToken() {
@@ -853,18 +908,24 @@ function renderCaptureSnippet(method) {
   </div>`;
 }
 
-function renderSetupCaptureStep() {
+async function renderSetupCaptureStep() {
+  const planId = S.setupPlanId;
+  let recommendations = [];
+  if (planId) {
+    recommendations = await apiGet("/v1/setup/plans/" + planId + "/capture-methods/recommend").catch(() => []);
+  }
+  const methods = recommendations.length ? recommendations : SETUP_CAPTURE_METHODS;
   return `
     <div class="setup-step-content">
       <h2>How will Notary receive decision records?</h2>
       <p class="setup-lead">Pick how decisions reach Notary. You'll get a copy-paste snippet pre-filled with your token and endpoint.</p>
       <div class="capture-grid">
-        ${SETUP_CAPTURE_METHODS.map(m => `
+        ${methods.map(m => `
           <div class="capture-card ${S.setupCaptureMethod === m.id ? 'selected' : ''}" onclick="selectCaptureMethod('${m.id}')" style="cursor:pointer" data-testid="capture-method-${m.id}">
-            <h3>${esc(m.title)}</h3>
-            <div class="capture-field"><span>Best for</span><span>${esc(m.best)}</span></div>
-            <div class="capture-field"><span>Captures</span><span>${esc(m.captures)}</span></div>
-            <div class="capture-field"><span>Does not capture</span><span>${esc(m.not)}</span></div>
+            <h3>${esc(m.title || m.name)}</h3>
+            <div class="capture-field"><span>Recommended for</span><span>${esc(m.best_for || m.best || "")}</span></div>
+            <div class="capture-field"><span>Captures</span><span>${esc(m.captures || m.description || "")}</span></div>
+            <div class="capture-field"><span>Limitations</span><span>${esc(m.limitations || m.not || "")}</span></div>
             ${S.setupCaptureMethod === m.id ? `<span class="badge badge-built" style="margin-top:8px">Selected</span>` : ""}
           </div>
         `).join("")}
@@ -873,9 +934,64 @@ function renderSetupCaptureStep() {
     </div>`;
 }
 
+let S_RSR_CACHE = null;
+
+async function renderSetupSelectionRulesStep() {
+  const planId = S.setupPlanId;
+  if (!planId) return '<div class="setup-step-content"><h2>Record Selection Rules</h2><p class="setup-lead">Create a plan first.</p></div>';
+  let rules = S_RSR_CACHE;
+  if (!rules) {
+    try {
+      rules = await apiGet("/v1/setup/plans/" + planId + "/record-selection-rules");
+      S_RSR_CACHE = rules;
+    } catch (e) {
+      return '<div class="setup-step-content"><h2>Record Selection Rules</h2><p class="setup-lead">Could not load rules: ' + esc(e.message) + '</p></div>';
+    }
+  }
+  return `
+    <div class="setup-step-content">
+      <h2>Which conversations become records?</h2>
+      <p class="setup-lead">Choose what triggers a Verification Record to be created. Rules run against every conversation and generate sealed evidence only for matching events.</p>
+      ${rules.map((r, i) => `
+        <div class="rule-row" style="display:flex;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:${r.enabled ? 'var(--bg-card)' : 'var(--bg-secondary)'}">
+          <label class="np-checkbox" style="margin-right:12px">
+            <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleRecordSelectionRule('${r.id}', this.checked)">
+            <span class="np-checkmark"></span>
+          </label>
+          <div style="flex:1">
+            <strong>${esc(r.label)}</strong>
+            <div style="font-size:12px;color:var(--muted)">${esc(r.description)}</div>
+          </div>
+          <span class="badge ${r.enabled ? 'badge-built' : 'badge-neutral'}">${r.enabled ? 'Active' : 'Disabled'}</span>
+        </div>
+      `).join('')}
+      <div style="margin-top:16px;font-size:12px;color:var(--muted)">
+        Rules are evaluated in order. The first matching rule determines the trigger_type on the record.
+        Rule evaluation runs inside the Notary Capture Agent — no changes needed in your application code.
+      </div>
+    </div>`;
+}
+
+function toggleRecordSelectionRule(ruleId, enabled) {
+  if (!S_RSR_CACHE) return;
+  const r = S_RSR_CACHE.find(x => x.id === ruleId);
+  if (r) { r.enabled = enabled; }
+}
+
+async function saveRecordSelectionRules() {
+  const planId = S.setupPlanId;
+  if (!planId || !S_RSR_CACHE) return;
+  try {
+    await apiPut("/v1/setup/plans/" + planId + "/record-selection-rules", S_RSR_CACHE);
+    notify("Record selection rules saved", "success");
+  } catch (e) {
+    notify("Failed to save: " + e.message, "error");
+  }
+}
+
 async function renderOnbRegisterStep() {
   const saved = S.setupAiSystem || {};
-  const existing = await apiGet("/setup/ai-systems?environment_id=" + S.env).catch(() => []);
+  const existing = await apiGet("/v1/setup/ai-systems").catch(() => []);
   S.setupAiSystems = existing;
   const wf = S.setupWorkflow;
   return `
@@ -931,7 +1047,7 @@ async function renderOnbRegisterStep() {
 
 function loadAiSystem(id) {
   const s = S.setupAiSystems.find(a => a.id === id);
-  if (s) { S.setupAiSystem = s; renderSetupStep(1); }
+  if (s) { S.setupAiSystem = s; renderSetupStep(2); }
 }
 
 async function saveAiSystemStep() {
@@ -949,14 +1065,13 @@ async function saveAiSystemStep() {
   try {
     let result;
     if (existing && existing.id) {
-      result = await apiPut("/setup/ai-systems/" + existing.id, body);
+      result = await apiPut("/v1/setup/ai-systems/" + existing.id, body);
     } else {
-      result = await apiPost("/setup/ai-systems", body);
+      result = await apiPost("/v1/setup/ai-systems", body);
     }
     S.setupAiSystem = result;
-    if (S.setupWorkflow) {
-      await apiPatch("/setup/decision-workflows/" + S.setupWorkflow.id, { ai_system_id: result.id });
-      S.setupWorkflow.ai_system_id = result.id;
+    if (S.setupPlanId) {
+      await apiPatch("/v1/setup/plans/" + S.setupPlanId, { ai_system_id: result.id });
     }
     notify("AI system registered", "success");
     renderSetupStep(S.setupStep);
@@ -971,7 +1086,7 @@ async function renderOnbSendStep() {
   const rec = S.onbReceived;
   const sending = S.onbSending;
   const importMode = S.setupCaptureMethod === "import";
-  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
+  const vrs = await apiGet("/v1/verification-records").catch(() => []);
   const hasVrs = vrs.length > 0 && vrs.some(v => v.source_type !== "demo_seed");
   if (rec || hasVrs) {
     const latest = rec || vrs[vrs.length - 1];
@@ -1006,7 +1121,8 @@ async function renderOnbSendStep() {
       '<div class="np-field"><label>Paste JSON records (array of record objects)</label>' +
       '<textarea id="import-json" rows="8" placeholder=\'[{"source_record_ref":"TKT-123","business_function":"customer_support","elements":[{"kind":"input","payload":{"text":"Can I get a refund?"}},{"kind":"decision","payload":{"decision":"OFFER_REFUND"}}]}]\'></textarea>' +
       '</div>' +
-      '<button class="btn" onclick="importRecords()">Import Records</button>' +
+      '<button class="btn" onclick="previewThenImport()">Preview & Import</button>' +
+      '<div id="import-preview-results" style="margin-top:12px"></div>' +
       '</div>' +
       '<div style="margin-top:16px;font-size:12px;color:var(--muted)">Field mapping: source_record_ref, business_function, expected_outcome, agent_id, and elements are auto-mapped.</div>' +
       '</div>';
@@ -1029,7 +1145,7 @@ async function renderOnbSendStep() {
 async function sendTestCapture() {
   if (S.onbSending) return;
   S.onbSending = true;
-  renderSetupStep(4);
+  renderSetupStep(6);
   try {
     const snapshot = {
       schema_version: 1,
@@ -1049,80 +1165,62 @@ async function sendTestCapture() {
     notify("Failed: " + e.message, "error");
   }
   S.onbSending = false;
-  renderSetupStep(4);
+  renderSetupStep(6);
 }
 
 async function importRecords() {
   const raw = q("#import-json") ? q("#import-json").value.trim() : "";
   if (!raw) { notify("Paste JSON records first", "error"); return; }
+  const planId = S.setupPlanId;
+  if (!planId) { notify("No active plan", "error"); return; }
   try {
     const records = JSON.parse(raw);
     const arr = Array.isArray(records) ? records : [records];
-    const result = await apiPost("/v1/verification-records/import", {
-      records: arr,
-      workflow_id: S.setupWorkflow ? S.setupWorkflow.id : "",
-    });
-    notify("Imported " + result.imported + " records", "success");
-    S.onbReceived = result.records[result.records.length - 1];
-    renderSetupStep(4);
+    const result = await apiPost("/v1/setup/plans/" + planId + "/imports/commit", { records: arr });
+    notify("Imported " + (result.imported || result.count || 0) + " records", "success");
+    if (result.records && result.records.length) {
+      S.onbReceived = result.records[result.records.length - 1];
+    } else {
+      S.onbReceived = { id: "imported", replayability: "pending" };
+    }
+    renderSetupStep(7);
   } catch (e) {
     notify("Import failed: " + e.message, "error");
   }
 }
 
-async function createScenarioCandidate(vrId) {
+async function previewThenImport() {
+  const raw = q("#import-json") ? q("#import-json").value.trim() : "";
+  if (!raw) { notify("Paste JSON records first", "error"); return; }
+  const planId = S.setupPlanId;
+  if (!planId) { notify("No active plan", "error"); return; }
   try {
-    const result = await apiPost("/v1/scenario-candidates", {
-      source_vr_id: vrId,
-      business_title: "Setup candidate " + vrId.slice(0, 12),
-      environment_id: S.env,
-    });
-    notify("Scenario candidate created", "success");
-    renderSetupStep(6);
+    const records = JSON.parse(raw);
+    const arr = Array.isArray(records) ? records : [records];
+    const preview = await apiPost("/v1/setup/plans/" + planId + "/imports/preview", { records: arr });
+    const previewEl = q("#import-preview-results");
+    if (!previewEl) return;
+    previewEl.innerHTML = '<div style="margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px">' +
+      '<div><strong>Total</strong><br>' + (preview.total_records || preview.total || 0) + ' records</div>' +
+      '<div><strong>Matched</strong><br>' + (preview.matched_count || preview.matched || 0) + ' w/ decisions</div>' +
+      '<div><strong>Replayable</strong><br>' + (preview.replayable_count || preview.replayable || 0) + '</div>' +
+      '<div><strong>Need labels</strong><br>' + (preview.needs_label_count || preview.needs_labels || 0) + '</div>' +
+      '<div><strong>Missing cassette</strong><br>' + (preview.missing_cassette_count || preview.missing_cassette || 0) + '</div>' +
+      '<div><strong>Evidence-only</strong><br>' + (preview.evidence_only_count || preview.evidence_only || 0) + '</div>' +
+      '</div>' +
+      '<div style="margin-top:8px;font-size:12px;color:var(--muted)">' + (preview.scenario_candidate_count || preview.scenario_candidates || 0) + ' scenario candidates estimated from matched records.</div>' +
+      '<button class="btn" style="margin-top:8px" onclick="importRecords()">Confirm Import (' + (preview.total_records || preview.total || 0) + ' records)</button>' +
+      '</div>';
   } catch (e) {
-    notify("Failed: " + e.message, "error");
+    notify("Preview failed: " + e.message, "error");
   }
 }
 
-async function promoteScenarioCandidate(id) {
-  try {
-    await apiPut("/v1/scenario-candidates/" + id, {state: "promoted"});
-    const cand = await apiGet("/v1/scenario-candidates/" + id);
-    await apiPost("/v1/scenarios", {
-      source_vr_id: cand.source_vr_id,
-      business_title: cand.business_title,
-      expected_outcome: "",
-      environment_id: S.env,
-    });
-    notify("Scenario promoted", "success");
-    renderSetupStep(6);
-  } catch (e) {
-    notify("Failed: " + e.message, "error");
-  }
-}
 
-async function createReleaseGate() {
-  const name = q("#rg-name") ? q("#rg-name").value.trim() : "";
-  if (!name) { notify("Policy name is required", "error"); return; }
-  const checks = document.querySelectorAll(".rg-scenario:checked");
-  const scenarioIds = Array.from(checks).map(c => c.value);
-  if (!scenarioIds.length) { notify("Select at least one scenario", "error"); return; }
-  try {
-    await apiPost("/v1/readiness-policies", {
-      name,
-      required_scenario_ids: scenarioIds,
-      pass_condition: "all_pass",
-      environment_id: S.env,
-    });
-    notify("Release gate created with " + scenarioIds.length + " scenarios", "success");
-    renderSetupStep(7);
-  } catch (e) {
-    notify("Failed: " + e.message, "error");
-  }
-}
 
 function openImportSetup() {
-  renderDrawer("Batch / Log Import", '<div class="section-sub">Paste JSON records in the setup step 4 to import. Supports Zendesk, Salesforce, ServiceNow, Intercom, CSV, and JSONL formats.</div>');
+  renderDrawer("Batch / Log Import", '<div class="section-sub">Paste JSON records in setup step 5 to import. Supports Zendesk, Salesforce, ServiceNow, Intercom, CSV, and JSONL formats.</div>');
 }
 
 function openWebhookSetup() {
@@ -1533,7 +1631,7 @@ async function sendHarborlineTestCapture() {
       replayability: vr.replayability || "Pending assessment",
     };
     notify("Meridian test capture created", "success");
-    renderSetupStep(5); // jump to readiness
+    renderSetupStep(8); // jump to readiness
   } catch (e) {
     notify("Test capture failed: " + e.message, "error");
   } finally {
@@ -1543,7 +1641,7 @@ async function sendHarborlineTestCapture() {
 
 async function renderSetupReplayStep() {
   const wf = S.setupWorkflow;
-  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
+  const vrs = await apiGet("/v1/verification-records").catch(() => []);
   const nonDemo = vrs.filter(v => v.source_type !== "demo_seed");
   const target = nonDemo[nonDemo.length - 1] || vrs[vrs.length - 1];
   if (!target) {
@@ -1572,48 +1670,51 @@ async function renderSetupReplayStep() {
     '</div>';
 }
 
-async function renderSetupScenarioStep() {
-  const vrs = await apiGet("/v1/verification-records?environment_id=" + S.env).catch(() => []);
-  const candidates = await apiGet("/v1/scenario-candidates?environment_id=" + S.env).catch(() => []);
-  const nonDemo = vrs.filter(v => v.source_type !== "demo_seed");
-  const lastVr = nonDemo[nonDemo.length - 1];
-  const readyCandidates = candidates.filter(c => c.state === "ready" || c.state === "promoted");
-  return '<div class="setup-step-content">' +
-    '<h2>Turn records into release-gate scenarios</h2>' +
-    '<p class="setup-lead">Promote Verification Records to Scenario Candidates, then promote to permanent Scenarios for release gating.</p>' +
-    (candidates.length ? '<div class="section-title">Scenario Candidates (' + candidates.length + ')</div>' +
-      candidates.map(c => '<div class="int-card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center">' +
-        '<div><strong>' + esc(c.business_title || c.source_vr_id) + '</strong>' +
-        '<div style="font-size:11px;color:var(--muted)">State: ' + esc(c.state) + ' · Replay: ' + esc(c.replayability) + '</div></div>' +
-        (c.state === "ready" ? '<button class="btn btn-sm btn-green" onclick="promoteScenarioCandidate(\'' + c.id + '\')">Promote</button>' :
-         c.state === "promoted" ? '<span class="badge badge-built">PROMOTED</span>' :
-         '<span class="badge badge-planned">' + esc(c.state) + '</span>') +
-        '</div></div>').join("") : '') +
-    (lastVr && !candidates.some(c => c.source_vr_id === lastVr.id) ?
-      '<div style="margin-top:16px"><button class="btn btn-outline" onclick="createScenarioCandidate(\'' + lastVr.id + '\')">Create Candidate from latest record</button></div>' : '') +
-    (readyCandidates.length ? '<div style="margin-top:16px"><span class="badge badge-built">' + readyCandidates.length + ' ready to promote</span></div>' : '') +
-    '</div>';
-}
-
-async function renderSetupReleaseGateStep() {
-  const scenarios = await apiGet("/v1/scenarios?environment_id=" + S.env).catch(() => []);
-  const policies = await apiGet("/v1/readiness-policies?environment_id=" + S.env).catch(() => []);
-  return '<div class="setup-step-content">' +
-    '<h2>Add scenarios to a Release Gate</h2>' +
-    '<p class="setup-lead">Create a Readiness Policy that gates releases based on required Scenarios.</p>' +
-    '<div class="np-form">' +
-    '<div class="np-field"><label>Policy name</label><input id="rg-name" placeholder="e.g. High-risk support policy gate"></div>' +
-    (scenarios.length ? '<div class="np-field"><label>Required scenarios (select all that apply)</label>' +
-      scenarios.map(s => '<label style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px">' +
-        '<input type="checkbox" class="rg-scenario" value="' + s.id + '"> ' + esc(s.business_title || s.id) +
-        '</label>').join("") + '</div>' :
-      '<p style="font-size:12px;color:var(--muted)">No scenarios promoted yet. Complete step 6 first.</p>') +
-    '<button class="btn" style="margin-top:12px" onclick="createReleaseGate()" ' + (scenarios.length ? '' : 'disabled') + '>Create Release Gate</button>' +
-    '</div>' +
-    (policies.length ? '<div class="section-title" style="margin-top:20px">Existing Policies</div>' +
-      policies.map(p => '<div class="int-card" style="margin-top:8px"><strong>' + esc(p.name || p.id) + '</strong>' +
-        '<div style="font-size:11px;color:var(--muted)">' + (p.required_scenario_ids || []).length + ' scenarios · ' + esc(p.pass_condition || "all_pass") + '</div></div>').join("") : '') +
-    '</div>';
+async function renderSetupReadinessStep() {
+  const planId = S.setupPlanId;
+  if (!planId) {
+    return '<div class="setup-step-content"><h2>Readiness Assessment</h2><p class="setup-lead">No active plan. Start from step 1.</p></div>';
+  }
+  const readiness = await apiGet("/v1/setup/plans/" + planId + "/readiness").catch(() => null);
+  if (!readiness) {
+    return '<div class="setup-step-content"><h2>Readiness Assessment</h2><p class="setup-lead">Could not load readiness data. Complete previous steps first.</p></div>';
+  }
+  const checks = readiness.checks || readiness.items || [];
+  const passed = checks.filter(c => c.status === "pass" || c.status === "passed" || c.status === "ready").length;
+  const total = checks.length;
+  const pct = total ? Math.round((passed / total) * 100) : 0;
+  return `
+    <div class="setup-step-content">
+      <h2>Readiness Assessment</h2>
+      <p class="setup-lead">Notary evaluated your plan against production readiness criteria.</p>
+      <div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+          <span>Readiness: ${passed}/${total} checks passed</span>
+          <span>${pct}%</span>
+        </div>
+        <div class="setup-progress"><div class="setup-progress-bar" style="width:${pct}%"></div></div>
+      </div>
+      ${checks.map(c => `
+        <div class="int-card" style="margin-bottom:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong>${esc(c.label || c.name || c.check)}</strong>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.message || c.detail || "")}</div>
+            </div>
+            <span class="badge ${c.status === "pass" || c.status === "passed" || c.status === "ready" ? 'badge-built' : c.status === "warn" || c.status === "warning" ? 'badge-neutral' : 'badge-planned'}">${esc(c.status)}</span>
+          </div>
+        </div>
+      `).join("")}
+      ${readiness.overall_status ? `<div style="margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:8px;text-align:center;font-size:14px">
+        Overall: <strong>${esc(readiness.overall_status)}</strong>
+      </div>` : ""}
+      ${readiness.scenario_candidates ? `<div style="margin-top:12px;padding:12px;border:1px dashed var(--border);border-radius:8px;font-size:12px;color:var(--muted)">
+        <strong>Scenario candidates:</strong> ${readiness.scenario_candidates} recommended from your records.
+      </div>` : ""}
+      ${readiness.release_gate_recommendation ? `<div style="margin-top:12px">
+        <button class="btn btn-outline" onclick="nav('release-gate')">View Release Gate Recommendation</button>
+      </div>` : ""}
+    </div>`;
 }
 
 async function renderSetupStep(step) {
@@ -1622,14 +1723,15 @@ async function renderSetupStep(step) {
   if (!contentEl) return;
   let content = "";
   switch (SETUP_STEPS[step].id) {
+    case "objective": content = await renderSetupObjectiveStep(); break;
     case "workflow": content = await renderSetupWorkflowStep(); break;
     case "ai-system": content = await renderOnbRegisterStep(); break;
     case "evidence": content = await renderEvidenceSourcesStep(); break;
-    case "capture": content = renderSetupCaptureStep(); break;
+    case "capture": content = await renderSetupCaptureStep(); break;
+    case "selection-rules": content = await renderSetupSelectionRulesStep(); break;
     case "send": content = await renderOnbSendStep(); break;
     case "replay": content = await renderSetupReplayStep(); break;
-    case "scenario": content = await renderSetupScenarioStep(); break;
-    case "release-gate": content = await renderSetupReleaseGateStep(); break;
+    case "readiness": content = await renderSetupReadinessStep(); break;
   }
   contentEl.innerHTML = content;
   const navSlot = q("#setup-nav-slot");
@@ -1641,10 +1743,19 @@ async function renderSetupStep(step) {
 async function renderSetup(c) {
   c.innerHTML = sk(40);
   const step = typeof S.setupStep === "number" ? S.setupStep : 0;
+  S.setupStep = step;
+  try {
+    if (!S.setupPlanId) {
+      const plan = await apiPost("/v1/setup/plans", {});
+      S.setupPlanId = plan.id;
+    }
+  } catch (e) {
+    // will surface in step rendering
+  }
   c.innerHTML = `
     <div class="setup-hero">
       <div class="setup-hero-copy">
-        <div class="eyebrow">Decision Workflow Onboarding</div>
+        <div class="eyebrow">Decision Automation Setup</div>
         <h2>Set up AI Decision Assurance</h2>
         <p>Define the AI decision you want to assure, register the system that makes it, choose what evidence matters, and create a Release Gate — all in one flow.</p>
       </div>
