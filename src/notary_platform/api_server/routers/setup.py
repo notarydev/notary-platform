@@ -760,6 +760,26 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     if not plan:
         raise HTTPException(404, "Plan not found")
     records = body.get("records", [])
+    field_mapping = body.get("field_mapping", {})
+    if field_mapping:
+        mapped_records = []
+        for rec in records:
+            mapped = {}
+            for target, source in field_mapping.items():
+                val = rec.get(source) if isinstance(source, str) else source
+                if target == "elements" and isinstance(val, list):
+                    mapped["elements"] = val
+                elif target == "expected_outcome":
+                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
+                elif target == "source_record_ref":
+                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
+                else:
+                    mapped[target] = val if val is not None else rec.get(target, "")
+            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
+                if k not in mapped or not mapped.get(k):
+                    mapped[k] = rec.get(k, "" if k != "elements" else [])
+            mapped_records.append(mapped)
+        records = mapped_records
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
     preview = _import_preview_svc.preview(records, rules)
     result = preview.to_dict()
@@ -774,31 +794,60 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
 
 @router.post("/setup/plans/{plan_id}/imports/commit")
 def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
-    from notary_platform.api_server.routers.ingestion import IngestionService, _registry
+    from notary_platform.api_server.routers.ingestion import _registry
+    from notary_platform.services import IngestionService
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
     records_raw = body.get("records", [])
+    field_mapping = body.get("field_mapping", {})
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
+    if field_mapping:
+        mapped_records = []
+        for rec in records_raw:
+            mapped = {}
+            for target, source in field_mapping.items():
+                val = rec.get(source) if isinstance(source, str) else source
+                if target == "elements" and isinstance(val, list):
+                    mapped["elements"] = val
+                elif target == "expected_outcome":
+                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
+                elif target == "source_record_ref":
+                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
+                else:
+                    mapped[target] = val if val is not None else rec.get(target, "")
+            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
+                if k not in mapped or not mapped.get(k):
+                    mapped[k] = rec.get(k, "" if k != "elements" else [])
+            mapped_records.append(mapped)
+        records_raw = mapped_records
     results = _record_svc.apply_rules(records_raw, rules)
     created = []
-    for rslt in results:
+    for idx, rslt in enumerate(results):
         if not rslt.create_vr:
             continue
-        item = records_raw[int(rslt.source_row_id.split("-")[-1])] if rslt.source_row_id.startswith("row-") else {}
+        if idx >= len(records_raw):
+            continue
+        item = records_raw[idx]
         snapshot = {
             "schema_version": item.get("schema_version", 1),
-            "source_system_id": "import",
+            "source_system_id": item.get("source_system_id", "import"),
             "source_record_ref": item.get("source_record_ref", rslt.source_row_id),
-            "business_function": plan.workflow_id,
+            "business_function": item.get("business_function", plan.workflow_id),
             "expected_outcome": item.get("expected_outcome", ""),
             "elements": item.get("elements", []),
+            "agent_id": item.get("agent_id", ""),
+            "agent_version": item.get("agent_version", ""),
+            "model_provider": item.get("model_provider", ""),
+            "model_name": item.get("model_name", ""),
+            "policy_version": item.get("policy_version", ""),
         }
         ingestion = IngestionService(_registry)
         try:
             vr = ingestion.create_from_sdk_snapshot(snapshot, org_id=plan.org_id)
             created.append({
                 "id": vr.id,
+                "source_record_ref": vr.source_record_ref,
                 "replayability": vr.replayability.value,
                 "trigger": rslt.trigger,
             })

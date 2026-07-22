@@ -80,6 +80,7 @@ def create_vr_from_snapshot(
         DataSourceType(source_type)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown source_type: {source_type}")
+    agent_id = agent_id or snapshot.get("agent_id", "")
     ingestion = IngestionService(_registry)
     vr = ingestion.create_from_sdk_snapshot(snapshot, org_id=org_id, agent_id=agent_id)
     return vr.to_dict()

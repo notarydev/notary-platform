@@ -893,9 +893,61 @@ function renderCaptureSnippet(method) {
   const base = "https://api.getnotary.ai/v1";
   let code = "";
   if (method === "sdk") {
-    code = `pip install -e packages/notary-sdk-py\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(\n    secret_key=b"your-secret-key",\n    api_url="https://api.getnotary.ai",\n    api_token="${tok}",\n)\n\ncapture.capture_human_action(\n    source_record_ref="CASE-1234",\n    domain="Support",\n)\n\ncapture.capture_llm(\n    prompt="Can I get a bereavement refund after booking?",\n    response="Checking policy...",\n    model="support-bot-v42",\n    temperature=0.0,\n    seed=12345,\n)\n\ncapture.capture_tool(\n    method="GET",\n    url="/policy-service/bereavement",\n    response={"retroactive_refund_allowed": False, "human_review_required": True},\n    status=200,\n)\n\ncapture.capture_decision(\n    decision="OFFER_RETROACTIVE_REFUND",\n    expected_correct_behavior="ESCALATE_TO_HUMAN",\n)\n\nsnapshot = capture.finalize(\n    agent_version="support-bot-v42",\n    policy_version="bereavement-policy-v7",\n)\n\nresult = snapshot.submit(\n    source_system_id="salesforce-service-cloud",\n    source_record_ref="CASE-1234",\n    agent_id="bereavement-support-bot",\n    business_function="Bereavement refund policy answer",\n    expected_outcome="ESCALATE_TO_HUMAN",\n)\n\nprint(result)`;
+    code = `# 1. Install SDK (not yet on PyPI — clone from repo)
+git clone https://github.com/notarydev/notary-platform.git
+cd notary-platform
+pip install -e packages/notary-sdk-py
+
+# 2. Capture a decision
+from notary_sdk import RunCapture
+
+capture = RunCapture(
+    secret_key=b"your-secret-key",
+    api_url="https://api.getnotary.ai",
+    api_token="${tok}",
+)
+
+capture.capture_human_action(
+    source_record_ref="CASE-1234",
+    domain="Support",
+)
+
+capture.capture_llm(
+    prompt="Can I get a bereavement refund after booking?",
+    response="Checking policy...",
+    model="support-bot-v42",
+    temperature=0.0,
+    seed=12345,
+)
+
+capture.capture_tool(
+    method="GET",
+    url="/policy-service/bereavement",
+    response={"retroactive_refund_allowed": False, "human_review_required": True},
+    status=200,
+)
+
+capture.capture_decision(
+    decision="OFFER_RETROACTIVE_REFUND",
+    expected_correct_behavior="ESCALATE_TO_HUMAN",
+)
+
+snapshot = capture.finalize(
+    agent_version="support-bot-v42",
+    policy_version="bereavement-policy-v7",
+)
+
+result = snapshot.submit(
+    source_system_id="salesforce-service-cloud",
+    source_record_ref="CASE-1234",
+    agent_id="bereavement-support-bot",
+    business_function="Bereavement refund policy answer",
+    expected_outcome="ESCALATE_TO_HUMAN",
+)
+
+print(result)`;
   } else if (method === "api") {
-    code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:support-bot","business_function":"customer_support"}'`;
+    code = `curl -X POST ${base}/verification-records/from-snapshot \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n  "schema_version": 1,\n  "source_system_id": "my-backend",\n  "source_record_ref": "CASE-1234",\n  "business_function": "customer_support",\n  "expected_outcome": "RESOLVE",\n  "agent_id": "agent:support-bot",\n  "elements": [\n    {"kind": "input", "sequence": 0, "payload": {"text": "Can I get a refund?"}},\n    {"kind": "decision", "sequence": 1, "payload": {"decision": "OFFER_REFUND"}}\n  ]\n}'`;
   } else if (method === "webhook") {
     code = `POST ${base}/verification-records/webhook\nAuthorization: Bearer ${tok}\n\n{\n  "source_id": "TKT-1234",\n  "events": [{"kind": "decision", "payload": {"decision": "DENY"}}]\n}`;
   } else {
@@ -1176,7 +1228,8 @@ async function importRecords() {
   try {
     const records = JSON.parse(raw);
     const arr = Array.isArray(records) ? records : [records];
-    const result = await apiPost("/v1/setup/plans/" + planId + "/imports/commit", { records: arr });
+    const mapping = S.setupFieldMapping || {};
+    const result = await apiPost("/v1/setup/plans/" + planId + "/imports/commit", { records: arr, field_mapping: mapping });
     notify("Imported " + (result.imported || result.count || 0) + " records", "success");
     if (result.records && result.records.length) {
       S.onbReceived = result.records[result.records.length - 1];
@@ -1197,7 +1250,9 @@ async function previewThenImport() {
   try {
     const records = JSON.parse(raw);
     const arr = Array.isArray(records) ? records : [records];
-    const preview = await apiPost("/v1/setup/plans/" + planId + "/imports/preview", { records: arr });
+    const mapping = buildFieldMapping(arr);
+    S.setupFieldMapping = mapping;
+    const preview = await apiPost("/v1/setup/plans/" + planId + "/imports/preview", { records: arr, field_mapping: mapping });
     const previewEl = q("#import-preview-results");
     if (!previewEl) return;
     previewEl.innerHTML = '<div style="margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px">' +
@@ -1213,11 +1268,26 @@ async function previewThenImport() {
       '<div><strong>Est. storage</strong><br>' + (preview.estimated_storage_gb || 0) + ' GB</div>' +
       '</div>' +
       (preview.sample_records && preview.sample_records.length ? '<div style="margin-top:8px;font-size:11px;color:var(--muted)">Sample: ' + preview.sample_records.map(s => esc(s.source_record_ref || "")).join(", ") + '</div>' : '') +
+      (preview.missing_required_fields && preview.missing_required_fields.length ? '<div style="margin-top:8px;font-size:11px;color:var(--amber)">Missing fields: ' + preview.missing_required_fields.join(", ") + '</div>' : '') +
+      '<div style="margin-top:8px;font-size:11px;color:var(--muted)">Auto-mapped: source_record_ref, business_function, expected_outcome, agent_id, elements</div>' +
       '<button class="btn" style="margin-top:12px" onclick="importRecords()">Confirm Import (' + preview.total_records + ' records)</button>' +
       '</div>';
   } catch (e) {
     notify("Preview failed: " + e.message, "error");
   }
+}
+
+function buildFieldMapping(records) {
+  if (!records.length) return {};
+  const sample = records[0];
+  const mapping = {};
+  if (sample.case_id && !sample.source_record_ref) mapping.source_record_ref = "case_id";
+  if (sample.bot_response && !sample.elements) mapping.elements = "bot_response";
+  if (sample.human_resolution && !sample.expected_outcome) mapping.expected_outcome = "human_resolution";
+  if (sample.bot_version) mapping.agent_version = "bot_version";
+  if (sample.policy_version) mapping.policy_version = "policy_version";
+  if (sample.customer_message) mapping.customer_message = "customer_message";
+  return mapping;
 }
 
 
