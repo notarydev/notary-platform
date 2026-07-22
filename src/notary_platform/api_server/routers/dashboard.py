@@ -570,7 +570,7 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
     return _page(content)
 
 
-@router.post("/v1/demo/lending-seed", response_class=HTMLResponse)
+@router.post("/v1/demo/lending-seed")
 def seed_lending_demo(scenario_id: str = Query("lending-denial")) -> RedirectResponse:
     scenario = get_scenario(scenario_id)
     set_demo_agent(_scenario_agent_factory(scenario.scenario_id))
