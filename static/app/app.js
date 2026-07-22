@@ -893,7 +893,7 @@ function renderCaptureSnippet(method) {
   const base = "https://api.getnotary.ai/v1";
   let code = "";
   if (method === "sdk") {
-    code = `pip install -e packages/notary-sdk-py\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(token="${tok}")\ncapture.capture_input(text="Can I get a bereavement refund after booking?")\ncapture.capture_tool(method="GET", url="/policy-service/bereavement", response={"retroactive_refund_allowed": False, "human_review_required": True})\ncapture.capture_decision(decision="ESCALATE_TO_HUMAN")\ncapture.finalize()  # -> sealed Verification Record`;
+    code = `pip install -e packages/notary-sdk-py\n\nfrom notary_sdk import RunCapture\n\ncapture = RunCapture(\n    secret_key=b"your-secret-key",\n    api_url="https://api.getnotary.ai",\n    api_token="${tok}",\n)\n\ncapture.capture_human_action(\n    source_record_ref="CASE-1234",\n    domain="Support",\n)\n\ncapture.capture_llm(\n    prompt="Can I get a bereavement refund after booking?",\n    response="Checking policy...",\n    model="support-bot-v42",\n    temperature=0.0,\n    seed=12345,\n)\n\ncapture.capture_tool(\n    method="GET",\n    url="/policy-service/bereavement",\n    response={"retroactive_refund_allowed": False, "human_review_required": True},\n    status=200,\n)\n\ncapture.capture_decision(\n    decision="OFFER_RETROACTIVE_REFUND",\n    expected_correct_behavior="ESCALATE_TO_HUMAN",\n)\n\nsnapshot = capture.finalize(\n    agent_version="support-bot-v42",\n    policy_version="bereavement-policy-v7",\n)\n\nresult = snapshot.submit(\n    source_system_id="salesforce-service-cloud",\n    source_record_ref="CASE-1234",\n    agent_id="bereavement-support-bot",\n    business_function="Bereavement refund policy answer",\n    expected_outcome="ESCALATE_TO_HUMAN",\n)\n\nprint(result)`;
   } else if (method === "api") {
     code = `curl -X POST ${base}/verification-records \\\n  -H "Authorization: Bearer ${tok}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"agent_id":"agent:support-bot","business_function":"customer_support"}'`;
   } else if (method === "webhook") {
@@ -967,7 +967,7 @@ async function renderSetupSelectionRulesStep() {
       `).join('')}
       <div style="margin-top:16px;font-size:12px;color:var(--muted)">
         Rules are evaluated in order. The first matching rule determines the trigger_type on the record.
-        Rule evaluation runs inside the Notary Capture Agent — no changes needed in your application code.
+        Rules are evaluated by Notary Platform for imports and submitted records. SDKs may apply lightweight local filtering, but the platform is the source of truth.
       </div>
     </div>`;
 }
@@ -1202,15 +1202,18 @@ async function previewThenImport() {
     if (!previewEl) return;
     previewEl.innerHTML = '<div style="margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px">' +
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px">' +
-      '<div><strong>Total</strong><br>' + (preview.total_records || preview.total || 0) + ' records</div>' +
-      '<div><strong>Matched</strong><br>' + (preview.matched_count || preview.matched || 0) + ' w/ decisions</div>' +
-      '<div><strong>Replayable</strong><br>' + (preview.replayable_count || preview.replayable || 0) + '</div>' +
-      '<div><strong>Need labels</strong><br>' + (preview.needs_label_count || preview.needs_labels || 0) + '</div>' +
-      '<div><strong>Missing cassette</strong><br>' + (preview.missing_cassette_count || preview.missing_cassette || 0) + '</div>' +
-      '<div><strong>Evidence-only</strong><br>' + (preview.evidence_only_count || preview.evidence_only || 0) + '</div>' +
+      '<div><strong>Total</strong><br>' + preview.total_records + ' records</div>' +
+      '<div><strong>Matched</strong><br>' + preview.matched_count + ' w/ decisions</div>' +
+      '<div><strong>Ignored</strong><br>' + (preview.ignored_count || 0) + '</div>' +
+      '<div><strong>Replayable</strong><br>' + preview.replayable_count + '</div>' +
+      '<div><strong>Need labels</strong><br>' + preview.needs_label_count + '</div>' +
+      '<div><strong>Missing cassette</strong><br>' + preview.missing_cassette_count + '</div>' +
+      '<div><strong>Evidence-only</strong><br>' + preview.evidence_only_count + '</div>' +
+      '<div><strong>Scenario candidates</strong><br>' + preview.scenario_candidate_count + '</div>' +
+      '<div><strong>Est. storage</strong><br>' + (preview.estimated_storage_gb || 0) + ' GB</div>' +
       '</div>' +
-      '<div style="margin-top:8px;font-size:12px;color:var(--muted)">' + (preview.scenario_candidate_count || preview.scenario_candidates || 0) + ' scenario candidates estimated from matched records.</div>' +
-      '<button class="btn" style="margin-top:8px" onclick="importRecords()">Confirm Import (' + (preview.total_records || preview.total || 0) + ' records)</button>' +
+      (preview.sample_records && preview.sample_records.length ? '<div style="margin-top:8px;font-size:11px;color:var(--muted)">Sample: ' + preview.sample_records.map(s => esc(s.source_record_ref || "")).join(", ") + '</div>' : '') +
+      '<button class="btn" style="margin-top:12px" onclick="importRecords()">Confirm Import (' + preview.total_records + ' records)</button>' +
       '</div>';
   } catch (e) {
     notify("Preview failed: " + e.message, "error");
@@ -1679,10 +1682,16 @@ async function renderSetupReadinessStep() {
   if (!readiness) {
     return '<div class="setup-step-content"><h2>Readiness Assessment</h2><p class="setup-lead">Could not load readiness data. Complete previous steps first.</p></div>';
   }
-  const checks = readiness.checks || readiness.items || [];
-  const passed = checks.filter(c => c.status === "pass" || c.status === "passed" || c.status === "ready").length;
+  const checks = [
+    {label: "Create Verification Records", status: readiness.can_create_records ? "pass" : "fail", detail: readiness.can_create_records ? "Plan can create records from captures or imports." : "Complete steps 1-5 to enable record creation."},
+    {label: "Deterministic Replay", status: readiness.can_replay ? "pass" : "fail", detail: readiness.can_replay ? "Records can be replayed for verification." : "Evidence contract and capture method required."},
+    {label: "Issue Proof", status: readiness.can_issue_proof ? "pass" : "fail", detail: readiness.can_issue_proof ? "Notary can issue tamper-proof certificates." : "Replay-ready records and expected outcomes required."},
+    {label: "Create Scenarios", status: readiness.can_create_scenarios ? "pass" : "fail", detail: readiness.can_create_scenarios ? "Scenario Candidates can be promoted from replayable records." : "Replayable records with labels required."},
+    {label: "Create Release Gate", status: readiness.can_create_release_gate ? "pass" : "fail", detail: readiness.can_create_release_gate ? "Readiness policy gated with scenarios." : "Promote a scenario and create a readiness policy."},
+  ];
+  const passed = checks.filter(c => c.status === "pass").length;
   const total = checks.length;
-  const pct = total ? Math.round((passed / total) * 100) : 0;
+  const pct = Math.round((passed / total) * 100);
   return `
     <div class="setup-step-content">
       <h2>Readiness Assessment</h2>
@@ -1698,22 +1707,33 @@ async function renderSetupReadinessStep() {
         <div class="int-card" style="margin-bottom:8px;padding:12px">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
-              <strong>${esc(c.label || c.name || c.check)}</strong>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.message || c.detail || "")}</div>
+              <strong>${esc(c.label)}</strong>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.detail)}</div>
             </div>
-            <span class="badge ${c.status === "pass" || c.status === "passed" || c.status === "ready" ? 'badge-built' : c.status === "warn" || c.status === "warning" ? 'badge-neutral' : 'badge-planned'}">${esc(c.status)}</span>
+            <span class="badge ${c.status === 'pass' ? 'badge-built' : 'badge-planned'}">${c.status === 'pass' ? 'Ready' : 'Not ready'}</span>
           </div>
         </div>
       `).join("")}
-      ${readiness.overall_status ? `<div style="margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:8px;text-align:center;font-size:14px">
-        Overall: <strong>${esc(readiness.overall_status)}</strong>
+      ${(readiness.missing_prerequisites || []).length ? `<div style="margin-top:16px;padding:12px;border:1px dashed var(--amber);border-radius:8px">
+        <strong style="font-size:12px;color:var(--amber)">Missing prerequisites:</strong>
+        <ul style="font-size:11px;color:var(--muted);margin:4px 0 0;padding-left:16px">
+          ${readiness.missing_prerequisites.map(m => `<li>${esc(m)}</li>`).join("")}
+        </ul>
       </div>` : ""}
-      ${readiness.scenario_candidates ? `<div style="margin-top:12px;padding:12px;border:1px dashed var(--border);border-radius:8px;font-size:12px;color:var(--muted)">
-        <strong>Scenario candidates:</strong> ${readiness.scenario_candidates} recommended from your records.
+      ${(readiness.next_actions || []).length ? `<div style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px">
+        <strong style="font-size:12px">Next actions:</strong>
+        <ul style="font-size:11px;color:var(--muted);margin:4px 0 0;padding-left:16px">
+          ${readiness.next_actions.map(a => `<li>${esc(a)}</li>`).join("")}
+        </ul>
       </div>` : ""}
-      ${readiness.release_gate_recommendation ? `<div style="margin-top:12px">
-        <button class="btn btn-outline" onclick="nav('release-gate')">View Release Gate Recommendation</button>
-      </div>` : ""}
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+        <div style="padding:8px;border:1px solid var(--border);border-radius:6px">
+          <strong>Est. records/month</strong><br>${readiness.estimated_monthly_records || 0}
+        </div>
+        <div style="padding:8px;border:1px solid var(--border);border-radius:6px">
+          <strong>Est. storage</strong><br>${readiness.estimated_storage_gb || 0} GB/month
+        </div>
+      </div>
     </div>`;
 }
 
@@ -1797,7 +1817,7 @@ function openSDKSetup() {
     <div class="section-title">2. Capture a decision (Python)</div>
     ${renderCodeBlock(`from notary_sdk import RunCapture\n\ncapture = RunCapture(secret_key=b"your-secret-key")\ncapture.capture_llm(prompt="loan app #1234", response="score: 620")\ncapture.capture_tool(method="POST", url="/score", response={"score": 620})\ncapture.capture_decision(decision="DENY")\nsnapshot = capture.finalize()`)}
     <div class="section-title">3. Submit to Notary API</div>
-    ${renderCodeBlock(`import requests\n\n# NOTARY_API_AUTH_TOKEN is the env var the platform reads (set in Settings)\n# The ingestion endpoint is /v1/verification-records (incidents is legacy)\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json=snapshot.to_dict()\n)`)}
+     ${renderCodeBlock(`import requests\n\nrequests.post(\n  "https://api.getnotary.ai/v1/verification-records/from-snapshot",\n  headers={"Authorization": "Bearer ${esc(S.token || 'your-token-here')}"},\n  json=snapshot.to_dict()\n)`)}
   `;
   renderDrawer("Python SDK Setup", body);
 }

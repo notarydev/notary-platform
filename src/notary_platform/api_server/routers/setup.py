@@ -763,7 +763,12 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
     preview = _import_preview_svc.preview(records, rules)
     result = preview.to_dict()
-    result["estimated_volume"] = _import_preview_svc.estimate_volume(plan.workflow_type or "")
+    ev = _import_preview_svc.estimate_volume(plan.workflow_type or "")
+    result["estimated_volume"] = ev
+    result["ignored_count"] = result["total_records"] - result["matched_count"]
+    result["estimated_storage_gb"] = round(result["total_records"] * 0.00008, 2)
+    result["estimated_monthly_records"] = ev["high_risk_matched"]
+    result["missing_required_fields"] = preview.missing_fields
     return result
 
 
