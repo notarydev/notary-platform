@@ -370,7 +370,7 @@ def import_preview(body: dict[str, Any], _org: str = Depends(require_auth)) -> d
     needs_label = 0
     missing_cassette = 0
     evidence_only = 0
-    samples = []
+    samples: list[dict] = []
     for item in records_raw[:20]:  # Preview up to 20
         elements = item.get("elements", [])
         has_decision = any(e.get("kind") == "decision" for e in elements)

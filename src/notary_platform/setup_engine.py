@@ -375,7 +375,7 @@ class RecordSelectionService:
     """Applies rules to events/logs and decides what to capture."""
 
     def apply_rules(self, records: list[dict], rules: list[RecordSelectionRule]) -> list[RecordSelectionResult]:
-        results = []
+        results: list[RecordSelectionResult] = []
         for i, rec in enumerate(records):
             result = RecordSelectionResult(
                 id=f"rsr-{uuid.uuid4().hex[:12]}",
