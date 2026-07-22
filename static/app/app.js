@@ -3234,6 +3234,13 @@ async function renderIncidentDetail(c, i, wf) {
     proofDetailHtml = '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p>' + (wf.issue_proof_next_action ? '<p style="margin-top:8px;font-size:12px;color:var(--muted)">Next: ' + esc(wf.issue_proof_next_action) + '</p>' : '') + '</div>';
   }
 
+  var scenarioPromotionHtml = sourceVr
+    ? '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">Promote this verified failure as a reusable scenario so future release checks can detect the same decision regression.</p>' +
+      (cert.certificate_id
+        ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + "','" + i.incident_id + '\')">Promote to Scenario</button>'
+        : '<div class="proof-pending"><strong>Promotion pending proof</strong><p>Issue a proof certificate after a successful fix verification before promoting this incident to the scenario library.</p></div>')
+    : '<div class="proof-pending"><strong>No source Verification Record</strong><p>Scenario promotion becomes available when this incident is linked to a Verification Record.</p></div>';
+
   var gateHtml = '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (fixMitigated ? "gate-pass" : "gate-muted") + '">' + (fixMitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub" style="margin-top:8px">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>';
 
   c.innerHTML = [
@@ -3243,6 +3250,7 @@ async function renderIncidentDetail(c, i, wf) {
     statusBadge(i.status),
     '<span style="font-size:13px;color:var(--muted)">ID: ' + esc(i.incident_id) + '</span>',
     '</div>',
+    '<section>' + renderSection("Incident business summary", '<p class="section-sub" style="margin:0 0 12px">A captured AI decision is replayed from sealed evidence, compared with the original outcome, and verified again after the fix.</p><div class="incident-summary-v2">') + '</section>',
     // Phase C: separate captured/replayed/expected/after-fix summary
     '<section><div class="incident-summary-v2">',
     '<div class="summary-block"><span class="summary-block-label">Captured</span><strong>' + esc(originalDecision) + '</strong><span class="summary-block-source">from ' + esc(systemName) + '</span></div>',
@@ -3284,7 +3292,7 @@ async function renderIncidentDetail(c, i, wf) {
     }).join("") + '</tbody></table></div>' : "No captured elements") + (sourceVr ? renderSection("Source Record", renderKV("Verification Record", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') + renderKV("Replayability", statusBadge(sourceVr.replayability)) + renderKV("Label", sourceVr.current_label_id ? '<span class="link">' + esc(sourceVr.current_label_id) + '</span>' : "—")) : "")) + '</div>',
     '<div data-tab="replay" style="display:' + (activeTab === "replay" ? "block" : "none") + '">' + renderSection("Replay Execution Workspace", replayColumnsHtml) + (i.replay_result && i.replay_result.reason ? '<div class="error-state" style="margin-top:12px">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : "") + renderSection("Decisions", renderKV("Original", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') + renderKV("Replayed", '<span class="decision-pill ' + (replayedDecision === originalDecision ? "decision-fail" : "decision-neutral") + '">' + esc(replayedDecision || "Pending") + '</span>') + renderKV("Comparison", replayStatus === "pass" ? '<span style="color:var(--green);font-weight:800">Failure reproduced ✓</span>' : '<span style="color:var(--dim)">Pending</span>')) + '</div>',
     '<div data-tab="fix" style="display:' + (activeTab === "fix" ? "block" : "none") + '">' + fixDetailHtml + '</div>',
-    '<div data-tab="proof" style="display:' + (activeTab === "proof" ? "block" : "none") + '">' + proofDetailHtml + '</div>',
+    '<div data-tab="proof" style="display:' + (activeTab === "proof" ? "block" : "none") + '">' + proofDetailHtml + renderSection("Scenario promotion", scenarioPromotionHtml) + '</div>',
     '<div data-tab="gate" style="display:' + (activeTab === "gate" ? "block" : "none") + '">' + gateHtml + '</div>',
     '<div data-tab="audit" style="display:' + (activeTab === "audit" ? "block" : "none") + '">' + renderSection("Chronological Audit Trail", custodyHtml || "No audit events recorded.") + '</div>',
     '</div>',
