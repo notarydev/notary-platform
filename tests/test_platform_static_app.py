@@ -36,6 +36,8 @@ def test_decision_discovery_workspace_is_registered() -> None:
     assert "Decision Discovery" in js
     assert "/imports/parse" in js
     assert "Commit selected records" in js
+    assert "Field Mapping" in js
+    assert "applyDiscoveryMapping" in js
 
 
 def test_auth_failure_keeps_token_prompt_visible() -> None:

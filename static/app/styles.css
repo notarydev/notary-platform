@@ -540,6 +540,9 @@ section{margin-bottom:24px}
 .discovery-file input{width:100%;padding:9px 10px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius)}
 .discovery-metrics{display:flex;flex-wrap:wrap;gap:18px;padding-bottom:14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px}
 .discovery-metrics strong{color:var(--text);font-family:var(--fm);font-size:15px;margin-right:4px}
+.discovery-mapping{padding-bottom:16px;margin-bottom:14px;border-bottom:1px solid var(--border)}
+.discovery-mapping-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.discovery-mapping-grid .np-field{margin:0}
 .discovery-results-panel table{margin-top:14px}
 @media(max-width:900px){.onb-register-grid{grid-template-columns:1fr}}
 
@@ -600,4 +603,5 @@ section{margin-bottom:24px}
   .before-after-arrow{transform:rotate(90deg);justify-self:center}
   .drawer{width:100%}
   .discovery-input-row{grid-template-columns:1fr}
+  .discovery-mapping-grid{grid-template-columns:1fr}
 }

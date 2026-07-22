@@ -1320,13 +1320,32 @@ function buildFieldMapping(records) {
   if (!records.length) return {};
   const sample = records[0];
   const mapping = {};
-  if (sample.case_id && !sample.source_record_ref) mapping.source_record_ref = "case_id";
-  if (sample.bot_response && !sample.elements) mapping.elements = "bot_response";
-  if (sample.human_resolution && !sample.expected_outcome) mapping.expected_outcome = "human_resolution";
-  if (sample.bot_version) mapping.agent_version = "bot_version";
-  if (sample.policy_version) mapping.policy_version = "policy_version";
-  if (sample.customer_message) mapping.customer_message = "customer_message";
+  const first = (keys) => keys.find(key => sample[key] !== undefined && sample[key] !== "");
+  if (!sample.source_record_ref) { const key = first(["case_id", "ticket_id", "conversation_id", "record_id"]); if (key) mapping.source_record_ref = key; }
+  if (!sample.elements) { const key = first(["bot_response", "events", "trace", "decision_path"]); if (key) mapping.elements = key; }
+  if (!sample.expected_outcome) { const key = first(["human_resolution", "expected_decision", "label", "ground_truth"]); if (key) mapping.expected_outcome = key; }
+  ["agent_id", "agent_version", "model_provider", "model_name", "policy_version", "business_function", "customer_message"].forEach(key => {
+    if (sample[key] !== undefined && sample[key] !== "") mapping[key] = key;
+  });
   return mapping;
+}
+
+const DISCOVERY_MAPPING_FIELDS = [
+  ["source_record_ref", "Record reference"],
+  ["elements", "Decision path / events"],
+  ["expected_outcome", "Expected outcome"],
+  ["business_function", "Business function"],
+  ["agent_id", "Agent ID"],
+  ["agent_version", "Agent version"],
+  ["model_provider", "Model provider"],
+  ["model_name", "Model name"],
+  ["policy_version", "Policy version"],
+];
+
+function renderDiscoveryMapping(records) {
+  const keys = records.flatMap(record => Object.keys(record)).filter((key, idx, all) => all.indexOf(key) === idx).sort();
+  const option = (selected) => `<option value="">Not mapped</option>${keys.map(key => `<option value="${esc(key)}"${selected === key ? " selected" : ""}>${esc(key)}</option>`).join("")}`;
+  return `<div class="discovery-mapping"><div class="section-title" style="margin:0 0 6px">Field Mapping</div><div class="section-sub">Confirm how this export maps into a Verification Record. Fields are read-only until you preview again.</div><div class="discovery-mapping-grid">${DISCOVERY_MAPPING_FIELDS.map(([field, label]) => `<label class="np-field"><span>${label}</span><select class="discovery-map" data-field="${field}">${option(S.discoveryMapping[field])}</select></label>`).join("")}</div><button class="btn btn-sm" onclick="applyDiscoveryMapping()">Preview with mapping</button></div>`;
 }
 
 async function renderDiscovery(c) {
@@ -1368,7 +1387,20 @@ async function previewDiscovery() {
 function renderDiscoveryResults(preview = {}) {
   const findings = preview.findings || S.discoveryFindings;
   const rows = findings.map(f => `<tr><td><input type="checkbox" class="discovery-select" data-ref="${esc(f.source_record_ref)}" checked></td><td>${esc(f.source_record_ref || "—")}</td><td>${esc(f.trigger || "—")}</td><td>${esc(f.replayability || "—")}</td><td>${f.scenario_candidate ? "Candidate" : "Review"}</td><td>${esc(f.reason || "—")}</td></tr>`).join("");
-  return `<section class="discovery-results-panel"><div class="discovery-metrics"><span><strong>${preview.total_records || S.discoveryRecords.length || 0}</strong> scanned</span><span><strong>${preview.matched_count || findings.length}</strong> matched</span><span><strong>${preview.replayable_count || 0}</strong> replayable</span><span><strong>${preview.needs_label_count || 0}</strong> need labels</span><span><strong>${preview.scenario_candidate_count || 0}</strong> candidates</span></div>${preview.missing_required_fields?.length ? `<div class="proof-pending">Missing mapped fields: ${esc(preview.missing_required_fields.join(", "))}</div>` : ""}${rows ? `<table><thead><tr><th>Select</th><th>Record</th><th>Finding</th><th>Replayability</th><th>Path</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table><div class="action-row" style="margin-top:12px"><button class="btn btn-green" onclick="commitDiscoverySelection()">Commit selected records</button></div>` : renderEmptyState("No findings", "No enabled selection rule matched these records.", "")}</section>`;
+  return `<section class="discovery-results-panel">${S.discoveryRecords.length ? renderDiscoveryMapping(S.discoveryRecords) : ""}<div class="discovery-metrics"><span><strong>${preview.total_records || S.discoveryRecords.length || 0}</strong> scanned</span><span><strong>${preview.matched_count || findings.length}</strong> matched</span><span><strong>${preview.replayable_count || 0}</strong> replayable</span><span><strong>${preview.needs_label_count || 0}</strong> need labels</span><span><strong>${preview.scenario_candidate_count || 0}</strong> candidates</span></div>${preview.missing_required_fields?.length ? `<div class="proof-pending">Missing mapped fields: ${esc(preview.missing_required_fields.join(", "))}</div>` : ""}${rows ? `<table><thead><tr><th>Select</th><th>Record</th><th>Finding</th><th>Replayability</th><th>Path</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table><div class="action-row" style="margin-top:12px"><button class="btn btn-green" onclick="commitDiscoverySelection()">Commit selected records</button></div>` : renderEmptyState("No findings", "No enabled selection rule matched these records.", "")}</section>`;
+}
+
+async function applyDiscoveryMapping() {
+  const mapping = {};
+  qa(".discovery-map").forEach(select => { if (select.value) mapping[select.dataset.field] = select.value; });
+  S.discoveryMapping = mapping;
+  try {
+    const preview = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/preview`, {records: S.discoveryRecords, field_mapping: mapping});
+    S.discoveryFindings = preview.findings || [];
+    const target = q("#discovery-results");
+    if (target) target.innerHTML = renderDiscoveryResults(preview);
+    notify(`Previewed ${preview.total_records} records with mapping`, "success");
+  } catch (e) { notify("Mapping preview failed: " + e.message, "error"); }
 }
 
 async function commitDiscoverySelection() {
