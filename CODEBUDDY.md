@@ -55,6 +55,43 @@ Forensic proof-of-mitigation platform. Root cause analysis for AI decision failu
 - `POST /v1/demo/harborline-release-gate/seed` — seeds the golden path demo
 - Org ID `org:harborline-demo` is displayed as "Northstar Air" in the UI
 
+## Git workflow (external agents)
+
+All changes must go through branches and pull requests — never commit directly to `main`.
+
+### Branch naming
+
+```
+<source>/<description>
+```
+
+| Source | Description |
+|--------|-------------|
+| `emergent/` | Changes from the Emergent platform |
+| `opencode/` | Changes from the OpenCode CLI agent |
+| `manual/` | Changes made directly by a developer |
+
+Examples: `emergent/fix-env-select`, `opencode/cleanup-docs`, `manual/update-readme`
+
+### Process
+
+1. `git checkout -b <source>/<description> main` — create a branch from main
+2. Make changes, test locally (`make test`, `make lint`)
+3. `git add -A && git commit -m "scope: message"`
+4. `git push -u origin <branch>` — push the branch
+5. Create a pull request on GitHub (title matches commit message)
+6. Request review from the repo owner
+7. Once approved, merge to `main`
+8. Deploy: `./infra/deploy-api.sh`
+
+### After deploy
+
+Verify:
+```bash
+curl -s https://api.getnotary.ai/health
+curl -s https://api.getnotary.ai/app/index.html | grep "env-select"
+```
+
 ## Common tasks
 
 ```bash
