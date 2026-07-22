@@ -3642,17 +3642,32 @@ async function revokeApiKey(keyId) {
 
 // --- Init ---
 
+async function loadEnvironments() {
+  try {
+    const h = await apiGet("/v1/platform/home");
+    const envs = h.environments || [];
+    const sel = q("#env-select");
+    sel.innerHTML = envs.map(e =>
+      `<option value="${e.id}"${e.id === S.env ? " selected" : ""}>${e.name}</option>`
+    ).join("");
+    sel.disabled = false;
+    if (S.view === "home") R();
+  } catch (_) {
+    // Silently fall back to demo-only.
+  }
+}
+
 function init() {
   setupNav();
   const savedEnv = localStorage.getItem("np-env");
   if (savedEnv) {
     S.env = savedEnv;
-    q("#env-select").value = savedEnv;
   }
   const params = new URLSearchParams(location.search);
   if (params.get("view")) {
     S.view = params.get("view");
   }
+  loadEnvironments();
   R();
 }
 

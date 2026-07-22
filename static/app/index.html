@@ -30,9 +30,7 @@
 <div class="main">
   <div class="topbar">
     <h1 id="view-title">Home</h1>
-    <select class="env-select" id="env-select" disabled>
-      <option value="env:demo" selected>Demo (locked)</option>
-    </select>
+    <select class="env-select" id="env-select" onchange="switchEnv(this.value)"></select>
     <input class="env-select" id="agent-version" value="1.2.0" placeholder="Agent version" style="width:120px" onchange="switchAgentVersion(this.value)">
     <span class="badge badge-demo hidden" id="global-demo">DEMO</span>
     <button class="btn btn-sm" onclick="nav('demo')" data-testid="run-demo-btn" title="Watch the 90-second Northstar Air story">&#9656; Run demo</button>

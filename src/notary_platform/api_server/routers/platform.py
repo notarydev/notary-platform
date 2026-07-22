@@ -242,6 +242,10 @@ def get_home(
     result["blockers"] = blockers
     result["next_action"] = next_action
     result["is_demo"] = is_demo
+    result["environments"] = [
+        {"id": e.id, "name": e.name, "kind": e.kind}
+        for e in _SEED["environments"]
+    ]
     return result
 
 
