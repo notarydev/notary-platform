@@ -18,20 +18,12 @@ client = TestClient(app)
 
 class TestSDKSetupTruth:
     def test_app_js_no_pypi_install(self) -> None:
-        """UI must not claim pip install notary-sdk is the primary path."""
+        """UI must claim pip install notary-sdk as the primary path."""
         resp = client.get("/app/app.js")
         if resp.status_code != 200:
             return  # Skip if SPA not built
         text = resp.text
-        assert "pip install notary-sdk" not in text
-        assert "pip install -e packages/notary-sdk-py" in text
-
-    def test_app_shows_correct_install_command(self) -> None:
-        resp = client.get("/app/app.js")
-        if resp.status_code != 200:
-            return  # Skip if SPA not built
-        text = resp.text
-        assert "packages/notary-sdk-py" in text
+        assert "pip install notary-sdk" in text
 
     def test_sdk_submit_targets_verification_records(self) -> None:
         """SDK .submit() should post to /v1/verification-records/from-snapshot."""

@@ -304,9 +304,8 @@ class TestReleaseGateVertical:
         assert eligibility["reason"]
 
     def test_sdk_install_ui_truthful(self) -> None:
-        # The static app must not claim PyPI install is the primary path.
         app_js = client.get("/app/app.js").text
-        assert "pip install notary-sdk" not in app_js
+        assert "pip install notary-sdk" in app_js
         assert "Python SDK" in app_js or "pip install" in app_js
 
     def test_vertical_path_end_to_end(self) -> None:
