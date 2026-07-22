@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from notary_platform.api_server.routers import certificates, dashboard, incidents, ingestion, platform, release_gate, setup, verification, viz
+from notary_platform.api_server.routers import certificates, incidents, ingestion, platform, release_gate, setup, verification, viz
 from notary_platform.config import SETTINGS
 
 app = FastAPI(title="Notary Platform", version="0.0.1")
@@ -39,9 +39,7 @@ app.include_router(setup.router, prefix="/v1")
 def root_redirect() -> RedirectResponse:
     return RedirectResponse(url="/app/", status_code=302)
 
-app.include_router(dashboard.router)
-
-# Serve the internal Command Center SPA (static build from notary-viz) at /cc.
+# Serve the notary-viz Command Center SPA at /cc.
 _static_root = Path(__file__).resolve().parent.parent.parent.parent / "static" / "cc"
 if _static_root.exists() and (_static_root / "index.html").exists():
     app.mount("/cc", StaticFiles(directory=str(_static_root), html=True), name="command_center")
@@ -55,7 +53,7 @@ if _platform_root.exists() and (_platform_root / "index.html").exists():
 @app.on_event("startup")
 def _register_demo_agent() -> None:
     """Register the demo replay runner and seed demo org into storage."""
-    from notary_platform.api_server.routers.dashboard import _scenario_agent_factory
+    from notary_platform.api_server.routers.dashboard import _scenario_agent_factory  # keep available for demo agent factory
     from notary_platform.api_server.routers.incidents import set_demo_agent
     from notary_platform.api_server.routers.ingestion import set_replay_runner, storage
     from notary_platform.services import DemoReplayRunner

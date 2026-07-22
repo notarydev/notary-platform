@@ -6,7 +6,7 @@ from html import escape
 from typing import Any, Callable
 
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from notary_platform.api_server.routers.incidents import set_demo_agent, storage
 from notary_platform.demo_scenarios import SCENARIOS, DemoScenario, build_snapshot, get_scenario
@@ -568,21 +568,6 @@ def _render_dashboard(scenario_id: str, mode: str) -> str:
     </section>
     """
     return _page(content)
-
-
-@router.get("/", response_class=HTMLResponse)
-def index() -> HTMLResponse:
-    return HTMLResponse(_render_dashboard("customer-service-handoff", "cassette"))
-
-
-@router.get("/dashboard", response_class=HTMLResponse)
-def dashboard(
-    scenario_id: str = Query("customer-service-handoff"),
-    mode: str = Query("cassette"),
-) -> HTMLResponse:
-    if mode not in {"cassette", "sandbox", "production"}:
-        mode = "cassette"
-    return HTMLResponse(_render_dashboard(scenario_id, mode))
 
 
 @router.post("/v1/demo/lending-seed", response_class=HTMLResponse)
