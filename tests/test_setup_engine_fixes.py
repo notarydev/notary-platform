@@ -131,6 +131,31 @@ class TestSetupEngineFixes:
         data = preview.json()
         assert data["total_records"] == 1
 
+    def test_discovery_plan_is_ready_for_preview_without_manual_workflow_setup(self) -> None:
+        """The Discovery entry point must not silently have zero selection rules."""
+        plan_resp = client.post("/v1/setup/plans", json={
+            "workflow_name": "Decision Discovery",
+            "workflow_type": "custom",
+        })
+        assert plan_resp.status_code == 200, plan_resp.text
+        plan = plan_resp.json()
+        assert plan["workflow_id"].startswith("wf-")
+
+        preview = client.post(
+            f"/v1/setup/plans/{plan['id']}/imports/preview",
+            json={
+                "records": [{
+                    "source_record_ref": "DISCOVERY-E2E-001",
+                    "business_function": "refund policy",
+                    "expected_outcome": "ESCALATE_TO_HUMAN",
+                    "elements": [{"kind": "decision", "payload": {"decision": "OFFER_REFUND"}}],
+                }],
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["matched_count"] == 1
+        assert preview.json()["findings"][0]["source_record_ref"] == "DISCOVERY-E2E-001"
+
     def test_import_commit_with_field_mapping(self) -> None:
         """Import commit must apply field_mapping and preserve correctly mapped values."""
         plan_resp = client.post("/v1/setup/plans", json={"workflow_name": "CommitMapTest"})
@@ -154,6 +179,111 @@ class TestSetupEngineFixes:
         result = commit.json()
         # May be 0 if rules don't match; just verify no crash and mapping applied
         assert "imported" in result
+
+    def test_import_preview_groups_repeated_findings_as_candidates(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        records = [
+            {
+                "meta": {"case_id": "CASE-001"},
+                "reply": "The refund policy does not allow this refund.",
+                "events": [
+                    {"kind": "input", "payload": {"text": "refund request"}},
+                    {"kind": "tool", "payload": {"response": {"policy": "deny"}}},
+                    {"kind": "decision", "payload": {"decision": "DENY"}},
+                ],
+                "expected": "ESCALATE",
+            },
+            {
+                "meta": {"case_id": "CASE-002"},
+                "reply": "The refund policy does not allow this refund.",
+                "events": [
+                    {"kind": "input", "payload": {"text": "refund request"}},
+                    {"kind": "tool", "payload": {"response": {"policy": "deny"}}},
+                    {"kind": "decision", "payload": {"decision": "DENY"}},
+                ],
+                "expected": "ESCALATE",
+            },
+        ]
+        preview = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/preview",
+            json={
+                "records": records,
+                "field_mapping": {
+                    "source_record_ref": "meta.case_id",
+                    "elements": "events",
+                    "expected_outcome": "expected",
+                    "business_function": "reply",
+                },
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        data = preview.json()
+        assert data["matched_count"] == 2
+        assert data["scenario_candidate_count"] == 2
+        assert data["missing_required_fields"] == []
+
+    def test_import_commit_reports_rejected_records(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        response = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/commit",
+            json={
+                "records": [{
+                    "source_record_ref": "CASE-REJECTED",
+                    "elements": [{"kind": "decision", "payload": {"decision": "DENY"}}],
+                    "expected_outcome": "ESCALATE",
+                    "business_function": "refund policy",
+                }],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert "rejected" in response.json()
+
+    def test_import_commit_can_select_previewed_records(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        records = [
+            {"source_record_ref": "CASE-SELECT", "business_function": "refund policy",
+             "expected_outcome": "ESCALATE", "elements": [
+                 {"kind": "decision", "payload": {"decision": "DENY"}},
+             ]},
+            {"source_record_ref": "CASE-SKIP", "business_function": "refund policy",
+             "expected_outcome": "ESCALATE", "elements": [
+                 {"kind": "decision", "payload": {"decision": "DENY"}},
+             ]},
+        ]
+        response = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/commit",
+            json={"records": records, "selected_source_record_refs": ["CASE-SELECT"]},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["imported"] == 1
+        assert len(data["discovery_findings"]) == 2
+
+    def test_discovery_parse_accepts_jsonl_and_csv(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        jsonl = '{"source_record_ref":"J-1","elements":[]}\n{"source_record_ref":"J-2","elements":[]}'
+        parsed = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "jsonl", "content": jsonl},
+        )
+        assert parsed.status_code == 200, parsed.text
+        assert parsed.json()["record_count"] == 2
+
+        csv_content = "source_record_ref,expected_outcome\nC-1,ESCALATE\n"
+        parsed = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "csv", "content": csv_content},
+        )
+        assert parsed.status_code == 200, parsed.text
+        assert parsed.json()["records"][0]["source_record_ref"] == "C-1"
+
+    def test_discovery_parse_rejects_malformed_input(self) -> None:
+        plan_id, _ = self._create_plan_with_workflow()
+        response = client.post(
+            f"/v1/setup/plans/{plan_id}/imports/parse",
+            json={"format": "jsonl", "content": '{"broken":\n'},
+        )
+        assert response.status_code == 400
 
     def test_app_js_includes_git_clone_in_sdk_snippet(self) -> None:
         """SDK snippet must include git clone for clean environment install."""

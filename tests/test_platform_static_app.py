@@ -27,3 +27,22 @@ def test_northstar_golden_path_has_mobile_layout() -> None:
     assert ".golden-path" in text
     assert "@media(max-width:900px)" in text
     assert ".golden-path{grid-template-columns:1fr" in text
+
+
+def test_decision_discovery_workspace_is_registered() -> None:
+    html = Path("static/app/index.html").read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    assert 'data-view="discovery"' in html
+    assert "Decision Discovery" in js
+    assert "/imports/parse" in js
+    assert "Commit selected records" in js
+    assert "Field Mapping" in js
+    assert "applyDiscoveryMapping" in js
+    assert '/v1/scenarios?vr_id=' in js
+
+
+def test_auth_failure_keeps_token_prompt_visible() -> None:
+    text = APP_JS.read_text(encoding="utf-8")
+    assert 'if (S.authConfigured) {' in text
+    assert "renderAuthPanel();" in text
+    assert 'res.status === 401' in text

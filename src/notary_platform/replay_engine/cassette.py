@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+from notary_platform.models import ReplayExecutionEvent
 
 
 def _call_signature(method: str, url: str, body: Optional[str] = None) -> str:
@@ -22,12 +24,21 @@ class ResponseCassette:
     method / url / body.
     """
 
-    def __init__(self, elements: list[dict[str, Any]], *, strict_order: bool = False) -> None:
+    def __init__(
+        self,
+        elements: list[dict[str, Any]],
+        *,
+        strict_order: bool = False,
+        event_callback: Callable[[ReplayExecutionEvent], None] | None = None,
+        event_sequence: int = 0,
+    ) -> None:
         self._entries: dict[str, dict[str, Any]] = {}
         self._ordered_entries: list[dict[str, Any]] = []
         self._cursor = 0
         self._strict_order = strict_order
         self._misses: list[dict[str, Any]] = []
+        self._event_callback = event_callback
+        self._event_sequence = event_sequence
         for elem in elements:
             if elem.get("kind") not in {"http", "tool_call", "api_response"}:
                 continue
@@ -63,13 +74,16 @@ class ResponseCassette:
             entry = self._ordered_entries[self._cursor] if self._cursor < len(self._ordered_entries) else None
             if entry is not None and self._matches(entry, method, url, body):
                 self._cursor += 1
+                self._emit_response_event(method, url, entry)
                 return {"response": entry["response"], "status": entry["status"]}
             self._misses.append({"method": method.upper(), "url": url, "body": body})
+            self._emit_miss_event(method, url)
             return None
 
         sig = _call_signature(method, url, body)
         entry = self._entries.get(sig)
         if entry is not None:
+            self._emit_response_event(method, url, entry)
             return {"response": entry["response"], "status": entry["status"]}
         if body is None:
             for entry in self._entries.values():
@@ -78,9 +92,35 @@ class ResponseCassette:
                     and entry.get("url") == url
                     and entry.get("body") is not None
                 ):
+                    self._emit_response_event(method, url, entry)
                     return {"response": entry["response"], "status": entry["status"]}
         self._misses.append({"method": method.upper(), "url": url, "body": body})
+        self._emit_miss_event(method, url)
         return None
+
+    def _emit_response_event(self, method: str, url: str, entry: dict[str, Any]) -> None:
+        if self._event_callback:
+            self._event_callback(ReplayExecutionEvent(
+                step="System/tool response returned from cassette",
+                source="cassette",
+                expected=f"Match {method.upper()} {url}",
+                actual=f"status={entry.get('status')}; response returned",
+                status="pass",
+                sequence=self._event_sequence,
+            ))
+            self._event_sequence += 1
+
+    def _emit_miss_event(self, method: str, url: str) -> None:
+        if self._event_callback:
+            self._event_callback(ReplayExecutionEvent(
+                step="System/tool response returned from cassette",
+                source="cassette",
+                expected=f"Match {method.upper()} {url}",
+                actual="no recorded response",
+                status="escalation_required",
+                sequence=self._event_sequence,
+            ))
+            self._event_sequence += 1
 
     def has_entry(self, method: str, url: str, body: Optional[str] = None) -> bool:
         return self.lookup(method, url, body) is not None

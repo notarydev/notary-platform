@@ -183,3 +183,98 @@ class TestCustomerRecordGoldenPath:
         if check.get("certificate_id"):
             cert_verify = client.get(f"/v1/certificates/{check['certificate_id']}/verify").json()
             assert cert_verify["signature_valid"] is True
+
+    def test_decision_discovery_import_to_release_gate(self) -> None:
+        """A Discovery import must reach a passing Release Gate without manual data repair."""
+        plan = client.post(
+            "/v1/setup/plans",
+            json={"workflow_name": "Imported lending decisions", "workflow_type": "custom"},
+        ).json()
+        record = {
+            "source_record_ref": "DISCOVERY-NORTHSTAR-001",
+            "business_function": "Bereavement refund policy misrepresentation",
+            "expected_outcome": "ESCALATE_TO_HUMAN",
+            "agent_id": "agent:northstar-support",
+            "agent_version": "support-bot@candidate",
+            "elements": [
+                {
+                    "kind": "http",
+                    "payload": {
+                        "request": {"method": "POST", "url": "https://demo.notary.local/bereavement-policy-api"},
+                        "response": {"retroactive_refund_allowed": False, "human_review_required": True},
+                        "status": 200,
+                    },
+                },
+                {"kind": "decision", "payload": {"decision": "OFFER_RETROACTIVE_REFUND"}},
+            ],
+        }
+        preview = client.post(
+            f"/v1/setup/plans/{plan['id']}/imports/preview",
+            json={"records": [record]},
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["findings"][0]["source_record_ref"] == record["source_record_ref"]
+
+        commit = client.post(
+            f"/v1/setup/plans/{plan['id']}/imports/commit",
+            json={
+                "records": [record],
+                "selected_source_record_refs": [record["source_record_ref"]],
+            },
+        )
+        assert commit.status_code == 200, commit.text
+        vr_id = commit.json()["records"][0]["id"]
+
+        label = client.post(
+            f"/v1/verification-records/{vr_id}/label",
+            params={"expected_outcome": "ESCALATE_TO_HUMAN", "reviewer": "Discovery QA", "role": "QA", "reason": "Verified against bereavement policy"},
+        )
+        assert label.status_code == 200, label.text
+
+        replay = client.post(f"/v1/verification-records/{vr_id}/replay-runs")
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["status"] == "replayed"
+
+        mutation = client.post(
+            f"/v1/verification-records/{vr_id}/mutation-tests",
+            json={
+                "fix_config": {
+                    "require_policy_match_for_refund_claims": True,
+                    "escalate_when_policy_requires_human_review": True,
+                },
+                "expected_correct_behavior": "ESCALATE_TO_HUMAN",
+            },
+        )
+        assert mutation.status_code == 200, mutation.text
+        assert mutation.json()["verdict"] == "verified"
+
+        proof = client.post(f"/v1/verification-records/{vr_id}/proof-of-mitigation")
+        assert proof.status_code == 200, proof.text
+        proof_data = proof.json()
+        assert proof_data["certificate_type"] == "proof_of_mitigation"
+        assert client.get(f"/v1/certificates/{proof_data['id']}/verify").json()["signature_valid"] is True
+
+        scenario = client.post("/v1/scenarios", params={"vr_id": vr_id})
+        assert scenario.status_code == 200, scenario.text
+        scenario_id = scenario.json()["id"]
+
+        policy = client.post(
+            "/v1/readiness-policies",
+            json={"name": "Imported Discovery Gate", "required_scenario_ids": [scenario_id]},
+        )
+        assert policy.status_code == 200, policy.text
+        policy_id = policy.json()["id"]
+
+        gate = client.post(
+            "/v1/release-gate/checks",
+            json={
+                "policy_id": policy_id,
+                "agent_version": "support-bot@fixed",
+                "fix_config": {
+                    "require_policy_match_for_refund_claims": True,
+                    "escalate_when_policy_requires_human_review": True,
+                },
+            },
+        )
+        assert gate.status_code == 200, gate.text
+        assert gate.json()["status"] == "pass"

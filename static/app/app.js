@@ -31,6 +31,10 @@ const S = {
   setupCaptureMethod: null,
   setupEvidenceSources: null,
   setupPlanId: null,
+  discoveryPlanId: null,
+  discoveryRecords: [],
+  discoveryFindings: [],
+  discoveryMapping: {},
   onbSystems: [],
   onbReceived: null,
   onbSending: false,
@@ -137,6 +141,10 @@ async function apiPatch(path, body, opts = {}) {
     body: JSON.stringify(body || {}),
     ...opts,
   });
+  if (res.status === 401) {
+    S.authConfigured = true;
+    throw new Error("Authentication required. Enter your API token in Settings.");
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status}: ${text || res.statusText}`);
@@ -245,6 +253,8 @@ async function R() {
       await renderIntegrations(c);
     } else if (S.view === "setup") {
       renderSetup(c);
+    } else if (S.view === "discovery") {
+      await renderDiscovery(c);
     } else if (S.view === "verification-records") {
       const vrs = await apiGet("/v1/verification-records");
       renderVRs(c, vrs);
@@ -303,7 +313,11 @@ async function R() {
       c.innerHTML = renderErrorState("Unknown view: " + S.view);
     }
   } catch (e) {
-    c.innerHTML = renderErrorState(e.message, "R()");
+    if (S.authConfigured) {
+      renderAuthPanel();
+    } else {
+      c.innerHTML = renderErrorState(e.message, "R()");
+    }
   }
 }
 
@@ -313,6 +327,7 @@ async function R() {
     demo: "Demo",
     integrations: "Integrations",
     setup: "Setup",
+    discovery: "Decision Discovery",
     "verification-records": "Verification Records",
     "vr-detail": "Verification Record Detail",
     incidents: "Incidents",
@@ -1042,7 +1057,7 @@ async function renderSetupSelectionRulesStep() {
         </div>
       `).join('')}
       <div style="margin-top:16px;font-size:12px;color:var(--muted)">
-        Rules are evaluated in order. The first matching rule determines the trigger_type on the record.
+        All matching rules are retained; the first matching rule supplies the primary trigger_type on the record.
         Rules are evaluated by Notary Platform for imports and submitted records. SDKs may apply lightweight local filtering, but the platform is the source of truth.
       </div>
     </div>`;
@@ -1305,13 +1320,99 @@ function buildFieldMapping(records) {
   if (!records.length) return {};
   const sample = records[0];
   const mapping = {};
-  if (sample.case_id && !sample.source_record_ref) mapping.source_record_ref = "case_id";
-  if (sample.bot_response && !sample.elements) mapping.elements = "bot_response";
-  if (sample.human_resolution && !sample.expected_outcome) mapping.expected_outcome = "human_resolution";
-  if (sample.bot_version) mapping.agent_version = "bot_version";
-  if (sample.policy_version) mapping.policy_version = "policy_version";
-  if (sample.customer_message) mapping.customer_message = "customer_message";
+  const first = (keys) => keys.find(key => sample[key] !== undefined && sample[key] !== "");
+  if (!sample.source_record_ref) { const key = first(["case_id", "ticket_id", "conversation_id", "record_id"]); if (key) mapping.source_record_ref = key; }
+  if (!sample.elements) { const key = first(["bot_response", "events", "trace", "decision_path"]); if (key) mapping.elements = key; }
+  if (!sample.expected_outcome) { const key = first(["human_resolution", "expected_decision", "label", "ground_truth"]); if (key) mapping.expected_outcome = key; }
+  ["agent_id", "agent_version", "model_provider", "model_name", "policy_version", "business_function", "customer_message"].forEach(key => {
+    if (sample[key] !== undefined && sample[key] !== "") mapping[key] = key;
+  });
   return mapping;
+}
+
+const DISCOVERY_MAPPING_FIELDS = [
+  ["source_record_ref", "Record reference"],
+  ["elements", "Decision path / events"],
+  ["expected_outcome", "Expected outcome"],
+  ["business_function", "Business function"],
+  ["agent_id", "Agent ID"],
+  ["agent_version", "Agent version"],
+  ["model_provider", "Model provider"],
+  ["model_name", "Model name"],
+  ["policy_version", "Policy version"],
+];
+
+function renderDiscoveryMapping(records) {
+  const keys = records.flatMap(record => Object.keys(record)).filter((key, idx, all) => all.indexOf(key) === idx).sort();
+  const option = (selected) => `<option value="">Not mapped</option>${keys.map(key => `<option value="${esc(key)}"${selected === key ? " selected" : ""}>${esc(key)}</option>`).join("")}`;
+  return `<div class="discovery-mapping"><div class="section-title" style="margin:0 0 6px">Field Mapping</div><div class="section-sub">Confirm how this export maps into a Verification Record. Fields are read-only until you preview again.</div><div class="discovery-mapping-grid">${DISCOVERY_MAPPING_FIELDS.map(([field, label]) => `<label class="np-field"><span>${label}</span><select class="discovery-map" data-field="${field}">${option(S.discoveryMapping[field])}</select></label>`).join("")}</div><button class="btn btn-sm" onclick="applyDiscoveryMapping()">Preview with mapping</button></div>`;
+}
+
+async function renderDiscovery(c) {
+  if (!S.discoveryPlanId) {
+    const plans = await apiGet("/v1/setup/plans").catch(() => []);
+    if (plans.length) S.discoveryPlanId = plans[0].id;
+    else S.discoveryPlanId = (await apiPost("/v1/setup/plans", {workflow_name: "Decision Discovery", workflow_type: "custom"})).id;
+  }
+  c.innerHTML = `<div class="section-title">Decision Discovery</div><div class="section-sub">Import decision events, see what is worth proving, and commit only the records you select.</div><section class="discovery-import-panel"><div class="discovery-input-row"><div class="np-field"><label>Format</label><select id="discovery-format"><option value="json">JSON</option><option value="jsonl">JSONL</option><option value="csv">CSV</option></select></div><div class="np-field discovery-file"><label>File</label><input id="discovery-file" type="file" accept=".json,.jsonl,.ndjson,.csv" onchange="loadDiscoveryFile(this)"></div></div><div class="np-field"><label>Decision event data</label><textarea id="discovery-content" rows="10" placeholder='[{"source_record_ref":"CASE-123","elements":[{"kind":"decision","payload":{"decision":"DENY"}}]}]'></textarea></div><div class="action-row"><button class="btn" onclick="previewDiscovery()">Preview findings</button><span class="section-sub" style="margin:0">JSON, JSONL, or CSV. Nothing is committed until you confirm.</span></div></section><div id="discovery-results">${S.discoveryFindings.length ? renderDiscoveryResults() : renderEmptyState("No preview yet", "Load decision events to see replayability and candidate findings.", "")}</div>`;
+}
+
+async function loadDiscoveryFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const ext = file.name.split(".").pop().toLowerCase();
+  const format = ext === "ndjson" ? "jsonl" : ext;
+  if (["json", "jsonl", "csv"].includes(format)) q("#discovery-format").value = format;
+  q("#discovery-content").value = await file.text();
+}
+
+async function previewDiscovery() {
+  const content = q("#discovery-content")?.value.trim();
+  const format = q("#discovery-format")?.value || "json";
+  if (!content) { notify("Add a decision export first", "error"); return; }
+  try {
+    const parsed = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/parse`, {format, content});
+    const records = parsed.records || [];
+    const mapping = buildFieldMapping(records);
+    S.discoveryRecords = records;
+    S.discoveryMapping = mapping;
+    const preview = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/preview`, {records, field_mapping: mapping});
+    S.discoveryFindings = preview.findings || [];
+    const target = q("#discovery-results");
+    if (target) target.innerHTML = renderDiscoveryResults(preview);
+    notify(`Previewed ${preview.total_records} records`, "success");
+  } catch (e) { notify("Discovery preview failed: " + e.message, "error"); }
+}
+
+function renderDiscoveryResults(preview = {}) {
+  const findings = preview.findings || S.discoveryFindings;
+  const rows = findings.map(f => `<tr><td><input type="checkbox" class="discovery-select" data-ref="${esc(f.source_record_ref)}" checked></td><td>${esc(f.source_record_ref || "—")}</td><td>${esc(f.trigger || "—")}</td><td>${esc(f.replayability || "—")}</td><td>${f.scenario_candidate ? "Candidate" : "Review"}</td><td>${esc(f.reason || "—")}</td></tr>`).join("");
+  return `<section class="discovery-results-panel">${S.discoveryRecords.length ? renderDiscoveryMapping(S.discoveryRecords) : ""}<div class="discovery-metrics"><span><strong>${preview.total_records || S.discoveryRecords.length || 0}</strong> scanned</span><span><strong>${preview.matched_count || findings.length}</strong> matched</span><span><strong>${preview.replayable_count || 0}</strong> replayable</span><span><strong>${preview.needs_label_count || 0}</strong> need labels</span><span><strong>${preview.scenario_candidate_count || 0}</strong> candidates</span></div>${preview.missing_required_fields?.length ? `<div class="proof-pending">Missing mapped fields: ${esc(preview.missing_required_fields.join(", "))}</div>` : ""}${rows ? `<table><thead><tr><th>Select</th><th>Record</th><th>Finding</th><th>Replayability</th><th>Path</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table><div class="action-row" style="margin-top:12px"><button class="btn btn-green" onclick="commitDiscoverySelection()">Commit selected records</button></div>` : renderEmptyState("No findings", "No enabled selection rule matched these records.", "")}</section>`;
+}
+
+async function applyDiscoveryMapping() {
+  const mapping = {};
+  qa(".discovery-map").forEach(select => { if (select.value) mapping[select.dataset.field] = select.value; });
+  S.discoveryMapping = mapping;
+  try {
+    const preview = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/preview`, {records: S.discoveryRecords, field_mapping: mapping});
+    S.discoveryFindings = preview.findings || [];
+    const target = q("#discovery-results");
+    if (target) target.innerHTML = renderDiscoveryResults(preview);
+    notify(`Previewed ${preview.total_records} records with mapping`, "success");
+  } catch (e) { notify("Mapping preview failed: " + e.message, "error"); }
+}
+
+async function commitDiscoverySelection() {
+  const selected = Array.from(qa(".discovery-select")).filter(x => x.checked).map(x => x.dataset.ref);
+  if (!selected.length) { notify("Select at least one finding", "error"); return; }
+  try {
+    const result = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/commit`, {records: S.discoveryRecords, field_mapping: S.discoveryMapping, selected_source_record_refs: selected});
+    notify(`Committed ${result.imported} Verification Record${result.imported === 1 ? "" : "s"}`, "success");
+    S.discoveryFindings = result.discovery_findings || S.discoveryFindings;
+    const target = q("#discovery-results");
+    if (target) target.innerHTML = renderDiscoveryResults({findings: S.discoveryFindings, matched_count: S.discoveryFindings.length});
+  } catch (e) { notify("Discovery commit failed: " + e.message, "error"); }
 }
 
 
@@ -2932,7 +3033,7 @@ async function issueVRProof(vrId) {
 
 async function promoteVRToScenario(vrId) {
   try {
-    const r = await apiPost("/v1/scenarios", {vr_id: vrId});
+    const r = await apiPost("/v1/scenarios?vr_id=" + encodeURIComponent(vrId));
     notify("Promoted to scenario " + r.id, "success");
     S.selectedScenario = r.id;
     nav("scenario-detail");
@@ -3133,6 +3234,13 @@ async function renderIncidentDetail(c, i, wf) {
     proofDetailHtml = '<div class="proof-pending"><strong>No certificate issued</strong><p>' + esc(proofError || "Issue Proof becomes available after a mitigated Fix Verification.") + '</p>' + (wf.issue_proof_next_action ? '<p style="margin-top:8px;font-size:12px;color:var(--muted)">Next: ' + esc(wf.issue_proof_next_action) + '</p>' : '') + '</div>';
   }
 
+  var scenarioPromotionHtml = sourceVr
+    ? '<p style="font-size:12px;color:var(--muted);margin-bottom:8px">Promote this verified failure as a reusable scenario so future release checks can detect the same decision regression.</p>' +
+      (cert.certificate_id
+        ? '<button class="btn btn-sm btn-outline" onclick="promoteToScenario(\'' + sourceVr.id + "','" + i.incident_id + '\')">Promote to Scenario</button>'
+        : '<div class="proof-pending"><strong>Promotion pending proof</strong><p>Issue a proof certificate after a successful fix verification before promoting this incident to the scenario library.</p></div>')
+    : '<div class="proof-pending"><strong>No source Verification Record</strong><p>Scenario promotion becomes available when this incident is linked to a Verification Record.</p></div>';
+
   var gateHtml = '<div class="gate-impact"><span class="gate-node gate-capture">Captured</span><span class="gate-line"></span><span class="gate-node ' + (i.replay_result ? "gate-fail" : "gate-muted") + '">' + (i.replay_result ? "Blocked before fix" : "Replay pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (fixMitigated ? "gate-pass" : "gate-muted") + '">' + (fixMitigated ? "Pass after fix" : "Fix pending") + '</span><span class="gate-line"></span><span class="gate-node ' + (cert.certificate_id ? "gate-pass" : "gate-muted") + '">' + (cert.certificate_id ? "Proof attached" : "Gate not updated") + '</span></div><p class="section-sub" style="margin-top:8px">A promoted scenario can block a release when this known failure reappears. This is scenario-scoped evidence, not a general AI safety claim.</p>';
 
   c.innerHTML = [
@@ -3142,6 +3250,7 @@ async function renderIncidentDetail(c, i, wf) {
     statusBadge(i.status),
     '<span style="font-size:13px;color:var(--muted)">ID: ' + esc(i.incident_id) + '</span>',
     '</div>',
+    '<section>' + renderSection("Incident business summary", '<p class="section-sub" style="margin:0 0 12px">A captured AI decision is replayed from sealed evidence, compared with the original outcome, and verified again after the fix.</p><div class="incident-summary-v2">') + '</section>',
     // Phase C: separate captured/replayed/expected/after-fix summary
     '<section><div class="incident-summary-v2">',
     '<div class="summary-block"><span class="summary-block-label">Captured</span><strong>' + esc(originalDecision) + '</strong><span class="summary-block-source">from ' + esc(systemName) + '</span></div>',
@@ -3183,7 +3292,7 @@ async function renderIncidentDetail(c, i, wf) {
     }).join("") + '</tbody></table></div>' : "No captured elements") + (sourceVr ? renderSection("Source Record", renderKV("Verification Record", '<span class="link" onclick="openVRDetail(\'' + sourceVr.id + '\')">' + sourceVr.id + '</span>') + renderKV("Replayability", statusBadge(sourceVr.replayability)) + renderKV("Label", sourceVr.current_label_id ? '<span class="link">' + esc(sourceVr.current_label_id) + '</span>' : "—")) : "")) + '</div>',
     '<div data-tab="replay" style="display:' + (activeTab === "replay" ? "block" : "none") + '">' + renderSection("Replay Execution Workspace", replayColumnsHtml) + (i.replay_result && i.replay_result.reason ? '<div class="error-state" style="margin-top:12px">Replay issue: ' + esc(i.replay_result.reason) + '</div>' : "") + renderSection("Decisions", renderKV("Original", '<span class="decision-pill decision-fail">' + esc(originalDecision) + '</span>') + renderKV("Replayed", '<span class="decision-pill ' + (replayedDecision === originalDecision ? "decision-fail" : "decision-neutral") + '">' + esc(replayedDecision || "Pending") + '</span>') + renderKV("Comparison", replayStatus === "pass" ? '<span style="color:var(--green);font-weight:800">Failure reproduced ✓</span>' : '<span style="color:var(--dim)">Pending</span>')) + '</div>',
     '<div data-tab="fix" style="display:' + (activeTab === "fix" ? "block" : "none") + '">' + fixDetailHtml + '</div>',
-    '<div data-tab="proof" style="display:' + (activeTab === "proof" ? "block" : "none") + '">' + proofDetailHtml + '</div>',
+    '<div data-tab="proof" style="display:' + (activeTab === "proof" ? "block" : "none") + '">' + proofDetailHtml + renderSection("Scenario promotion", scenarioPromotionHtml) + '</div>',
     '<div data-tab="gate" style="display:' + (activeTab === "gate" ? "block" : "none") + '">' + gateHtml + '</div>',
     '<div data-tab="audit" style="display:' + (activeTab === "audit" ? "block" : "none") + '">' + renderSection("Chronological Audit Trail", custodyHtml || "No audit events recorded.") + '</div>',
     '</div>',
@@ -3492,12 +3601,68 @@ async function testSystemConnection(id) {
 // --- SCENARIOS ---
 
 function renderScenarios(c, scenarios, candidates) {
+  const active = scenarios.filter(s => s.state !== "retired");
+  const retired = scenarios.filter(s => s.state === "retired");
+  const libraryStats = buildScenarioLibraryStats(scenarios, candidates);
   c.innerHTML = `
     <div class="section-title">Scenario Library</div>
-    <div class="section-sub">Promote verified incidents to reusable scenarios, run them against agent versions, and use them in readiness policies.</div>
-    ${renderSection("Active Scenarios", scenarios.length ? scenarios.map(s => scenarioCard(s)).join("") : `<div class="empty-state compact"><h3>No scenarios in the library yet</h3><p>Promote a verified incident from the incident detail view, or seed demo data.</p></div>`)}
+    <div class="section-sub">Promote verified incidents to reusable scenarios, test them against agent versions, and turn real failures into release gates.</div>
+    <div class="stat-grid" style="margin-bottom:16px">
+      ${[
+        { value: libraryStats.total, label: "Library Scenarios", color: "var(--blue)" },
+        { value: libraryStats.active, label: "Active", color: "var(--green)" },
+        { value: libraryStats.candidates, label: "Candidates", color: "var(--amber)" },
+        { value: libraryStats.ready, label: "Ready", color: "var(--purple)" },
+        { value: libraryStats.blocked, label: "Blocked", color: "var(--red)" },
+        { value: libraryStats.coverage, label: "Replay Coverage", color: "var(--accent)" },
+      ].map(s => `
+        <div class="stat">
+          <div class="stat-val" style="color:${s.color}">${esc(String(s.value))}</div>
+          <div class="stat-label">${esc(s.label)}</div>
+        </div>
+      `).join("")}
+    </div>
+    ${renderSection("Testing Playground", `
+      <div class="int-card">
+        <h4>Run the library against an agent version</h4>
+        <p style="font-size:12px;color:var(--muted);margin-top:6px">Use the current agent version in the top bar to replay the active library and see which scenarios would block a release.</p>
+        <div class="action-row" style="margin-top:12px">
+          <button class="btn btn-sm" onclick="runScenarioSet(${JSON.stringify(active.map(s => s.id))})" ${active.length ? "" : "disabled"}>Run Active Library</button>
+          <button class="btn btn-sm btn-outline" onclick="nav('readiness')">Open Readiness Policies</button>
+        </div>
+      </div>
+    `)}
+    ${renderSection("Scenario Intelligence", `
+      <table>
+        <thead><tr><th>Signal</th><th>Count</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Reusable scenarios</td><td>${libraryStats.total}</td><td>Verified cases available as regression coverage</td></tr>
+          <tr><td>Scenario candidates</td><td>${libraryStats.candidates}</td><td>Promotable records waiting for review</td></tr>
+          <tr><td>Ready to gate</td><td>${libraryStats.ready}</td><td>Scenarios already trusted for readiness policies</td></tr>
+          <tr><td>Needs attention</td><td>${libraryStats.blocked}</td><td>Scenarios with blocked sandbox or replay conditions</td></tr>
+        </tbody>
+      </table>
+    `)}
+    ${renderSection("Active Scenarios", active.length ? active.map(s => scenarioCard(s)).join("") : `<div class="empty-state compact"><h3>No scenarios in the library yet</h3><p>Promote a verified incident from the incident detail view, or seed demo data.</p></div>`)}
+    ${retired.length ? renderSection("Retired Scenarios", retired.map(s => scenarioCard(s)).join("")) : ""}
     ${renderSection("Scenario Candidates", candidates.length ? candidates.filter(sc => sc.state === "candidate").map(sc => candidateCard(sc)).join("") : `<div class="empty-state compact"><h3>No candidates ready</h3><p>Candidates are created when you promote an incident that meets the readiness criteria.</p></div>`)}
   `;
+}
+
+function buildScenarioLibraryStats(scenarios, candidates) {
+  const active = scenarios.filter(s => s.state === "active");
+  const ready = scenarios.filter(s => s.required_sandbox_id && s.replayability !== "unknown").length;
+  const blocked = scenarios.filter(s => s.replayability === "missing_context" || s.replayability === "requires_sandbox").length;
+  const replayable = scenarios.filter(s => s.replayability === "replayable").length;
+  const coverage = scenarios.length ? `${Math.round((replayable / scenarios.length) * 100)}%` : "0%";
+  return {
+    total: scenarios.length,
+    active: active.length,
+    candidates: candidates.filter(c => c.state === "candidate").length,
+    ready,
+    blocked,
+    coverage,
+  };
 }
 
 function scenarioCard(sc) {
@@ -3506,9 +3671,9 @@ function scenarioCard(sc) {
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
           <h4>${esc(sc.business_title)}</h4>
-          <p style="font-size:12px;color:var(--muted)">Expected outcome: ${esc(sc.expected_outcome)} · Source: ${sc.source_vr_id}</p>
+          <p style="font-size:12px;color:var(--muted)">Expected outcome: ${esc(sc.expected_outcome)} · Source VR: ${esc(sc.source_vr_id)}${sc.source_incident_id ? ` · Incident: ${esc(sc.source_incident_id)}` : ""}</p>
         </div>
-        <span class="badge badge-${sc.state === "active" ? "built" : "planned"}">${sc.state}</span>
+        <span class="badge badge-${sc.state === "active" ? "built" : sc.state === "retired" ? "neutral" : "planned"}">${sc.state}</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px">
         Replayability: ${statusBadge(sc.replayability)} ${Math.round((sc.replayability_score || 0) * 100)}% · Sandbox: ${sc.required_sandbox_id || "—"} · Last run: ${sc.last_run_status || "not_started"}
@@ -3516,6 +3681,7 @@ function scenarioCard(sc) {
       <div class="action-row" style="margin-top:12px">
         <button class="btn btn-sm" onclick="runScenarioSet(['${sc.id}'])">Run This Scenario</button>
         <button class="btn btn-sm btn-outline" onclick="openScenarioDetail('${sc.id}')">Detail</button>
+        <button class="btn btn-sm btn-outline" onclick="copyScenarioExport('${sc.id}')">Export</button>
       </div>
     </div>`;
 }
@@ -3547,6 +3713,21 @@ function openScenarioDetail(id) {
 
 async function renderScenarioDetail(c, s, runs) {
   const sourceRuns = runs.filter(r => r.scenario_ids.includes(s.id));
+  const exportPayload = {
+    id: s.id,
+    business_title: s.business_title,
+    source_vr_id: s.source_vr_id,
+    source_incident_id: s.source_incident_id,
+    source_system_id: s.source_system_id,
+    expected_outcome: s.expected_outcome,
+    replayability: s.replayability,
+    replayability_score: s.replayability_score,
+    required_sandbox_id: s.required_sandbox_id,
+    evidence_refs: s.evidence_refs,
+    state: s.state,
+    last_run_status: s.last_run_status,
+    created_at: s.created_at,
+  };
   c.innerHTML = `
     <button class="btn btn-sm btn-outline" style="margin-bottom:16px" onclick="nav('scenarios')">← Back to Scenarios</button>
     <div style="display:flex;gap:12px;align-items:center;margin:8px 0 16px">
@@ -3556,9 +3737,19 @@ async function renderScenarioDetail(c, s, runs) {
     ${renderSection("Summary", `
       ${renderKV("Business Title", s.business_title)}
       ${renderKV("Source V.R.", `<span class="link" onclick="openVRDetail('${s.source_vr_id}')">${s.source_vr_id}</span>`)}
+      ${renderKV("Source Incident", s.source_incident_id ? `<span class="link" onclick="openIncidentDetail('${s.source_incident_id}')">${s.source_incident_id}</span>` : "—")}
       ${renderKV("Expected Outcome", s.expected_outcome)}
       ${renderKV("Replayability", statusBadge(s.replayability))}
       ${renderKV("Last Run Status", s.last_run_status || "not_started")}
+      ${renderKV("Evidence Refs", s.evidence_refs && s.evidence_refs.length ? s.evidence_refs.join(", ") : "—")}
+    `)}
+    ${renderSection("Scenario Export", `
+      <div class="int-card">
+        ${renderCodeBlock(JSON.stringify(exportPayload, null, 2))}
+        <div class="action-row" style="margin-top:12px">
+          <button class="btn btn-sm btn-outline" onclick="copyScenarioExport('${s.id}')">Copy JSON</button>
+        </div>
+      </div>
     `)}
     ${renderSection("Run History", sourceRuns.length ? `
       <table>
@@ -3579,6 +3770,31 @@ async function renderScenarioDetail(c, s, runs) {
       ${s.state === "active" ? `<button class="btn btn-sm btn-outline" onclick="retireScenario('${s.id}')">Retire</button>` : `<button class="btn btn-sm btn-outline" onclick="reactivateScenario('${s.id}')">Reactivate</button>`}
     </div>
   `;
+}
+
+async function copyScenarioExport(id) {
+  try {
+    const s = await apiGet("/v1/scenarios/" + id);
+    const payload = JSON.stringify({
+      id: s.id,
+      business_title: s.business_title,
+      source_vr_id: s.source_vr_id,
+      source_incident_id: s.source_incident_id,
+      source_system_id: s.source_system_id,
+      expected_outcome: s.expected_outcome,
+      replayability: s.replayability,
+      replayability_score: s.replayability_score,
+      required_sandbox_id: s.required_sandbox_id,
+      evidence_refs: s.evidence_refs,
+      state: s.state,
+      last_run_status: s.last_run_status,
+      created_at: s.created_at,
+    }, null, 2);
+    await copyToClipboard(payload);
+    notify("Scenario JSON copied", "success");
+  } catch (e) {
+    notify("Export failed: " + e.message, "error");
+  }
 }
 
 async function openScenarioRunDetail(runId) {

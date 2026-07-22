@@ -35,7 +35,9 @@ from notary_platform.setup_engine import (
     ReleaseGatePlanner,
     ScenarioCandidateService,
     SetupReadinessService,
+    get_workflow_template,
     get_workflow_templates,
+    parse_discovery_input,
 )
 
 router = APIRouter(tags=["setup"])
@@ -627,6 +629,54 @@ _release_gate_planner = ReleaseGatePlanner()
 _readiness_svc = SetupReadinessService()
 
 
+def _ensure_plan_workflow(plan: Any) -> Any:
+    """Attach a workflow and selection rules to plans created by Discovery.
+
+    Older plans and the lightweight Discovery entry point may not carry a
+    workflow id. Heal those plans at the boundary so preview and commit never
+    silently become a no-op because there are no selection rules.
+    """
+    if plan.workflow_id and storage.get_decision_workflow(plan.workflow_id):
+        return plan
+
+    template = get_workflow_template(plan.workflow_type) or get_workflow_template("refund_or_policy_answer")
+    workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
+    workflow = DecisionWorkflow(
+        id=workflow_id,
+        org_id=plan.org_id,
+        environment_id=plan.environment_id,
+        name=plan.workflow_name or (template or {}).get("name", "Decision Discovery"),
+        workflow_type=plan.workflow_type or (template or {}).get("workflow_type", "refund_or_policy_answer"),
+        description=(template or {}).get("description", "Imported AI decision events selected for assurance review."),
+        expected_safe_outcome=(template or {}).get("expected_safe_outcome", ""),
+        common_failure=(template or {}).get("bad_outcome", ""),
+        risk_level=(template or {}).get("risk_level", "medium"),
+        status="configuring",
+    )
+    workflow.touch()
+    storage.create_decision_workflow(workflow)
+
+    rule_definitions = (template or {}).get("record_selection_rules") or _DEFAULT_RECORD_RULES
+    rules = [
+        RecordSelectionRule(
+            id=f"rsr-{uuid.uuid4().hex[:12]}",
+            workflow_id=workflow_id,
+            org_id=plan.org_id,
+            trigger_type=rule.get("trigger_type", ""),
+            label=rule.get("label", ""),
+            description=rule.get("description", ""),
+            enabled=rule.get("enabled", True),
+            condition=json.dumps(rule.get("condition", {})),
+        )
+        for rule in rule_definitions
+    ]
+    storage.save_record_selection_rules(workflow_id, rules)
+    plan.workflow_id = workflow_id
+    plan.touch()
+    _engine_svc.update_plan(plan.id, workflow_id=workflow_id)
+    return plan
+
+
 @router.get("/setup/workflow-templates")
 def list_workflow_templates() -> list[dict]:
     return get_workflow_templates()
@@ -648,6 +698,7 @@ def create_plan(body: dict[str, Any], _org: str = Depends(require_auth)) -> dict
         workflow_type=body.get("workflow_type", ""),
         workflow_name=body.get("workflow_name", ""),
     )
+    _ensure_plan_workflow(plan)
     return plan.to_dict()
 
 
@@ -712,6 +763,7 @@ def plan_record_selection_rules(plan_id: str, _org: str = Depends(require_auth))
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     if not plan.workflow_id:
         return []
     existing = storage.list_record_selection_rules(plan.workflow_id)
@@ -766,30 +818,26 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     records = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
-    if field_mapping:
-        mapped_records = []
-        for rec in records:
-            mapped = {}
-            for target, source in field_mapping.items():
-                val = rec.get(source) if isinstance(source, str) else source
-                if target == "elements" and isinstance(val, list):
-                    mapped["elements"] = val
-                elif target == "expected_outcome":
-                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
-                elif target == "source_record_ref":
-                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
-                else:
-                    mapped[target] = val if val is not None else rec.get(target, "")
-            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
-                if k not in mapped or not mapped.get(k):
-                    mapped[k] = rec.get(k, "" if k != "elements" else [])
-            mapped_records.append(mapped)
-        records = mapped_records
+    records = [_record_svc.normalize_record(record, field_mapping) for record in records]
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
     preview = _import_preview_svc.preview(records, rules)
     result = preview.to_dict()
+    selection_results = _record_svc.apply_rules(records, rules)
+    result["findings"] = [
+        {
+            "source_record_ref": r.source_row_id,
+            "trigger": r.trigger,
+            "reason": r.reason,
+            "replayability": r.replayability,
+            "scenario_candidate": r.scenario_candidate,
+            "matched_rules": r.matched_rules,
+        }
+        for r in selection_results
+        if r.create_vr
+    ][:200]
     ev = _import_preview_svc.estimate_volume(plan.workflow_type or "")
     result["estimated_volume"] = ev
     result["ignored_count"] = result["total_records"] - result["matched_count"]
@@ -799,6 +847,18 @@ def plan_import_preview(plan_id: str, body: dict[str, Any], _org: str = Depends(
     return result
 
 
+@router.post("/setup/plans/{plan_id}/imports/parse")
+def plan_import_parse(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
+    """Parse a discovery file payload before field mapping and preview."""
+    if not _engine_svc.get_plan(plan_id):
+        raise HTTPException(404, "Plan not found")
+    try:
+        records = parse_discovery_input(str(body.get("content", "")), str(body.get("format", "json")))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f"Invalid discovery input: {exc}") from exc
+    return {"format": body.get("format", "json"), "record_count": len(records), "records": records}
+
+
 @router.post("/setup/plans/{plan_id}/imports/commit")
 def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(require_auth)) -> dict:
     from notary_platform.api_server.routers.ingestion import get_registry
@@ -806,40 +866,38 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
     plan = _engine_svc.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
+    _ensure_plan_workflow(plan)
     records_raw = body.get("records", [])
     field_mapping = body.get("field_mapping", {})
+    selected_refs = {str(ref) for ref in body.get("selected_source_record_refs", [])}
     rules = storage.list_record_selection_rules(plan.workflow_id) if plan.workflow_id else []
-    if field_mapping:
-        mapped_records = []
-        for rec in records_raw:
-            mapped = {}
-            for target, source in field_mapping.items():
-                val = rec.get(source) if isinstance(source, str) else source
-                if target == "elements" and isinstance(val, list):
-                    mapped["elements"] = val
-                elif target == "expected_outcome":
-                    mapped["expected_outcome"] = val if val else rec.get("expected_outcome", "")
-                elif target == "source_record_ref":
-                    mapped["source_record_ref"] = val if val else rec.get("source_record_ref", "")
-                else:
-                    mapped[target] = val if val is not None else rec.get(target, "")
-            for k in ("source_record_ref", "expected_outcome", "elements", "business_function"):
-                if k not in mapped or not mapped.get(k):
-                    mapped[k] = rec.get(k, "" if k != "elements" else [])
-            mapped_records.append(mapped)
-        records_raw = mapped_records
+    records_raw = [_record_svc.normalize_record(record, field_mapping) for record in records_raw]
     results = _record_svc.apply_rules(records_raw, rules)
     created = []
+    rejected = []
+    findings = []
     for idx, rslt in enumerate(results):
         if not rslt.create_vr:
             continue
         if idx >= len(records_raw):
             continue
         item = records_raw[idx]
+        source_record_ref = str(item.get("source_record_ref", rslt.source_row_id))
+        finding = {
+            "source_record_ref": source_record_ref,
+            "trigger": rslt.trigger,
+            "reason": rslt.reason,
+            "replayability": rslt.replayability,
+            "scenario_candidate": rslt.scenario_candidate,
+            "matched_rules": rslt.matched_rules,
+        }
+        findings.append(finding)
+        if selected_refs and source_record_ref not in selected_refs:
+            continue
         snapshot = {
             "schema_version": item.get("schema_version", 1),
             "source_system_id": item.get("source_system_id", "import"),
-            "source_record_ref": item.get("source_record_ref", rslt.source_row_id),
+            "source_record_ref": source_record_ref,
             "business_function": item.get("business_function", plan.workflow_id),
             "expected_outcome": item.get("expected_outcome", ""),
             "elements": item.get("elements", []),
@@ -858,9 +916,12 @@ def plan_import_commit(plan_id: str, body: dict[str, Any], _org: str = Depends(r
                 "replayability": vr.replayability.value,
                 "trigger": rslt.trigger,
             })
-        except Exception:
-            pass
-    return {"imported": len(created), "records": created}
+        except Exception as exc:
+            rejected.append({
+                "source_record_ref": snapshot["source_record_ref"],
+                "reason": str(exc),
+            })
+    return {"imported": len(created), "rejected": rejected, "records": created, "discovery_findings": findings}
 
 
 @router.get("/setup/plans/{plan_id}/readiness")
