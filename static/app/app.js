@@ -531,7 +531,7 @@ async function continueFromStep(step) {
       try {
         await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
           workflow_type: S.setupWorkflow.workflow_type,
-          name: name,
+          workflow_name: name,
         });
         S.setupWorkflow.name = name;
       } catch (e) { /* non-blocking */ }
@@ -727,7 +727,7 @@ async function renderSetupWorkflowStep() {
   return `
     <div class="setup-step-content">
       <h2>Configure decision workflow</h2>
-      <p class="setup-lead">Refine the workflow for <strong>${esc(saved.name || plan.name || "")}</strong>. These details help Notary determine what evidence to capture.</p>
+      <p class="setup-lead">Refine the workflow for <strong>${esc(saved.name || plan.workflow_name || "")}</strong>. These details help Notary determine what evidence to capture.</p>
       <div class="np-form">
         <div class="np-field"><label>What decision does the AI make?</label>
           <textarea id="wf-description" rows="2" placeholder="e.g. The bot decides whether to offer a refund, escalate, or answer based on policy.">${esc(saved.description || plan.description || "")}</textarea>
@@ -767,7 +767,7 @@ async function selectObjectiveTemplate(templateId) {
     try {
       const updated = await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
         workflow_type: templateId,
-        name: S.setupWorkflow.name,
+        workflow_name: S.setupWorkflow.name,
       });
       S.setupWorkflow = { ...S.setupWorkflow, ...updated };
     } catch (e) { /* will retry on save */ }
@@ -784,7 +784,7 @@ async function saveObjectiveStep() {
     if (S.setupPlanId) {
       const updated = await apiPatch("/v1/setup/plans/" + S.setupPlanId, {
         workflow_type: S.setupWorkflow.workflow_type,
-        name: S.setupWorkflow.name,
+        workflow_name: S.setupWorkflow.name,
       });
       S.setupWorkflow = { ...S.setupWorkflow, ...updated };
     }
@@ -802,7 +802,7 @@ async function saveWorkflowStep() {
     expected_safe_outcome: q("#wf-outcome").value,
     risk_level: q("#wf-risk").value,
   };
-  if (S.setupWorkflow && S.setupWorkflow.name) body.name = S.setupWorkflow.name;
+  if (S.setupWorkflow && S.setupWorkflow.name) body.workflow_name = S.setupWorkflow.name;
   if (S.setupWorkflow && S.setupWorkflow.workflow_type) body.workflow_type = S.setupWorkflow.workflow_type;
   try {
     if (S.setupPlanId) {
@@ -820,11 +820,24 @@ async function saveWorkflowStep() {
 }
 
 async function renderEvidenceSourcesStep() {
-  const planId = S.setupPlanId;
+  let planId = S.setupPlanId;
   if (!planId) {
-    return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Create a plan first to see suggested evidence sources.</p></div>`;
+    try {
+      const plan = await apiPost("/v1/setup/plans", {});
+      S.setupPlanId = plan.id;
+      planId = plan.id;
+    } catch (e) {
+      return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Could not create setup plan. ${esc(e.message)}</p></div>`;
+    }
   }
-  const sources = await apiGet("/v1/setup/plans/" + planId + "/evidence-sources").catch(() => []);
+  const resp = await apiGet("/v1/setup/plans/" + planId + "/evidence-sources").catch(() => null);
+  if (!resp) {
+    return `<div class="setup-step-content"><h2>Define evidence boundary</h2><p class="setup-lead">Could not load evidence sources.</p></div>`;
+  }
+  const sources = [
+    ...(resp.required || []).map(s => ({...s, id: s.field, name: s.label, why_include: s.why, required: true, selected: true, status: "required"})),
+    ...(resp.optional || []).map(s => ({...s, id: s.field, name: s.label, why_include: s.why, required: false, selected: true, status: "selected"})),
+  ];
   S.setupEvidenceSources = sources;
   const selected = sources.filter(s => s.selected).length;
   const total = sources.length;
@@ -868,10 +881,13 @@ async function saveEvidenceSources() {
   const planId = S.setupPlanId;
   if (!planId) return;
   try {
-    const result = await apiPut("/v1/setup/plans/" + planId + "/evidence-sources", S.setupEvidenceSources);
-    S.setupEvidenceSources = result;
-    notify("Evidence sources saved", "success");
-    renderSetupStep(S.setupStep);
+    const srcs = S.setupEvidenceSources || [];
+    const body = {
+      required: srcs.filter(s => s.required).map(s => ({field: s.field, label: s.label, selected: true})),
+      optional: srcs.filter(s => !s.required && s.selected).map(s => ({field: s.field, label: s.label, selected: true})),
+      excluded: srcs.filter(s => !s.selected).map(s => ({field: s.field, label: s.label, selected: false})),
+    };
+    await apiPut("/v1/setup/plans/" + planId + "/evidence-sources", body);
   } catch (e) {
     notify("Failed: " + e.message, "error");
   }
@@ -989,8 +1005,16 @@ async function renderSetupCaptureStep() {
 let S_RSR_CACHE = null;
 
 async function renderSetupSelectionRulesStep() {
-  const planId = S.setupPlanId;
-  if (!planId) return '<div class="setup-step-content"><h2>Record Selection Rules</h2><p class="setup-lead">Create a plan first.</p></div>';
+  let planId = S.setupPlanId;
+  if (!planId) {
+    try {
+      const plan = await apiPost("/v1/setup/plans", {});
+      S.setupPlanId = plan.id;
+      planId = plan.id;
+    } catch (e) {
+      return '<div class="setup-step-content"><h2>Record Selection Rules</h2><p class="setup-lead">Could not create setup plan: ' + esc(e.message) + '</p></div>';
+    }
+  }
   let rules = S_RSR_CACHE;
   if (!rules) {
     try {
@@ -1744,9 +1768,15 @@ async function renderSetupReplayStep() {
 }
 
 async function renderSetupReadinessStep() {
-  const planId = S.setupPlanId;
+  let planId = S.setupPlanId;
   if (!planId) {
-    return '<div class="setup-step-content"><h2>Readiness Assessment</h2><p class="setup-lead">No active plan. Start from step 1.</p></div>';
+    try {
+      const plan = await apiPost("/v1/setup/plans", {});
+      S.setupPlanId = plan.id;
+      planId = plan.id;
+    } catch (e) {
+      return '<div class="setup-step-content"><h2>Readiness Assessment</h2><p class="setup-lead">Could not create setup plan: ' + esc(e.message) + '</p></div>';
+    }
   }
   const readiness = await apiGet("/v1/setup/plans/" + planId + "/readiness").catch(() => null);
   if (!readiness) {
