@@ -3033,7 +3033,7 @@ async function issueVRProof(vrId) {
 
 async function promoteVRToScenario(vrId) {
   try {
-    const r = await apiPost("/v1/scenarios", {vr_id: vrId});
+    const r = await apiPost("/v1/scenarios?vr_id=" + encodeURIComponent(vrId));
     notify("Promoted to scenario " + r.id, "success");
     S.selectedScenario = r.id;
     nav("scenario-detail");
