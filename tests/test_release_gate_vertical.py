@@ -305,8 +305,8 @@ class TestReleaseGateVertical:
 
     def test_sdk_install_ui_truthful(self) -> None:
         app_js = client.get("/app/app.js").text
-        assert "pip install notary-sdk" in app_js
-        assert "Python SDK" in app_js or "pip install" in app_js
+        assert "pip install notary-sdk" not in app_js
+        assert "pip install -e packages/notary-sdk-py" in app_js
 
     def test_vertical_path_end_to_end(self) -> None:
         """Golden path: seed → replay → mutation → proof → scenario → run → policy → gate."""

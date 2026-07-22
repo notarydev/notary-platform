@@ -18,12 +18,13 @@ client = TestClient(app)
 
 class TestSDKSetupTruth:
     def test_app_js_no_pypi_install(self) -> None:
-        """UI must claim pip install notary-sdk as the primary path."""
+        """UI must not claim pip install notary-sdk unless package is on PyPI."""
         resp = client.get("/app/app.js")
         if resp.status_code != 200:
             return  # Skip if SPA not built
         text = resp.text
-        assert "pip install notary-sdk" in text
+        assert "pip install notary-sdk" not in text
+        assert "pip install -e packages/notary-sdk-py" in text
 
     def test_sdk_submit_targets_verification_records(self) -> None:
         """SDK .submit() should post to /v1/verification-records/from-snapshot."""
@@ -76,3 +77,41 @@ class TestSDKSetupTruth:
         import inspect
         source = inspect.getsource(snapshot.submit)
         assert "/v1/verification-records/from-snapshot" in source
+
+    def test_sdk_metadata_persists_to_verification_record(self) -> None:
+        """SDK-submitted snapshot metadata survives to the VR."""
+        snapshot = {
+            "schema_version": 1,
+            "source_system_id": "test-system",
+            "source_record_ref": "REF-001",
+            "business_function": "customer_support",
+            "expected_outcome": "APPROVE",
+            "label_source": "human_review",
+            "environment_id": "env:demo",
+            "agent_id": "agent:test-bot",
+            "agent_version": "1.0.0",
+            "model_provider": "test-provider",
+            "model_name": "test-model",
+            "policy_version": "v1",
+            "elements": [
+                {"kind": "input", "sequence": 0, "payload": {"text": "hello"}},
+                {"kind": "decision", "sequence": 1, "payload": {"decision": "APPROVE"}},
+            ],
+        }
+        resp = client.post(
+            "/v1/verification-records/from-snapshot",
+            json=snapshot,
+            params={"agent_id": "agent:test-bot"},
+        )
+        assert resp.status_code == 200, resp.text
+        vr = resp.json()
+        assert vr["source_system_id"] == "test-system"
+        assert vr["source_record_ref"] == "REF-001"
+        assert vr["business_function"] == "customer_support"
+        assert vr["expected_outcome"] == "APPROVE"
+        assert vr["label_source"] == "human_review"
+        assert vr["agent_id"] == "agent:test-bot"
+        assert vr["agent_version"] == "1.0.0"
+        assert vr["model_provider"] == "test-provider"
+        assert vr["model_name"] == "test-model"
+        assert vr["policy_version"] == "v1"
