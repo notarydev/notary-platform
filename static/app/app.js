@@ -344,14 +344,14 @@ function chip(n, l, color, view) {
 // --- HOME ---
 
 const DEMO_ORG_NAME = "Northstar Air";
-function friendlyOrg(orgId) {
+function friendlyOrg(orgId, isDemo) {
   if (!orgId) return "Organization";
-  if (String(orgId).toLowerCase().includes("harborline") || String(orgId).toLowerCase().includes("meridian") || String(orgId).includes("demo")) return DEMO_ORG_NAME;
-  return orgId;
+  if (isDemo) return DEMO_ORG_NAME;
+  return "Notary Platform";
 }
 
 function renderHome(c, h) {
-  q("#org-name").textContent = friendlyOrg(h.org_id);
+  q("#org-name").textContent = friendlyOrg(h.org_id, h.is_demo);
   const sh = h.setup_health || {};
   const qu = h.queues || {};
   const pf = h.recent_proofs || [];
@@ -368,8 +368,8 @@ function renderHome(c, h) {
   ];
 
   c.innerHTML = `
-    ${renderHarborlineJourney()}
-    ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Fictional demo data — no production or customer data.</div>` : ""}
+    ${h.is_demo ? renderHarborlineJourney() : ""}
+    ${h.is_demo ? `<div style="margin-bottom:16px;font-size:12px;color:var(--amber);font-weight:600">${badgeDemo()} Fictional demo data — no production or customer data.</div>` : `<div style="margin-bottom:16px;font-size:12px;color:var(--green);font-weight:600">Production environment — live data.</div>`}
     <div class="stat-grid">${stats.map(s => `
       <div class="stat stat-clickable" onclick="${s.action}">
         <div style="color:${s.color};font-size:12px;font-weight:700;margin-bottom:4px">${s.icon}</div>
