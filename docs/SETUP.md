@@ -5,9 +5,8 @@
 ```bash
 git clone https://github.com/notarydev/notary-platform.git
 cd notary-platform
-python3 -m venv .venv
+make install
 source .venv/bin/activate
-pip install -e packages/notary-sdk-py
 export NOTARY_API_URL=https://api.getnotary.ai
 export NOTARY_API_TOKEN=<your-demo-token>
 ```

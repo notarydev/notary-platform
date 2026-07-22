@@ -299,7 +299,7 @@ SDK Capture ──→ VerificationRecord ──→ ReplayRun ──→ MutationT
 
 ## All API calls from frontend
 
-Listed in `CODEBUDDY.md` — all 23 endpoints are 100% wired to backend routes.
+All 23 API endpoints used by the frontend have matching backend routes.
 
 ## Key caveats
 

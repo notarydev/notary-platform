@@ -101,7 +101,7 @@
     "app_shell": {
       "sidebar": "Fixed width (240px). Surface color var(--bg-surface) with a right border var(--border-subtle). Navigation items should have subtle rounded corners, an SVG icon on the left, and a pronounced active state (solid subtle background with accent text color).",
       "topbar": "Sticky, glassmorphic (var(--bg-glass) + blur). Contains page title and environment tools. Add a bottom border of var(--border-subtle). No fully transparent background.",
-      "brand": "Replace 'Harborline' with 'GlobalBank' or 'Acme Corp' (generic demo company). Ensure brand text feels premium and distinct using Chivo font."
+      "brand": "Demo org displays as 'Northstar Air' in the UI. Backend org ID is 'org:harborline-demo'. Chivo font for premium feel."
     },
     "golden_path_hero": {
       "description": "A 6-step visual journey for the Home overview (Capture -> Replay -> Fix -> Proof -> Scenario -> Gate).",

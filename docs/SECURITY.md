@@ -33,7 +33,7 @@ The Notary SDK is designed to be completely offline. It has **zero** cloud or ne
 
 ### Verification
 
-Always verify forensic snapshots using the local `verify.py` module before trusting any captured data.
+Verify forensic snapshots via `GET /v1/certificates/{id}/verify` before trusting any captured data.
 
 ## Version Support
 

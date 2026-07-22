@@ -106,8 +106,7 @@ aws ecs update-service \
 echo "==> Redeploy triggered. Wait for the new task to become healthy, then verify:"
 echo
 echo "curl -s https://api.getnotary.ai/health"
-echo "curl -s https://api.getnotary.ai/app/app.js | grep Harborline"
-echo "curl -s https://api.getnotary.ai/app/app.js | grep 'Blocked Gate'"
-echo "curl -s https://api.getnotary.ai/app/app.js | grep 'Passing Gate'"
+echo "curl -s https://api.getnotary.ai/app/app.js | grep seed"
+echo "curl -s https://api.getnotary.ai/app/app.js | grep 'Meridian'"
 echo
-echo "Expected: /health -> {\"status\":\"ok\"} and all three greps return >=1 match."
+echo "Expected: /health -> {\"status\":\"ok\"} and both greps return >=1 match."

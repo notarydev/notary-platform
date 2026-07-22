@@ -24,7 +24,7 @@ Code simply opens the repository folder. Two separate git repos are involved:
 
 - `src/notary_platform/` — all Python code (`api_server/`, `replay_engine/`,
   `certificates.py`, `storage.py`, `models.py`, `config.py`)
-- `tests/` — pytest suite (60 tests)
+- `tests/` — pytest suite
 - `infra/terraform/` — AWS infrastructure as code (vpc, ecr, ecs, rds, s3,
   kms, secrets, iam, cloudwatch)
 - `Dockerfile`, `compose.yaml`, `Makefile`, `scripts/demo.sh` — build / run
@@ -112,7 +112,7 @@ aws secretsmanager get-secret-value --secret-id notary-dev/signing  --region us-
 #    NOTARY_API_AUTH_TOKEN=      # empty = auth disabled locally
 
 # 6. Verify
-pytest tests/                              # expect 60 passing
+make test                                  # run the test suite
 ruff check . && mypy src                  # clean
 terraform -chdir=infra/terraform init
 terraform -chdir=infra/terraform plan     # expect "No changes"
