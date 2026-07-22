@@ -148,6 +148,13 @@ class TestReleaseGateVertical:
         assert resp.status_code == 200
         assert resp.json()["id"] == scenario_id
 
+    def test_scenario_promotion_accepts_json_body_contract(self) -> None:
+        self._seed_catalog()
+        vr = self._find_replayable_vr()
+        resp = client.post("/v1/scenarios", json={"vr_id": vr["id"]})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["source_vr_id"] == vr["id"]
+
     def test_scenario_run_pass_fail_errored(self) -> None:
         self._seed_catalog()
         scenarios = client.get("/v1/scenarios").json()
