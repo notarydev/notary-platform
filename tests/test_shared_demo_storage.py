@@ -1,6 +1,6 @@
 from notary_platform.config import SETTINGS
 from notary_platform.models import Organization, ReadinessPolicy, ReleaseGateResult, Scenario, VerificationRecord
-from notary_platform.storage import MemoryStorage, SharedDemoFileStorage, get_storage
+from notary_platform.storage import MemoryStorage, SharedDemoFileStorage, get_storage, reset_storage
 
 
 def test_shared_demo_file_storage_survives_restart(tmp_path) -> None:
@@ -40,6 +40,7 @@ def test_shared_demo_file_storage_reset_is_deterministic(tmp_path) -> None:
 
 
 def test_get_storage_uses_shared_demo_profile(monkeypatch, tmp_path) -> None:
+    reset_storage()
     monkeypatch.setattr(SETTINGS, "use_remote_storage", False)
     monkeypatch.setattr(SETTINGS, "storage_profile", "shared_demo")
     monkeypatch.setattr(SETTINGS, "shared_demo_storage_path", str(tmp_path / "profile.json"))
@@ -48,6 +49,7 @@ def test_get_storage_uses_shared_demo_profile(monkeypatch, tmp_path) -> None:
 
 
 def test_get_storage_defaults_to_memory(monkeypatch) -> None:
+    reset_storage()
     monkeypatch.setattr(SETTINGS, "use_remote_storage", False)
     monkeypatch.setattr(SETTINGS, "storage_profile", "memory")
 

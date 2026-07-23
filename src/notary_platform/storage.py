@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from notary_platform.config import SETTINGS
+from notary_platform.discovery.models import (
+    DecisionEvidenceResource,
+    IntegrityConflict,
+    ProviderRegistration,
+)
 from notary_platform.models import (
     Agent,
     AISystem,
@@ -353,6 +358,47 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]: ...
 
+    # ── DEP Discovery: Providers ──
+
+    @abc.abstractmethod
+    def create_provider(self, provider: ProviderRegistration) -> ProviderRegistration: ...
+
+    @abc.abstractmethod
+    def get_provider(self, provider_id: str, org_id: str = "") -> ProviderRegistration | None: ...
+
+    @abc.abstractmethod
+    def list_providers(self, org_id: str) -> list[ProviderRegistration]: ...
+
+    # ── DEP Discovery: Payload Storage ──
+
+    @abc.abstractmethod
+    def persist_payload(self, payload_ref: str, data: dict[str, Any]) -> str: ...
+
+    @abc.abstractmethod
+    def get_payload(self, payload_ref: str) -> dict[str, Any] | None: ...
+
+    # ── DEP Discovery: Resources ──
+
+    @abc.abstractmethod
+    def create_resource(self, resource: DecisionEvidenceResource) -> DecisionEvidenceResource: ...
+
+    @abc.abstractmethod
+    def get_resource(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None: ...
+
+    @abc.abstractmethod
+    def list_resources(self, org_id: str) -> list[DecisionEvidenceResource]: ...
+
+    @abc.abstractmethod
+    def get_resource_by_id_and_org(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None: ...
+
+    # ── DEP Discovery: Integrity Conflicts ──
+
+    @abc.abstractmethod
+    def create_integrity_conflict(self, conflict: IntegrityConflict) -> IntegrityConflict: ...
+
+    @abc.abstractmethod
+    def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -395,6 +441,11 @@ class MemoryStorage(StorageBackend):
         self._workflow_evidence_sources: dict[str, list[WorkflowEvidenceSource]] = {}
         self._record_selection_rules: dict[str, list[RecordSelectionRule]] = {}
         self._assurance_plans: dict[str, AssuranceSetupPlan] = {}
+        # DEP Discovery (WP-030)
+        self._providers: dict[str, ProviderRegistration] = {}
+        self._resources: dict[str, DecisionEvidenceResource] = {}
+        self._integrity_conflicts: dict[str, IntegrityConflict] = {}
+        self._payloads: dict[str, dict[str, Any]] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -763,6 +814,60 @@ class MemoryStorage(StorageBackend):
 
     def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]:
         return [p for p in self._assurance_plans.values() if p.org_id == org_id]
+
+    # ── DEP Discovery: Payload Storage ──
+
+    def persist_payload(self, payload_ref: str, data: dict[str, Any]) -> str:
+        self._payloads[payload_ref] = data
+        return payload_ref
+
+    def get_payload(self, payload_ref: str) -> dict[str, Any] | None:
+        return self._payloads.get(payload_ref)
+
+    # ── DEP Discovery: Providers ──
+
+    def create_provider(self, provider: ProviderRegistration) -> ProviderRegistration:
+        key = f"{provider.org_id}:{provider.provider_id}"
+        self._providers[key] = provider
+        return provider
+
+    def get_provider(self, provider_id: str, org_id: str = "") -> ProviderRegistration | None:
+        if org_id:
+            return self._providers.get(f"{org_id}:{provider_id}")
+        for p in self._providers.values():
+            if p.provider_id == provider_id:
+                return p
+        return None
+
+    def list_providers(self, org_id: str) -> list[ProviderRegistration]:
+        return [p for p in self._providers.values() if p.org_id == org_id]
+
+    # ── DEP Discovery: Resources ──
+
+    def create_resource(self, resource: DecisionEvidenceResource) -> DecisionEvidenceResource:
+        self._resources[resource.resource_id] = resource
+        return resource
+
+    def get_resource(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None:
+        r = self._resources.get(resource_id)
+        if r is not None and r.org_id != org_id:
+            return None
+        return r
+
+    def list_resources(self, org_id: str) -> list[DecisionEvidenceResource]:
+        return [r for r in self._resources.values() if r.org_id == org_id]
+
+    def get_resource_by_id_and_org(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None:
+        return self.get_resource(resource_id, org_id)
+
+    # ── DEP Discovery: Integrity Conflicts ──
+
+    def create_integrity_conflict(self, conflict: IntegrityConflict) -> IntegrityConflict:
+        self._integrity_conflicts[conflict.conflict_id] = conflict
+        return conflict
+
+    def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]:
+        return [c for c in self._integrity_conflicts.values() if c.org_id == org_id]
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -1539,11 +1644,111 @@ class PostgresS3Storage(StorageBackend):
     def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]:
         return self._list_wo28("assurance_setup_plan", org_id, "", AssuranceSetupPlan)
 
+    # ── DEP Discovery (WP-030) ──
+
+    def persist_payload(self, payload_ref: str, data: dict[str, Any]) -> str:
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                """
+                INSERT INTO wo28_objects (id, kind, data)
+                VALUES (%(id)s, %(kind)s, %(data)s)
+                ON CONFLICT (id) DO UPDATE SET
+                    data = EXCLUDED.data,
+                    updated_at = now()
+                """,
+                {"id": payload_ref, "kind": "dep_payload", "data": json.dumps(data)},
+            )
+        return payload_ref
+
+    def get_payload(self, payload_ref: str) -> dict[str, Any] | None:
+        with self._engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'dep_payload' AND id = %(id)s",
+                {"id": payload_ref},
+            ).mappings().first()
+        if not row:
+            return None
+        return dict(row["data"])
+
+    def create_provider(self, provider: ProviderRegistration) -> ProviderRegistration:
+        data = provider.to_dict()
+        # Use composite key: org:provider_id so the same id can exist in different orgs.
+        composite_id = f"{provider.org_id}:{provider.provider_id}"
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                """
+                INSERT INTO wo28_objects (id, org_id, environment_id, kind, data)
+                VALUES (%(id)s, %(org)s, %(env)s, %(kind)s, %(data)s)
+                ON CONFLICT (id) DO UPDATE SET
+                    data = EXCLUDED.data,
+                    updated_at = now()
+                """,
+                {
+                    "id": composite_id,
+                    "org": provider.org_id,
+                    "env": "",
+                    "kind": "provider",
+                    "data": json.dumps(data),
+                },
+            )
+        return provider
+
+    def get_provider(self, provider_id: str, org_id: str = "") -> ProviderRegistration | None:
+        lookup_id = f"{org_id}:{provider_id}" if org_id else provider_id
+        with self._engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'provider' AND id = %(id)s",
+                {"id": lookup_id},
+            ).mappings().first()
+        if not row:
+            return None
+        return ProviderRegistration.from_dict(dict(row["data"]))
+
+    def list_providers(self, org_id: str) -> list[ProviderRegistration]:
+        return self._list_wo28("provider", org_id, "", ProviderRegistration)
+
+    def create_resource(self, resource: DecisionEvidenceResource) -> DecisionEvidenceResource:
+        self._write_wo28("resource", resource)
+        return resource
+
+    def get_resource(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None:
+        r = self._get_wo28("resource", resource_id, DecisionEvidenceResource)
+        if r is not None and r.org_id != org_id:
+            return None
+        return r
+
+    def list_resources(self, org_id: str) -> list[DecisionEvidenceResource]:
+        return self._list_wo28("resource", org_id, "", DecisionEvidenceResource)
+
+    def get_resource_by_id_and_org(self, resource_id: str, org_id: str) -> DecisionEvidenceResource | None:
+        return self.get_resource(resource_id, org_id)
+
+    def create_integrity_conflict(self, conflict: IntegrityConflict) -> IntegrityConflict:
+        self._write_wo28("integrity_conflict", conflict)
+        return conflict
+
+    def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]:
+        return self._list_wo28("integrity_conflict", org_id, "", IntegrityConflict)
+
+
+_storage_instance: StorageBackend | None = None
+
+
+def reset_storage() -> None:
+    """Reset the storage singleton (used in tests)."""
+    global _storage_instance  # noqa: PLW0603
+    _storage_instance = None
+
 
 def get_storage() -> StorageBackend:
     """Return the configured storage backend (singleton per process)."""
+    global _storage_instance  # noqa: PLW0603
+    if _storage_instance is not None:
+        return _storage_instance
     if SETTINGS.use_remote_storage:
-        return PostgresS3Storage()
-    if SETTINGS.storage_profile == "shared_demo":
-        return SharedDemoFileStorage()
-    return MemoryStorage()
+        _storage_instance = PostgresS3Storage()
+    elif SETTINGS.storage_profile == "shared_demo":
+        _storage_instance = SharedDemoFileStorage()
+    else:
+        _storage_instance = MemoryStorage()
+    return _storage_instance
