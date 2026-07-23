@@ -8,6 +8,14 @@
       "type": "object",
       "required": ["manifest_digest", "subjects", "declared_omissions", "sealed_at"],
       "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uri"},
+        "type": {"type": "string", "pattern": "^org\\.dep\\."},
+        "subject_ref": {"$ref": "common.schema.json#/$defs/uri"},
+        "created_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+        "provenance": {"$ref": "common.schema.json#/$defs/provenance"},
+        "integrity": {"$ref": "common.schema.json#/$defs/digest"},
+        "relationships": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/relationship"}},
+        "extensions": {"type": "object", "propertyNames": {"format": "uri"}},
         "manifest_digest": {"$ref": "common.schema.json#/$defs/digest"},
         "subjects": {
           "type": "array",
@@ -25,8 +33,8 @@
         "declared_omissions": {"type": "array", "items": {"type": "string"}},
         "custody_events": {"type": "array", "items": {"type": "object"}},
         "sealed_at": {"type": "string", "format": "date-time"}
-      }
+      },
+      "additionalProperties": false
     }
-  ],
-  "unevaluatedProperties": false
+  ]
 }

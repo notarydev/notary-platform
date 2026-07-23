@@ -16,9 +16,11 @@ Spec:
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from notary_platform.api_server.auth import require_auth
 from notary_platform.storage import get_storage
@@ -39,20 +41,34 @@ def _review_svc() -> CandidateReviewService:
 
 
 # Lazy registry for IngestionService (avoids circular imports with certificates)
-_registry = None
+_registry: Any | None = None
 
 
-def _get_registry():
+def _get_registry() -> Any:
     global _registry
     if _registry is None:
         from notary_platform.services import ServiceRegistry
+
         _registry = ServiceRegistry(storage)
     return _registry
 
 
 def _bridge_svc() -> ProofBridgeService:
     from notary_platform.services import IngestionService
+
     return ProofBridgeService(storage, IngestionService(_get_registry()))
+
+
+def _principal_id(request: Request) -> str:
+    authorization = request.headers.get("authorization", "")
+    credential = (
+        authorization.removeprefix("Bearer ").strip()
+        or request.headers.get("x-api-key", "")
+        or request.query_params.get("api_key", "")
+    )
+    if not credential:
+        return "local-demo-principal"
+    return f"api-token:{hashlib.sha256(credential.encode()).hexdigest()[:16]}"
 
 
 @router.get("/discovery/candidates")
@@ -77,15 +93,25 @@ def get_candidate(
 def create_review(
     candidate_id: str,
     body: dict[str, Any],
+    request: Request,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
     candidate = storage.get_assurance_candidate(candidate_id)
     if candidate is None or candidate.org_id != org_id:
         raise HTTPException(status_code=404, detail="candidate not found")
 
-    decision = ReviewDecision.from_dict(body)
-    decision.candidate_id = candidate_id
-    decision.org_id = org_id
+    decision = ReviewDecision(
+        candidate_id=candidate_id,
+        org_id=org_id,
+        environment_id=candidate.environment_id,
+        actor=_principal_id(request),
+        role="organization_reviewer",
+        decision=str(body.get("decision", "")),
+        basis=str(body.get("basis", "")),
+        scope=str(body.get("scope", "")),
+        effective_period=str(body.get("effective_period", "")),
+        superseded_decision_id=str(body.get("superseded_decision_id", "")),
+    )
 
     svc = _review_svc()
     created = svc.record_review(candidate_id, decision)
@@ -129,10 +155,21 @@ def list_suppressions(
 @router.post("/discovery/promotion-delegations")
 def create_delegation(
     body: dict[str, Any],
+    request: Request,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
-    delegation = PromotionDelegation.from_dict(body)
-    delegation.org_id = org_id
+    delegation = PromotionDelegation(
+        org_id=org_id,
+        environment_id=str(body.get("environment_id", "")),
+        created_by=_principal_id(request),
+        name=str(body.get("name", "")),
+        version=str(body.get("version", "1.0.0")),
+        rule_type=str(body.get("rule_type", "")),
+        conditions=dict(body.get("conditions", {})),
+        scope=str(body.get("scope", "")),
+        effective_period=str(body.get("effective_period", "")),
+        active=bool(body.get("active", True)),
+    )
     svc = _review_svc()
     created = svc.create_delegation(delegation)
     return created.to_dict()
@@ -144,6 +181,24 @@ def list_delegations(
 ) -> list[dict[str, Any]]:
     svc = _review_svc()
     return [d.to_dict() for d in svc.list_delegations(org_id)]
+
+
+@router.post("/discovery/promotion-delegations/{delegation_id}/revoke")
+def revoke_delegation(
+    delegation_id: str,
+    request: Request,
+    org_id: str = Depends(require_auth),
+) -> dict[str, Any]:
+    delegation = next(
+        (item for item in storage.list_promotion_delegations(org_id) if item.id == delegation_id),
+        None,
+    )
+    if delegation is None:
+        raise HTTPException(status_code=404, detail="promotion delegation not found")
+    delegation.active = False
+    delegation.revoked_by = _principal_id(request)
+    delegation.revoked_at = datetime.now(timezone.utc).isoformat()
+    return storage.create_promotion_delegation(delegation).to_dict()
 
 
 # ── WP-090: Proof Bridge ──

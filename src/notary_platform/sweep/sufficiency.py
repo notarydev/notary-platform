@@ -86,7 +86,11 @@ class EvidenceSufficiencyService:
                 failed.append("E4: no verified before/after fix result")
 
         current_level, next_level_reqs = self._determine_level(
-            e0_ok, e1_ok, e2_ok, e3_ok, e4_ok,
+            e0_ok,
+            e1_ok,
+            e2_ok,
+            e3_ok,
+            e4_ok,
         )
 
         return SufficiencyResult(
@@ -98,7 +102,11 @@ class EvidenceSufficiencyService:
 
     @staticmethod
     def _determine_level(
-        e0: bool, e1: bool, e2: bool, e3: bool, e4: bool,
+        e0: bool,
+        e1: bool,
+        e2: bool,
+        e3: bool,
+        e4: bool,
     ) -> tuple[str, list[str]]:
         if e4:
             return "E4", []
@@ -134,3 +142,15 @@ class EvidenceSufficiencyService:
             "next_level_requirements": result.next_level_requirements,
             "complete": result.current_level == "E4",
         }
+
+    @staticmethod
+    def recalculate_after_verification(
+        current_level: str,
+        *,
+        has_replay_result: bool,
+        has_verified_mutation: bool,
+    ) -> str:
+        """Apply the E4 predicates without rewriting the frozen E0-E3 evaluation."""
+        if current_level in {"E3", "E4"} and has_replay_result and has_verified_mutation:
+            return "E4"
+        return current_level

@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from notary_platform.sweep.budgets import BudgetState
-from notary_platform.sweep.errors import EVALUATOR_PREREQUISITE_MISSING
 from notary_platform.sweep.jobs import SweepJob
 from notary_platform.sweep.models import (
-    EvaluatorContractRecord,
     SweepDefinition,
     SweepRun,
 )
@@ -28,6 +25,7 @@ class SweepPlanner:
     ) -> SweepRun:
         run = SweepRun(
             org_id=definition.org_id,
+            environment_id=definition.environment_id,
             definition_id=definition.id,
             status="queued",
         )

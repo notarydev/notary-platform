@@ -1,1 +1,1 @@
-from .bridge import ProofBridgeService
+from .bridge import ProofBridgeService as ProofBridgeService

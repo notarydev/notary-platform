@@ -83,6 +83,10 @@ class CandidateReviewService:
         candidate = self._storage.get_assurance_candidate(candidate_id)
         if candidate is None or candidate.org_id != decision.org_id:
             return None
+        if not decision.actor or not decision.role or not decision.decision:
+            return None
+        if decision.decision in {"approve_incident", "dismiss", "accept_risk", "suppress"} and not decision.basis:
+            return None
 
         created = self._storage.create_review_decision(decision)
 
@@ -117,7 +121,9 @@ class CandidateReviewService:
         return self._storage.list_promotion_delegations(org_id)
 
     def check_delegation(
-        self, candidate: AssuranceCandidate, org_id: str,
+        self,
+        candidate: AssuranceCandidate,
+        org_id: str,
     ) -> PromotionDelegation | None:
         delegations = self._storage.list_promotion_delegations(org_id)
         for d in delegations:

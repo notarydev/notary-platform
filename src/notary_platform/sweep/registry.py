@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
+from typing import Any
+
 from notary_platform.sweep.models import EvaluatorContractRecord
 
 
@@ -30,9 +33,7 @@ class EvaluatorRegistry:
     def list(self, org_id: str) -> list[EvaluatorContractRecord]:
         return self._storage.list_evaluator_contracts(org_id)
 
-    def check_prerequisites(
-        self, evaluator_id: str, available_prerequisites: set[str]
-    ) -> tuple[bool, list[str]]:
+    def check_prerequisites(self, evaluator_id: str, available_prerequisites: set[str]) -> tuple[bool, builtins.list[str]]:
         contract = self._storage.get_evaluator_contract(evaluator_id)
         if contract is None:
             return False, ["evaluator_not_found"]

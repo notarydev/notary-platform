@@ -19,6 +19,7 @@ class ProviderRegistration:
     @id.setter
     def id(self, value: str) -> None:
         self.provider_id = value
+
     org_id: str
     name: str
     provider_type: str  # sdk, platform, trace_system, connector, manual
@@ -68,6 +69,7 @@ class DecisionEvidenceResource:
     @id.setter
     def id(self, value: str) -> None:
         self.resource_id = value
+
     org_id: str
     envelope_id: str
     resource_type: str
@@ -75,6 +77,7 @@ class DecisionEvidenceResource:
     digest_algorithm: str
     digest_value: str
     payload_ref: str
+    environment_id: str = ""
     provenance_collected_at: str = ""
     provenance_source_ref: str = ""
     version: str = ""
@@ -88,6 +91,7 @@ class DecisionEvidenceResource:
         return {
             "resource_id": self.resource_id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
             "envelope_id": self.envelope_id,
             "resource_type": self.resource_type,
             "provider_id": self.provider_id,
@@ -105,6 +109,7 @@ class DecisionEvidenceResource:
         return cls(
             resource_id=d.get("resource_id", ""),
             org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", ""),
             envelope_id=d.get("envelope_id", ""),
             resource_type=d.get("resource_type", ""),
             provider_id=d.get("provider_id", ""),
@@ -129,6 +134,7 @@ class IntegrityConflict:
     @id.setter
     def id(self, value: str) -> None:
         self.conflict_id = value
+
     org_id: str
     resource_id: str
     provider_id: str
@@ -195,6 +201,7 @@ class IngestionReceipt:
 
 # ── WP-050: Identity & Context ──
 
+
 @dataclass
 class LinkAssertion:
     id: str = ""
@@ -248,6 +255,7 @@ class LinkAssertion:
 class ContextBinding:
     id: str = ""
     org_id: str = ""
+    environment_id: str = ""
     subject_scope: str = ""  # decision_family, workflow, agent, resource_type
     subject_selector: str = ""  # e.g., "lending/underwriting", specific resource type
     binding_type: str = ""  # governed_by_policy, expected_outcome, guarded_by, evidence_required_by, executed_by_deployment
@@ -268,6 +276,7 @@ class ContextBinding:
         return {
             "id": self.id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
             "subject_scope": self.subject_scope,
             "subject_selector": self.subject_selector,
             "binding_type": self.binding_type,
@@ -284,6 +293,7 @@ class ContextBinding:
         return cls(
             id=d.get("id", f"cb-{uuid.uuid4().hex[:12]}"),
             org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
             subject_scope=d.get("subject_scope", ""),
             subject_selector=d.get("subject_selector", ""),
             binding_type=d.get("binding_type", ""),
@@ -410,12 +420,14 @@ class ResolutionTrace:
 class DecisionEvidenceRecord:
     id: str = ""
     org_id: str = ""
+    environment_id: str = ""
     decision_identity: str = ""  # the resolved decision identifier
     identity_method: str = ""  # exact_id, dep_relationship, namespace, composite_key, link_assertion, similarity
     source_resource_ids: list[str] = field(default_factory=list)
     context_binding_ids: list[str] = field(default_factory=list)
     link_assertion_ids: list[str] = field(default_factory=list)
     resolution_trace_id: str = ""
+    evidence_level: str = ""
     enriched: bool = False
     version: int = 1
     created_at: str = ""
@@ -430,12 +442,14 @@ class DecisionEvidenceRecord:
         return {
             "id": self.id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
             "decision_identity": self.decision_identity,
             "identity_method": self.identity_method,
             "source_resource_ids": list(self.source_resource_ids),
             "context_binding_ids": list(self.context_binding_ids),
             "link_assertion_ids": list(self.link_assertion_ids),
             "resolution_trace_id": self.resolution_trace_id,
+            "evidence_level": self.evidence_level,
             "enriched": self.enriched,
             "version": self.version,
             "created_at": self.created_at,
@@ -446,12 +460,14 @@ class DecisionEvidenceRecord:
         return cls(
             id=d.get("id", f"der-{uuid.uuid4().hex[:12]}"),
             org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
             decision_identity=d.get("decision_identity", ""),
             identity_method=d.get("identity_method", "exact_id"),
             source_resource_ids=list(d.get("source_resource_ids", [])),
             context_binding_ids=list(d.get("context_binding_ids", [])),
             link_assertion_ids=list(d.get("link_assertion_ids", [])),
             resolution_trace_id=d.get("resolution_trace_id", ""),
+            evidence_level=d.get("evidence_level", ""),
             enriched=d.get("enriched", False),
             version=d.get("version", 1),
             created_at=d.get("created_at", ""),

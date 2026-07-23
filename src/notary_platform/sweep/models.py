@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-
 # ── Evaluator Contract ──
+
 
 @dataclass
 class EvaluatorContractRecord:
@@ -60,6 +60,7 @@ class EvaluatorContractRecord:
 
 
 # ── Sweep Definition ──
+
 
 @dataclass
 class SweepDefinition:
@@ -130,10 +131,12 @@ class SweepDefinition:
 
 # ── Sweep Run ──
 
+
 @dataclass
 class SweepRun:
     id: str = ""
     org_id: str = ""
+    environment_id: str = ""
     definition_id: str = ""
     status: str = "queued"  # queued, profiling, resolving, evaluating, assembling, completed, completed_with_errors, failed, cancelled
     manifest_ref: str = ""
@@ -160,6 +163,7 @@ class SweepRun:
         return {
             "id": self.id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
             "definition_id": self.definition_id,
             "status": self.status,
             "manifest_ref": self.manifest_ref,
@@ -182,6 +186,7 @@ class SweepRun:
         return cls(
             id=d.get("id", f"sr-{uuid.uuid4().hex[:12]}"),
             org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
             definition_id=d.get("definition_id", ""),
             status=d.get("status", "queued"),
             manifest_ref=d.get("manifest_ref", ""),
@@ -201,6 +206,7 @@ class SweepRun:
 
 
 # ── Evaluation Execution ──
+
 
 @dataclass
 class EvaluationExecution:
@@ -256,6 +262,7 @@ class EvaluationExecution:
 
 # ── Assessment Record (moved from WP-070, shared type) ──
 
+
 @dataclass
 class AssessmentRecord:
     id: str = ""
@@ -309,6 +316,7 @@ class AssessmentRecord:
             evidence_level=d.get("evidence_level", ""),
             created_at=d.get("created_at", ""),
         )
+
 
 class Evaluator(Protocol):
     """Interface for evaluator implementations (WP-070)."""
@@ -413,6 +421,7 @@ class ReviewDecision:
     id: str = ""
     candidate_id: str = ""
     org_id: str = ""
+    environment_id: str = ""
     actor: str = ""
     role: str = ""
     decision: str = ""  # approve_incident, dismiss, request_context, accept_risk, suppress, instrument_next, supersede
@@ -433,6 +442,7 @@ class ReviewDecision:
             "id": self.id,
             "candidate_id": self.candidate_id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
             "actor": self.actor,
             "role": self.role,
             "decision": self.decision,
@@ -449,6 +459,7 @@ class ReviewDecision:
             id=d.get("id", f"rd-{uuid.uuid4().hex[:12]}"),
             candidate_id=d.get("candidate_id", ""),
             org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
             actor=d.get("actor", ""),
             role=d.get("role", ""),
             decision=d.get("decision", ""),
@@ -507,12 +518,17 @@ class SuppressionRule:
 class PromotionDelegation:
     id: str = ""
     org_id: str = ""
+    environment_id: str = ""
+    created_by: str = ""
     name: str = ""
     version: str = "1.0.0"
     rule_type: str = ""  # deterministic, probabilistic
     conditions: dict[str, Any] = field(default_factory=dict)
     scope: str = ""
+    effective_period: str = ""
     active: bool = True
+    revoked_by: str = ""
+    revoked_at: str = ""
     created_at: str = ""
 
     def __post_init__(self) -> None:
@@ -525,12 +541,17 @@ class PromotionDelegation:
         return {
             "id": self.id,
             "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "created_by": self.created_by,
             "name": self.name,
             "version": self.version,
             "rule_type": self.rule_type,
             "conditions": dict(self.conditions),
             "scope": self.scope,
+            "effective_period": self.effective_period,
             "active": self.active,
+            "revoked_by": self.revoked_by,
+            "revoked_at": self.revoked_at,
             "created_at": self.created_at,
         }
 
@@ -539,11 +560,16 @@ class PromotionDelegation:
         return cls(
             id=d.get("id", f"pd-{uuid.uuid4().hex[:12]}"),
             org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            created_by=d.get("created_by", ""),
             name=d.get("name", ""),
             version=d.get("version", "1.0.0"),
             rule_type=d.get("rule_type", ""),
             conditions=d.get("conditions", {}),
             scope=d.get("scope", ""),
+            effective_period=d.get("effective_period", ""),
             active=d.get("active", True),
+            revoked_by=d.get("revoked_by", ""),
+            revoked_at=d.get("revoked_at", ""),
             created_at=d.get("created_at", ""),
         )

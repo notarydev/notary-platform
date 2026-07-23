@@ -108,7 +108,12 @@ class StorageBackend(abc.ABC):
     """Contract for incident/snapshot/certificate persistence."""
 
     @abc.abstractmethod
-    def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident: ...
+    def create_incident(
+        self,
+        snapshot_dict: dict[str, Any],
+        org_id: str = "demo-org",
+        incident_id: str = "",
+    ) -> Incident: ...
 
     @abc.abstractmethod
     def get_incident(self, incident_id: str) -> Incident | None: ...
@@ -301,6 +306,9 @@ class StorageBackend(abc.ABC):
 
     @abc.abstractmethod
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None: ...
+
+    @abc.abstractmethod
+    def list_release_gate_results(self, org_id: str) -> list[ReleaseGateResult]: ...
 
     # ── Integrations & Capture (Phase E) ──
 
@@ -735,9 +743,15 @@ class MemoryStorage(StorageBackend):
         """Clear local/dev state for repeatable demos and tests."""
         self._reset_memory()
 
-    def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
-        self._counter += 1
-        incident_id = f"inc-{self._counter:06d}"
+    def create_incident(
+        self,
+        snapshot_dict: dict[str, Any],
+        org_id: str = "demo-org",
+        incident_id: str = "",
+    ) -> Incident:
+        if not incident_id:
+            self._counter += 1
+            incident_id = f"inc-{self._counter:06d}"
         snapshot_summary = {
             "schema_version": snapshot_dict.get("schema_version"),
             "timestamp": snapshot_dict.get("timestamp"),
@@ -851,8 +865,8 @@ class MemoryStorage(StorageBackend):
         return [vr for vr in self._vrs.values() if vr.bridge_key == bridge_key and vr.org_id == org_id]
 
     def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
-        ref = bundle.get("bundle_id", f"eb-{uuid.uuid4().hex[:12]}")
-        self._evidence[ref] = bundle
+        ref = bundle.get("id", bundle.get("bundle_id", f"urn:notary:evidence-bundle:{uuid.uuid4().hex}"))
+        self._evidence[ref] = dict(bundle)
         return ref
 
     def create_label(self, label: HumanLabel) -> HumanLabel:
@@ -996,6 +1010,9 @@ class MemoryStorage(StorageBackend):
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
         return self._release_gate_results.get(result_id)
 
+    def list_release_gate_results(self, org_id: str) -> list[ReleaseGateResult]:
+        return [result for result in self._release_gate_results.values() if result.org_id == org_id]
+
     # ── Integrations & Capture (Phase E) ──
 
     def create_ai_system(self, system: AISystem) -> AISystem:
@@ -1074,8 +1091,7 @@ class MemoryStorage(StorageBackend):
         return self._decision_workflows.get(wf_id)
 
     def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]:
-        return [wf for wf in self._decision_workflows.values()
-                if wf.org_id == org_id and (not environment_id or wf.environment_id == environment_id)]
+        return [wf for wf in self._decision_workflows.values() if wf.org_id == org_id and (not environment_id or wf.environment_id == environment_id)]
 
     def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow:
         self._decision_workflows[wf.id] = wf
@@ -1227,7 +1243,8 @@ class MemoryStorage(StorageBackend):
 
     def list_link_assertions_for_resource(self, resource_id: str, org_id: str) -> list[LinkAssertion]:
         return [
-            la for la in self._link_assertions.values()
+            la
+            for la in self._link_assertions.values()
             if la.org_id == org_id and (la.source_resource_id == resource_id or la.target_resource_id == resource_id)
         ]
 
@@ -1249,7 +1266,8 @@ class MemoryStorage(StorageBackend):
 
     def list_context_bindings_for_scope(self, org_id: str, subject_scope: str, subject_selector: str) -> list[ContextBinding]:
         return [
-            cb for cb in self._context_bindings.values()
+            cb
+            for cb in self._context_bindings.values()
             if cb.org_id == org_id and cb.subject_scope == subject_scope and cb.subject_selector == subject_selector
         ]
 
@@ -1294,10 +1312,7 @@ class MemoryStorage(StorageBackend):
         return [d for d in self._decision_evidence_records.values() if d.org_id == org_id]
 
     def list_decision_evidence_records_by_identity(self, decision_identity: str, org_id: str) -> list[DecisionEvidenceRecord]:
-        return [
-            d for d in self._decision_evidence_records.values()
-            if d.org_id == org_id and d.decision_identity == decision_identity
-        ]
+        return [d for d in self._decision_evidence_records.values() if d.org_id == org_id and d.decision_identity == decision_identity]
 
     # ── WP-050: Advisory Suggestions ──
 
@@ -1499,8 +1514,13 @@ class SharedDemoFileStorage(MemoryStorage):
         incident.custody = [__import__("notary_platform.models", fromlist=["CustodyEvent"]).CustodyEvent(**c) for c in data.get("custody", [])]
         return incident
 
-    def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
-        incident = super().create_incident(snapshot_dict, org_id)
+    def create_incident(
+        self,
+        snapshot_dict: dict[str, Any],
+        org_id: str = "demo-org",
+        incident_id: str = "",
+    ) -> Incident:
+        incident = super().create_incident(snapshot_dict, org_id, incident_id)
         self._save()
         return incident
 
@@ -1697,7 +1717,7 @@ class PostgresS3Storage(StorageBackend):
 
         _run_migrations(self._engine)
 
-    def _write_wo28(self, kind: str, obj: Any) -> None:
+    def _write_wo28(self, kind: str, obj: Any) -> Any:
         data = obj.to_dict()
         with self._engine.begin() as conn:
             conn.exec_driver_sql(
@@ -1716,13 +1736,18 @@ class PostgresS3Storage(StorageBackend):
                     "data": json.dumps(data),
                 },
             )
+        return obj
 
     def _get_wo28(self, kind: str, id: str, cls: type[Any]) -> Any | None:
         with self._engine.connect() as conn:
-            row = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND id = %(id)s",
-                {"kind": kind, "id": id},
-            ).mappings().first()
+            row = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND id = %(id)s",
+                    {"kind": kind, "id": id},
+                )
+                .mappings()
+                .first()
+            )
         if not row:
             return None
         return cls.from_dict(dict(row["data"]))
@@ -1730,36 +1755,44 @@ class PostgresS3Storage(StorageBackend):
     def _list_wo28(self, kind: str, org_id: str, environment_id: str, cls: type[Any]) -> list[Any]:
         with self._engine.connect() as conn:
             if environment_id:
-                rows = conn.exec_driver_sql(
-                    "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s AND environment_id = %(env)s ORDER BY created_at",
-                    {"kind": kind, "org": org_id, "env": environment_id},
-                ).mappings().all()
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s AND environment_id = %(env)s ORDER BY created_at",
+                        {"kind": kind, "org": org_id, "env": environment_id},
+                    )
+                    .mappings()
+                    .all()
+                )
             else:
-                rows = conn.exec_driver_sql(
-                    "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s ORDER BY created_at",
-                    {"kind": kind, "org": org_id},
-                ).mappings().all()
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT data FROM wo28_objects WHERE kind = %(kind)s AND org_id = %(org)s ORDER BY created_at",
+                        {"kind": kind, "org": org_id},
+                    )
+                    .mappings()
+                    .all()
+                )
         return [cls.from_dict(dict(r["data"])) for r in rows]
 
     def _row_to_incident(self, row: dict[str, Any]) -> Incident:
         inc = Incident(
             incident_id=row["incident_id"],
             org_id=row["org_id"],
-            status=__import__("notary_platform.models", fromlist=["IncidentStatus"]).IncidentStatus(
-                row["status"]
-            ),
+            status=__import__("notary_platform.models", fromlist=["IncidentStatus"]).IncidentStatus(row["status"]),
             snapshot_summary=row.get("snapshot_summary") or {},
             replay_result=row.get("replay_result") or {},
             mutation_result=row.get("mutation_result") or {},
             certificate=row.get("certificate") or {},
         )
-        inc.custody = [
-            __import__("notary_platform.models", fromlist=["CustodyEvent"]).CustodyEvent(**c)
-            for c in (row.get("custody") or [])
-        ]
+        inc.custody = [__import__("notary_platform.models", fromlist=["CustodyEvent"]).CustodyEvent(**c) for c in (row.get("custody") or [])]
         return inc
 
-    def create_incident(self, snapshot_dict: dict[str, Any], org_id: str = "demo-org") -> Incident:
+    def create_incident(
+        self,
+        snapshot_dict: dict[str, Any],
+        org_id: str = "demo-org",
+        incident_id: str = "",
+    ) -> Incident:
         snapshot_summary = {
             "schema_version": snapshot_dict.get("schema_version"),
             "timestamp": snapshot_dict.get("timestamp"),
@@ -1767,15 +1800,13 @@ class PostgresS3Storage(StorageBackend):
             "root_hash": snapshot_dict.get("root_hash", ""),
             "scenario_id": snapshot_dict.get("scenario_id"),
         }
-        incident = Incident(incident_id=self._next_id(), org_id=org_id, snapshot_summary=snapshot_summary)
+        incident = Incident(incident_id=incident_id or self._next_id(), org_id=org_id, snapshot_summary=snapshot_summary)
         self._write_incident(incident)
         return incident
 
     def _next_id(self) -> str:
         with self._engine.connect() as conn:
-            row = conn.exec_driver_sql(
-                "SELECT COUNT(*) AS c FROM incidents"
-            ).mappings().first()
+            row = conn.exec_driver_sql("SELECT COUNT(*) AS c FROM incidents").mappings().first()
         n = (row["c"] if row else 0) + 1
         return f"inc-{n:06d}"
 
@@ -1810,22 +1841,22 @@ class PostgresS3Storage(StorageBackend):
 
     def get_incident(self, incident_id: str) -> Incident | None:
         with self._engine.connect() as conn:
-            row = conn.exec_driver_sql(
-                "SELECT * FROM incidents WHERE incident_id = %(iid)s", {"iid": incident_id}
-            ).mappings().first()
+            row = conn.exec_driver_sql("SELECT * FROM incidents WHERE incident_id = %(iid)s", {"iid": incident_id}).mappings().first()
         return self._row_to_incident(dict(row)) if row else None
 
     def list_incidents(self, org_id: str | None = None) -> list[Incident]:
         with self._engine.connect() as conn:
             if org_id is not None:
-                rows = conn.exec_driver_sql(
-                    "SELECT * FROM incidents WHERE org_id = %(org)s ORDER BY created_at",
-                    {"org": org_id},
-                ).mappings().all()
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT * FROM incidents WHERE org_id = %(org)s ORDER BY created_at",
+                        {"org": org_id},
+                    )
+                    .mappings()
+                    .all()
+                )
             else:
-                rows = conn.exec_driver_sql(
-                    "SELECT * FROM incidents ORDER BY created_at"
-                ).mappings().all()
+                rows = conn.exec_driver_sql("SELECT * FROM incidents ORDER BY created_at").mappings().all()
         return [self._row_to_incident(dict(r)) for r in rows]
 
     def get_snapshot(self, incident_id: str) -> dict[str, Any] | None:
@@ -1915,50 +1946,83 @@ class PostgresS3Storage(StorageBackend):
     def create_vr(self, vr: VerificationRecord) -> VerificationRecord:
         self._write_wo28("verification_record", vr)
         return vr
+
     def get_vr(self, vr_id: str) -> VerificationRecord | None:
         return self._get_wo28("verification_record", vr_id, VerificationRecord)
+
     def list_vrs(self, org_id: str, environment_id: str = "") -> list[VerificationRecord]:
         return self._list_wo28("verification_record", org_id, environment_id, VerificationRecord)
+
     def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
         self._write_wo28("verification_record", vr)
         return vr
+
     def list_vrs_by_bridge_key(self, bridge_key: str, org_id: str) -> list[VerificationRecord]:
         all_vrs = self._list_wo28("verification_record", org_id, "", VerificationRecord)
         return [vr for vr in all_vrs if vr.bridge_key == bridge_key]
+
     def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
-        ref = bundle.get("bundle_id", f"eb-{uuid.uuid4().hex[:12]}")
-        bundle["bundle_id"] = ref
-        bundle["org_id"] = org_id
-        from notary_platform.models import EvidenceBundle
-        self._write_wo28("evidence_bundle", EvidenceBundle.from_dict(bundle))
+        ref = bundle.get("id", bundle.get("bundle_id", f"urn:notary:evidence-bundle:{uuid.uuid4().hex}"))
+        persisted = EvidenceBundle.from_dict({**bundle, "id": ref, "org_id": org_id})
+        expected_ref = f"urn:notary:evidence-bundle:{persisted.manifest_digest['value']}"
+        if ref != expected_ref:
+            raise ValueError("evidence bundle id must match its manifest digest")
+        existing_bundle = self._get_wo28("evidence_bundle", ref, EvidenceBundle)
+        if existing_bundle is not None and existing_bundle.to_dict() != persisted.to_dict():
+            raise ValueError(f"conflicting immutable evidence bundle: {ref}")
+        body = json.dumps(persisted.to_dict(), sort_keys=True, separators=(",", ":")).encode()
+        key = f"{self._prefix.rstrip('/')}/evidence-bundles/{persisted.manifest_digest['value']}.json"
+        try:
+            self._s3.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=body,
+                ContentType="application/json",
+                IfNoneMatch="*",
+            )
+        except Exception:
+            existing = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+            if existing != body:
+                raise ValueError(f"conflicting immutable evidence bundle: {ref}")
+        self._write_wo28("evidence_bundle", persisted)
         return ref
+
     def create_label(self, label: HumanLabel) -> HumanLabel:
         self._write_wo28("human_label", label)
         return label
+
     def get_label(self, label_id: str) -> HumanLabel | None:
         return self._get_wo28("human_label", label_id, HumanLabel)
+
     def list_labels_for_vr(self, vr_id: str) -> list[HumanLabel]:
         vr = self.get_vr(vr_id)
         if not vr:
             return []
         return [lbl for lbl in self._list_wo28("human_label", vr.org_id, "", HumanLabel) if lbl.verification_record_id == vr_id]
+
     def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact:
         self._write_wo28("evidence_artifact", artifact)
         return artifact
+
     def get_evidence_artifact(self, artifact_id: str) -> EvidenceArtifact | None:
         return self._get_wo28("evidence_artifact", artifact_id, EvidenceArtifact)
+
     def list_evidence_artifacts_for_vr(self, vr_id: str, org_id: str) -> list[EvidenceArtifact]:
         return [a for a in self._list_wo28("evidence_artifact", org_id, "", EvidenceArtifact) if a.verification_record_id == vr_id]
+
     def create_replay_run(self, run: ReplayRun) -> ReplayRun:
         self._write_wo28("replay_run", run)
         return run
+
     def get_replay_run(self, run_id: str) -> ReplayRun | None:
         return self._get_wo28("replay_run", run_id, ReplayRun)
+
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
         vr = self.get_vr(vr_id)
         if not vr:
             return []
         return [r for r in self._list_wo28("replay_run", vr.org_id, "", ReplayRun) if r.verification_record_id == vr_id]
+
     def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None:
         with self._engine.begin() as conn:
             for i, ev in enumerate(events):
@@ -1988,10 +2052,15 @@ class PostgresS3Storage(StorageBackend):
 
     def list_replay_execution_events(self, run_id: str) -> list[ReplayExecutionEvent]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT step, source, expected, actual, status, sequence, timestamp FROM replay_execution_events WHERE run_id = %(run_id)s ORDER BY sequence",
-                {"run_id": run_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT step, source, expected, actual, status, sequence, timestamp "
+                    "FROM replay_execution_events WHERE run_id = %(run_id)s ORDER BY sequence",
+                    {"run_id": run_id},
+                )
+                .mappings()
+                .all()
+            )
         return [
             ReplayExecutionEvent(
                 step=r["step"],
@@ -2004,73 +2073,102 @@ class PostgresS3Storage(StorageBackend):
             )
             for r in rows
         ]
+
     def create_mutation_test(self, test: MutationTest) -> MutationTest:
         self._write_wo28("mutation_test", test)
         return test
+
     def get_mutation_test(self, test_id: str) -> MutationTest | None:
         return self._get_wo28("mutation_test", test_id, MutationTest)
+
     def list_mutation_tests_for_vr(self, vr_id: str) -> list[MutationTest]:
         vr = self.get_vr(vr_id)
         if not vr:
             return []
         return [t for t in self._list_wo28("mutation_test", vr.org_id, "", MutationTest) if t.verification_record_id == vr_id]
+
     def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate:
         self._write_wo28("proof_certificate", cert)
         return cert
+
     def get_proof_certificate(self, cert_id: str) -> ProofCertificate | None:
         return self._get_wo28("proof_certificate", cert_id, ProofCertificate)
+
     def create_scenario(self, scenario: Scenario) -> Scenario:
         self._write_wo28("scenario", scenario)
         return scenario
+
     def get_scenario(self, scenario_id: str) -> Scenario | None:
         return self._get_wo28("scenario", scenario_id, Scenario)
+
     def list_scenarios(self, org_id: str, environment_id: str = "") -> list[Scenario]:
         return self._list_wo28("scenario", org_id, environment_id, Scenario)
+
     def update_scenario(self, scenario: Scenario) -> Scenario:
         self._write_wo28("scenario", scenario)
         return scenario
+
     def create_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
         self._write_wo28("scenario_candidate", candidate)
         return candidate
+
     def get_scenario_candidate(self, candidate_id: str) -> ScenarioCandidate | None:
         return self._get_wo28("scenario_candidate", candidate_id, ScenarioCandidate)
+
     def list_scenario_candidates(self, org_id: str, environment_id: str = "") -> list[ScenarioCandidate]:
         return self._list_wo28("scenario_candidate", org_id, environment_id, ScenarioCandidate)
+
     def update_scenario_candidate(self, candidate: ScenarioCandidate) -> ScenarioCandidate:
         self._write_wo28("scenario_candidate", candidate)
         return candidate
+
     def create_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
         self._write_wo28("scenario_run", run)
         return run
+
     def get_scenario_run(self, run_id: str) -> ScenarioRun | None:
         return self._get_wo28("scenario_run", run_id, ScenarioRun)
+
     def update_scenario_run(self, run: ScenarioRun) -> ScenarioRun:
         self._write_wo28("scenario_run", run)
         return run
+
     def list_scenario_runs(self, org_id: str, environment_id: str = "") -> list[ScenarioRun]:
         return self._list_wo28("scenario_run", org_id, environment_id, ScenarioRun)
+
     def create_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
         self._write_wo28("readiness_policy", policy)
         return policy
+
     def get_readiness_policy(self, policy_id: str) -> ReadinessPolicy | None:
         return self._get_wo28("readiness_policy", policy_id, ReadinessPolicy)
+
     def list_readiness_policies(self, org_id: str, environment_id: str = "") -> list[ReadinessPolicy]:
         return self._list_wo28("readiness_policy", org_id, environment_id, ReadinessPolicy)
+
     def update_readiness_policy(self, policy: ReadinessPolicy) -> ReadinessPolicy:
         self._write_wo28("readiness_policy", policy)
         return policy
+
     def create_readiness_check(self, check: ReadinessCheck) -> ReadinessCheck:
         self._write_wo28("readiness_check", check)
         return check
+
     def get_readiness_check(self, check_id: str) -> ReadinessCheck | None:
         return self._get_wo28("readiness_check", check_id, ReadinessCheck)
+
     def list_readiness_checks(self, org_id: str, environment_id: str = "") -> list[ReadinessCheck]:
         return self._list_wo28("readiness_check", org_id, environment_id, ReadinessCheck)
+
     def create_release_gate_result(self, result: ReleaseGateResult) -> ReleaseGateResult:
         self._write_wo28("release_gate_result", result)
         return result
+
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
         return self._get_wo28("release_gate_result", result_id, ReleaseGateResult)
+
+    def list_release_gate_results(self, org_id: str) -> list[ReleaseGateResult]:
+        return self._list_wo28("release_gate_result", org_id, "", ReleaseGateResult)
 
     # ── Integrations & Capture (Phase E) — Postgres persistence ──
     def create_ai_system(self, system: AISystem) -> AISystem:
@@ -2096,10 +2194,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'capture_connector' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
-                {"ai_sys": ai_system_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'capture_connector' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                    {"ai_sys": ai_system_id},
+                )
+                .mappings()
+                .all()
+            )
         return [CaptureConnector.from_dict(dict(r["data"])) for r in rows]
 
     def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
@@ -2112,10 +2214,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'field_handling_rule' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
-                {"ai_sys": ai_system_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'field_handling_rule' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                    {"ai_sys": ai_system_id},
+                )
+                .mappings()
+                .all()
+            )
         return [FieldHandlingRule.from_dict(dict(r["data"])) for r in rows]
 
     def delete_field_handling_rules(self, ai_system_id: str) -> None:
@@ -2131,10 +2237,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'capture_validation_run' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
-                {"ai_sys": ai_system_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'capture_validation_run' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                    {"ai_sys": ai_system_id},
+                )
+                .mappings()
+                .all()
+            )
         return [CaptureValidationRun.from_dict(dict(r["data"])) for r in rows]
 
     def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
@@ -2144,14 +2254,18 @@ class PostgresS3Storage(StorageBackend):
     def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]:
         if ai_system_id:
             with self._engine.connect() as conn:
-                rows = conn.exec_driver_sql(
-                    "SELECT data FROM wo28_objects "
-                    "WHERE kind = 'decision_family_candidate' "
-                    "AND org_id = %(org)s "
-                    "AND data->>'ai_system_id' = %(ai_sys)s "
-                    "ORDER BY created_at",
-                    {"org": org_id, "ai_sys": ai_system_id},
-                ).mappings().all()
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT data FROM wo28_objects "
+                        "WHERE kind = 'decision_family_candidate' "
+                        "AND org_id = %(org)s "
+                        "AND data->>'ai_system_id' = %(ai_sys)s "
+                        "ORDER BY created_at",
+                        {"org": org_id, "ai_sys": ai_system_id},
+                    )
+                    .mappings()
+                    .all()
+                )
         else:
             rows = self._list_wo28("decision_family_candidate", org_id, "", DecisionFamilyCandidate)
             return rows
@@ -2177,10 +2291,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'workflow_evidence_source' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
-                {"wf_id": workflow_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'workflow_evidence_source' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
+                    {"wf_id": workflow_id},
+                )
+                .mappings()
+                .all()
+            )
         return [WorkflowEvidenceSource.from_dict(dict(r["data"])) for r in rows]
 
     def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]:
@@ -2195,10 +2313,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'record_selection_rule' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
-                {"wf_id": workflow_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'record_selection_rule' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
+                    {"wf_id": workflow_id},
+                )
+                .mappings()
+                .all()
+            )
         return [RecordSelectionRule.from_dict(dict(r["data"])) for r in rows]
 
     def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]:
@@ -2239,10 +2361,14 @@ class PostgresS3Storage(StorageBackend):
 
     def get_payload(self, payload_ref: str) -> dict[str, Any] | None:
         with self._engine.connect() as conn:
-            row = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'dep_payload' AND id = %(id)s",
-                {"id": payload_ref},
-            ).mappings().first()
+            row = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'dep_payload' AND id = %(id)s",
+                    {"id": payload_ref},
+                )
+                .mappings()
+                .first()
+            )
         if not row:
             return None
         return dict(row["data"])
@@ -2273,10 +2399,14 @@ class PostgresS3Storage(StorageBackend):
     def get_provider(self, provider_id: str, org_id: str = "") -> ProviderRegistration | None:
         lookup_id = f"{org_id}:{provider_id}" if org_id else provider_id
         with self._engine.connect() as conn:
-            row = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'provider' AND id = %(id)s",
-                {"id": lookup_id},
-            ).mappings().first()
+            row = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'provider' AND id = %(id)s",
+                    {"id": lookup_id},
+                )
+                .mappings()
+                .first()
+            )
         if not row:
             return None
         return ProviderRegistration.from_dict(dict(row["data"]))
@@ -2346,10 +2476,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_source_profiles(self, source_id: str) -> list[SourceProfile]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'source_profile' AND data->>'source_id' = %(sid)s ORDER BY created_at DESC",
-                {"sid": source_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'source_profile' AND data->>'source_id' = %(sid)s ORDER BY created_at DESC",
+                    {"sid": source_id},
+                )
+                .mappings()
+                .all()
+            )
         return [SourceProfile.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-040: Field Mapping Versions ──
@@ -2363,10 +2497,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'field_mapping' AND data->>'source_id' = %(sid)s ORDER BY (data->>'version')::int DESC",
-                {"sid": source_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'field_mapping' AND data->>'source_id' = %(sid)s ORDER BY (data->>'version')::int DESC",
+                    {"sid": source_id},
+                )
+                .mappings()
+                .all()
+            )
         return [FieldMappingVersion.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-050: Link Assertions ──
@@ -2382,10 +2520,16 @@ class PostgresS3Storage(StorageBackend):
 
     def list_link_assertions_for_resource(self, resource_id: str, org_id: str) -> list[LinkAssertion]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'link_assertion' AND data->>'org_id' = %(org)s AND (data->>'source_resource_id' = %(rid)s OR data->>'target_resource_id' = %(rid)s)",
-                {"org": org_id, "rid": resource_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'link_assertion' "
+                    "AND data->>'org_id' = %(org)s "
+                    "AND (data->>'source_resource_id' = %(rid)s OR data->>'target_resource_id' = %(rid)s)",
+                    {"org": org_id, "rid": resource_id},
+                )
+                .mappings()
+                .all()
+            )
         return [LinkAssertion.from_dict(dict(r["data"])) for r in rows]
 
     def update_link_assertion(self, la: LinkAssertion) -> LinkAssertion:
@@ -2404,10 +2548,17 @@ class PostgresS3Storage(StorageBackend):
 
     def list_context_bindings_for_scope(self, org_id: str, subject_scope: str, subject_selector: str) -> list[ContextBinding]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'context_binding' AND data->>'org_id' = %(org)s AND data->>'subject_scope' = %(scope)s AND data->>'subject_selector' = %(sel)s",
-                {"org": org_id, "scope": subject_scope, "sel": subject_selector},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'context_binding' "
+                    "AND data->>'org_id' = %(org)s "
+                    "AND data->>'subject_scope' = %(scope)s "
+                    "AND data->>'subject_selector' = %(sel)s",
+                    {"org": org_id, "scope": subject_scope, "sel": subject_selector},
+                )
+                .mappings()
+                .all()
+            )
         return [ContextBinding.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-050: Context Conflicts ──
@@ -2423,10 +2574,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_context_conflicts_for_der(self, der_id: str) -> list[ContextConflict]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'context_conflict' AND data->>'der_id' = %(did)s",
-                {"did": der_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'context_conflict' AND data->>'der_id' = %(did)s",
+                    {"did": der_id},
+                )
+                .mappings()
+                .all()
+            )
         return [ContextConflict.from_dict(dict(r["data"])) for r in rows]
 
     def update_context_conflict(self, cc: ContextConflict) -> ContextConflict:
@@ -2453,10 +2608,16 @@ class PostgresS3Storage(StorageBackend):
 
     def list_decision_evidence_records_by_identity(self, decision_identity: str, org_id: str) -> list[DecisionEvidenceRecord]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'decision_evidence_record' AND data->>'org_id' = %(org)s AND data->>'decision_identity' = %(di)s",
-                {"org": org_id, "di": decision_identity},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'decision_evidence_record' "
+                    "AND data->>'org_id' = %(org)s "
+                    "AND data->>'decision_identity' = %(di)s",
+                    {"org": org_id, "di": decision_identity},
+                )
+                .mappings()
+                .all()
+            )
         return [DecisionEvidenceRecord.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-050: Advisory Suggestions ──
@@ -2470,12 +2631,23 @@ class PostgresS3Storage(StorageBackend):
     def list_advisory_suggestions(self, org_id: str, workflow_id: str = "") -> list[AdvisorySuggestion]:
         with self._engine.connect() as conn:
             if workflow_id:
-                rows = conn.exec_driver_sql(
-                    "SELECT data FROM wo28_objects WHERE kind = 'advisory_suggestion' AND data->>'org_id' = %(org)s AND data->>'workflow_id' = %(wid)s",
-                    {"org": org_id, "wid": workflow_id},
-                ).mappings().all()
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT data FROM wo28_objects WHERE kind = 'advisory_suggestion' AND data->>'org_id' = %(org)s AND data->>'workflow_id' = %(wid)s",
+                        {"org": org_id, "wid": workflow_id},
+                    )
+                    .mappings()
+                    .all()
+                )
             else:
-                rows = self._exec_list("advisory_suggestion", org_id, conn)
+                rows = (
+                    conn.exec_driver_sql(
+                        "SELECT data FROM wo28_objects WHERE kind = 'advisory_suggestion' AND data->>'org_id' = %(org)s ORDER BY created_at",
+                        {"org": org_id},
+                    )
+                    .mappings()
+                    .all()
+                )
         return [AdvisorySuggestion.from_dict(dict(r["data"])) for r in rows]
 
     def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
@@ -2530,10 +2702,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_sweep_jobs(self, run_id: str) -> list[SweepJob]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'sweep_job' AND data->>'run_id' = %(rid)s ORDER BY created_at",
-                {"rid": run_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'sweep_job' AND data->>'run_id' = %(rid)s ORDER BY created_at",
+                    {"rid": run_id},
+                )
+                .mappings()
+                .all()
+            )
         return [SweepJob.from_dict(dict(r["data"])) for r in rows]
 
     def update_sweep_job(self, job: SweepJob) -> SweepJob:
@@ -2549,10 +2725,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_assessments(self, run_id: str) -> list[AssessmentRecord]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'assessment' AND data->>'run_id' = %(rid)s ORDER BY created_at",
-                {"rid": run_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'assessment' AND data->>'run_id' = %(rid)s ORDER BY created_at",
+                    {"rid": run_id},
+                )
+                .mappings()
+                .all()
+            )
         return [AssessmentRecord.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-080: Assurance Candidates ──
@@ -2576,10 +2756,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_review_decisions(self, candidate_id: str) -> list[ReviewDecision]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'review_decision' AND data->>'candidate_id' = %(cid)s ORDER BY data->>'created_at'",
-                {"cid": candidate_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'review_decision' AND data->>'candidate_id' = %(cid)s ORDER BY data->>'created_at'",
+                    {"cid": candidate_id},
+                )
+                .mappings()
+                .all()
+            )
         return [ReviewDecision.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-080: Suppression Rules ──
@@ -2589,10 +2773,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_suppression_rules(self, org_id: str) -> list[SuppressionRule]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'suppression_rule' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
-                {"org": org_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'suppression_rule' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
+                    {"org": org_id},
+                )
+                .mappings()
+                .all()
+            )
         return [SuppressionRule.from_dict(dict(r["data"])) for r in rows]
 
     # ── WP-080: Promotion Delegations ──
@@ -2602,10 +2790,14 @@ class PostgresS3Storage(StorageBackend):
 
     def list_promotion_delegations(self, org_id: str) -> list[PromotionDelegation]:
         with self._engine.connect() as conn:
-            rows = conn.exec_driver_sql(
-                "SELECT data FROM wo28_objects WHERE kind = 'promotion_delegation' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
-                {"org": org_id},
-            ).mappings().all()
+            rows = (
+                conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'promotion_delegation' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
+                    {"org": org_id},
+                )
+                .mappings()
+                .all()
+            )
         return [PromotionDelegation.from_dict(dict(r["data"])) for r in rows]
 
 
@@ -2629,7 +2821,12 @@ def get_storage() -> StorageBackend:
     """Return the configured storage backend (singleton per process)."""
     global _storage_instance  # noqa: PLW0603
     if _storage_instance is not None:
-        return _storage_instance
+        matches_remote = SETTINGS.use_remote_storage and isinstance(_storage_instance, PostgresS3Storage)
+        matches_shared = not SETTINGS.use_remote_storage and SETTINGS.storage_profile == "shared_demo" and isinstance(_storage_instance, SharedDemoFileStorage)
+        matches_memory = not SETTINGS.use_remote_storage and SETTINGS.storage_profile != "shared_demo" and type(_storage_instance) is MemoryStorage
+        if matches_remote or matches_shared or matches_memory:
+            return _storage_instance
+        _storage_instance = None
     if SETTINGS.use_remote_storage:
         _storage_instance = PostgresS3Storage()
     elif SETTINGS.storage_profile == "shared_demo":

@@ -21,9 +21,7 @@ _bearer = HTTPBearer(auto_error=False)
 ORG_HEADER = "X-Notary-Org"
 
 
-def _extract_token(
-    creds: Optional[HTTPAuthorizationCredentials], request: Request
-) -> Optional[str]:
+def _extract_token(creds: Optional[HTTPAuthorizationCredentials], request: Request) -> Optional[str]:
     if creds and creds.credentials:
         return creds.credentials
     # Accept ?api_key= or x-api-key header as an alternative API-key form.

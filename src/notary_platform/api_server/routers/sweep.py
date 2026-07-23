@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from notary_platform.api_server.auth import require_auth
-from notary_platform.storage import get_storage
+from notary_platform.storage import StorageBackend, get_storage
 from notary_platform.sweep.models import (
     EvaluatorContractRecord,
     SweepDefinition,
@@ -26,14 +26,17 @@ from notary_platform.sweep.planner import SweepPlanner
 from notary_platform.sweep.runner import SweepRunner
 
 router = APIRouter(tags=["discovery"])
-storage = get_storage()
 
 
-def _get_planner() -> SweepPlanner:
+def _storage() -> StorageBackend:
+    return get_storage()
+
+
+def _get_planner(storage: StorageBackend) -> SweepPlanner:
     return SweepPlanner(storage)
 
 
-def _get_runner() -> SweepRunner:
+def _get_runner(storage: StorageBackend) -> SweepRunner:
     return SweepRunner(storage)
 
 
@@ -42,6 +45,7 @@ def create_sweep_definition(
     body: dict[str, Any],
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     sd = SweepDefinition.from_dict(body)
     sd.org_id = org_id
     created = storage.create_sweep_definition(sd)
@@ -52,6 +56,7 @@ def create_sweep_definition(
 def list_sweep_definitions(
     org_id: str = Depends(require_auth),
 ) -> list[dict[str, Any]]:
+    storage = _storage()
     return [d.to_dict() for d in storage.list_sweep_definitions(org_id)]
 
 
@@ -60,6 +65,7 @@ def get_sweep_definition(
     definition_id: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     sd = storage.get_sweep_definition(definition_id)
     if sd is None or sd.org_id != org_id:
         raise HTTPException(status_code=404, detail="sweep definition not found")
@@ -71,13 +77,14 @@ def create_sweep_run(
     definition_id: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     sd = storage.get_sweep_definition(definition_id)
     if sd is None or sd.org_id != org_id:
         raise HTTPException(status_code=404, detail="sweep definition not found")
     ders = storage.list_decision_evidence_records(org_id)
-    planner = _get_planner()
+    planner = _get_planner(storage)
     run = planner.plan(sd, [d.id for d in ders])
-    runner = _get_runner()
+    runner = _get_runner(storage)
     runner.start_run(run.id, org_id)
     final = storage.get_sweep_run(run.id)
     if final is None:
@@ -90,6 +97,7 @@ def get_sweep_run(
     run_id: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     run = storage.get_sweep_run(run_id)
     if run is None or run.org_id != org_id:
         raise HTTPException(status_code=404, detail="sweep run not found")
@@ -101,7 +109,8 @@ def cancel_sweep_run(
     run_id: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
-    runner = _get_runner()
+    storage = _storage()
+    runner = _get_runner(storage)
     result = runner.cancel_run(run_id, org_id)
     if result is None:
         run = storage.get_sweep_run(run_id)
@@ -116,6 +125,7 @@ def rerun_sweep(
     run_id: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     existing = storage.get_sweep_run(run_id)
     if existing is None or existing.org_id != org_id:
         raise HTTPException(status_code=404, detail="sweep run not found")
@@ -123,9 +133,9 @@ def rerun_sweep(
     if sd is None:
         raise HTTPException(status_code=404, detail="sweep definition not found")
     ders = storage.list_decision_evidence_records(org_id)
-    planner = _get_planner()
+    planner = _get_planner(storage)
     new_run = planner.plan(sd, [d.id for d in ders])
-    runner = _get_runner()
+    runner = _get_runner(storage)
     runner.start_run(new_run.id, org_id)
     final = storage.get_sweep_run(new_run.id)
     if final is None:
@@ -137,6 +147,7 @@ def rerun_sweep(
 def list_evaluators(
     org_id: str = Depends(require_auth),
 ) -> list[dict[str, Any]]:
+    storage = _storage()
     return [e.to_dict() for e in storage.list_evaluator_contracts(org_id)]
 
 
@@ -145,6 +156,7 @@ def register_evaluator(
     body: dict[str, Any],
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     contract = EvaluatorContractRecord.from_dict(body)
     contract.org_id = org_id
     created = storage.create_evaluator_contract(contract)
@@ -157,6 +169,7 @@ def get_evaluator_version(
     version: str,
     org_id: str = Depends(require_auth),
 ) -> dict[str, Any]:
+    storage = _storage()
     contract = storage.get_evaluator_contract(evaluator_id)
     if contract is None or contract.org_id != org_id:
         raise HTTPException(status_code=404, detail="evaluator not found")

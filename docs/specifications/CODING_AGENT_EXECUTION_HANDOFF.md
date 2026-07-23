@@ -212,7 +212,7 @@ Every model-assisted result stays `inferred`, retains model/prompt/input provena
 
 For each work package:
 
-1. Create a new branch from updated `main` using the `codex/` prefix.
+1. Create one new branch from updated `main` using the `codex/` prefix, and keep the whole work package on that branch.
 2. Read the complete requirement and blueprint sections connected to that package.
 3. Inspect all current files named in the roadmap before proposing changes.
 4. Write a short implementation plan naming reused code, new files, interfaces, flow, migrations, and tests.
@@ -297,5 +297,5 @@ Product boundaries:
 - Missing context causes a skip or Evidence Gap, never a guessed failure.
 - Preserve immutable evidence, provenance, temporal applicability, tenant scope, and append-only history.
 
-Create a codex/ branch from main, implement WP-000 end to end, run all required checks, commit, push, and return the Required Worker Report. Continue when usage visibility is unavailable. Stop only for a real access/security/production/destructive-action blocker, contradictory requirements, or a consequential unresolved product decision.
+Create one codex/ branch from main, implement WP-000 end to end, run all required checks, commit, push, and return the Required Worker Report. Continue when usage visibility is unavailable. Stop only for a real access/security/production/destructive-action blocker, contradictory requirements, or a consequential unresolved product decision.
 ```

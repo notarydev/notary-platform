@@ -31,12 +31,20 @@ class DecisionEvidenceRecordService:
         namespace_mappings: dict[str, str] | None = None,
     ) -> DecisionEvidenceRecord:
         identity, method, link_assertions = self._id_resolver.resolve(
-            resource_ids, org_id, namespace_mappings,
+            resource_ids,
+            org_id,
+            namespace_mappings,
         )
         la_ids = [la.id for la in link_assertions]
+        environments = {
+            resource.environment_id
+            for resource_id in resource_ids
+            if (resource := self._storage.get_resource(resource_id, org_id)) is not None and resource.environment_id
+        }
 
         der = DecisionEvidenceRecord(
             org_id=org_id,
+            environment_id=next(iter(environments)) if len(environments) == 1 else "",
             decision_identity=identity,
             identity_method=method,
             source_resource_ids=resource_ids,

@@ -6,8 +6,6 @@ Future versions will use SQS or a dedicated worker pool.
 
 from __future__ import annotations
 
-from typing import Any
-
 from notary_platform.sweep.jobs import SweepJob
 from notary_platform.sweep.runner import SweepRunner
 

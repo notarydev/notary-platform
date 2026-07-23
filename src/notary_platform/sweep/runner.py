@@ -6,17 +6,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from notary_platform.sweep.budgets import BudgetState
-from notary_platform.sweep.errors import (
-    EVALUATOR_EXECUTION_FAILED,
-    SWEEP_ALREADY_COMPLETED,
-    SWEEP_BUDGET_EXCEEDED,
-    SWEEP_CANCELLED,
-)
-from notary_platform.sweep.jobs import SweepJob
-from notary_platform.sweep.manifests import build_manifest, digest_manifest
 from notary_platform.sweep.models import (
     AssessmentRecord,
-    EvaluatorContractRecord,
     SweepDefinition,
     SweepRun,
 )
