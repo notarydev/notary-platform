@@ -1022,7 +1022,6 @@ class PostgresS3Storage(StorageBackend):
         self._session = boto3.session.Session()
         self._s3 = self._session.client("s3")
         self._ensure_schema()
-        self._replay_execution_events: dict[str, list[ReplayExecutionEvent]] = {}
 
     # -- metadata (Postgres) -------------------------------------------------
     def _ensure_schema(self) -> None:
@@ -1056,7 +1055,40 @@ class PostgresS3Storage(StorageBackend):
                 """
             )
             conn.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS replay_execution_events (
+                    run_id TEXT NOT NULL,
+                    sequence INT NOT NULL,
+                    step TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    expected TEXT NOT NULL,
+                    actual TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    PRIMARY KEY (run_id, sequence)
+                )
+                """
+            )
+            conn.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_wo28_kind_org_env ON wo28_objects(kind, org_id, environment_id)"
+            )
+            conn.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS replay_execution_events (
+                    run_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    step TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    expected TEXT NOT NULL,
+                    actual TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    PRIMARY KEY (run_id, sequence)
+                )
+                """
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_replay_events_run_id ON replay_execution_events(run_id)"
             )
 
     def _write_wo28(self, kind: str, obj: Any) -> None:
@@ -1228,19 +1260,47 @@ class PostgresS3Storage(StorageBackend):
         )
         return ref
 
-    # ── Platform objects (WO-64) — Postgres stubs ──
-    def create_org(self, org: Organization) -> Organization: return org
-    def get_org(self, org_id: str) -> Organization | None: return None
-    def create_env(self, env: Environment) -> Environment: return env
-    def get_env(self, env_id: str) -> Environment | None: return None
-    def list_envs(self, org_id: str) -> list[Environment]: return []
-    def create_agent(self, agent: Agent) -> Agent: return agent
-    def get_agent(self, agent_id: str) -> Agent | None: return None
-    def list_agents_for_org(self, org_id: str, environment_id: str = "") -> list[Agent]: return []
-    def create_system_conn(self, conn: SystemConnection) -> SystemConnection: return conn
-    def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]: return []
-    def create_policy(self, policy: CapturePolicy) -> CapturePolicy: return policy
-    def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]: return []
+    # ── Platform objects (WO-64) — Postgres persistence ──
+    def create_org(self, org: Organization) -> Organization:
+        self._write_wo28("organization", org)
+        return org
+
+    def get_org(self, org_id: str) -> Organization | None:
+        return self._get_wo28("organization", org_id, Organization)
+
+    def create_env(self, env: Environment) -> Environment:
+        self._write_wo28("environment", env)
+        return env
+
+    def get_env(self, env_id: str) -> Environment | None:
+        return self._get_wo28("environment", env_id, Environment)
+
+    def list_envs(self, org_id: str) -> list[Environment]:
+        return self._list_wo28("environment", org_id, "", Environment)
+
+    def create_agent(self, agent: Agent) -> Agent:
+        self._write_wo28("agent", agent)
+        return agent
+
+    def get_agent(self, agent_id: str) -> Agent | None:
+        return self._get_wo28("agent", agent_id, Agent)
+
+    def list_agents_for_org(self, org_id: str, environment_id: str = "") -> list[Agent]:
+        return self._list_wo28("agent", org_id, environment_id, Agent)
+
+    def create_system_conn(self, conn: SystemConnection) -> SystemConnection:
+        self._write_wo28("system_connection", conn)
+        return conn
+
+    def list_systems_for_org(self, org_id: str, environment_id: str = "") -> list[SystemConnection]:
+        return self._list_wo28("system_connection", org_id, environment_id, SystemConnection)
+
+    def create_policy(self, policy: CapturePolicy) -> CapturePolicy:
+        self._write_wo28("capture_policy", policy)
+        return policy
+
+    def list_policies_for_org(self, org_id: str, environment_id: str = "") -> list[CapturePolicy]:
+        return self._list_wo28("capture_policy", org_id, environment_id, CapturePolicy)
 
     # ── Product objects (WO-28) — JSONB persistence in Postgres ──
     def create_vr(self, vr: VerificationRecord) -> VerificationRecord:
@@ -1275,9 +1335,50 @@ class PostgresS3Storage(StorageBackend):
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
         return [r for r in self._list_wo28("replay_run", "", "", ReplayRun) if r.verification_record_id == vr_id]
     def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None:
-        self._replay_execution_events[run_id] = events
+        with self._engine.begin() as conn:
+            for i, ev in enumerate(events):
+                conn.exec_driver_sql(
+                    """
+                    INSERT INTO replay_execution_events (run_id, sequence, step, source, expected, actual, status, timestamp)
+                    VALUES (%(run_id)s, %(seq)s, %(step)s, %(source)s, %(expected)s, %(actual)s, %(status)s, %(ts)s)
+                    ON CONFLICT (run_id, sequence) DO UPDATE SET
+                        step = EXCLUDED.step,
+                        source = EXCLUDED.source,
+                        expected = EXCLUDED.expected,
+                        actual = EXCLUDED.actual,
+                        status = EXCLUDED.status,
+                        timestamp = EXCLUDED.timestamp
+                    """,
+                    {
+                        "run_id": run_id,
+                        "seq": i,
+                        "step": ev.step,
+                        "source": ev.source,
+                        "expected": ev.expected,
+                        "actual": ev.actual,
+                        "status": ev.status,
+                        "ts": ev.timestamp,
+                    },
+                )
+
     def list_replay_execution_events(self, run_id: str) -> list[ReplayExecutionEvent]:
-        return self._replay_execution_events.get(run_id, [])
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT step, source, expected, actual, status, sequence, timestamp FROM replay_execution_events WHERE run_id = %(run_id)s ORDER BY sequence",
+                {"run_id": run_id},
+            ).mappings().all()
+        return [
+            ReplayExecutionEvent(
+                step=r["step"],
+                source=r["source"],
+                expected=r["expected"],
+                actual=r["actual"],
+                status=r["status"],
+                sequence=r["sequence"],
+                timestamp=r["timestamp"],
+            )
+            for r in rows
+        ]
     def create_mutation_test(self, test: MutationTest) -> MutationTest:
         self._write_wo28("mutation_test", test)
         return test
@@ -1343,34 +1444,144 @@ class PostgresS3Storage(StorageBackend):
     def get_release_gate_result(self, result_id: str) -> ReleaseGateResult | None:
         return self._get_wo28("release_gate_result", result_id, ReleaseGateResult)
 
-    # ── Integrations & Capture (Phase E) ──
-    def create_ai_system(self, system: AISystem) -> AISystem: return system
-    def get_ai_system(self, system_id: str) -> AISystem | None: return None
-    def list_ai_systems(self, org_id: str, environment_id: str = "") -> list[AISystem]: return []
-    def update_ai_system(self, system: AISystem) -> AISystem: return system
-    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: return conn
-    def get_capture_connector(self, conn_id: str) -> CaptureConnector | None: return None
-    def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]: return []
-    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector: return conn
-    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule: return rule
-    def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]: return []
-    def delete_field_handling_rules(self, ai_system_id: str) -> None: pass
-    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun: return run
-    def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]: return []
-    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
-    def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]: return []
-    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate: return candidate
-    def create_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: return wf
-    def get_decision_workflow(self, wf_id: str) -> DecisionWorkflow | None: return None
-    def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]: return []
-    def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow: return wf
-    def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]: return []
-    def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]: return sources
-    def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]: return []
-    def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]: return rules
-    def get_assurance_plan(self, plan_id: str) -> AssuranceSetupPlan | None: return None
-    def save_assurance_plan(self, plan: AssuranceSetupPlan) -> AssuranceSetupPlan: return plan
-    def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]: return []
+    # ── Integrations & Capture (Phase E) — Postgres persistence ──
+    def create_ai_system(self, system: AISystem) -> AISystem:
+        self._write_wo28("ai_system", system)
+        return system
+
+    def get_ai_system(self, system_id: str) -> AISystem | None:
+        return self._get_wo28("ai_system", system_id, AISystem)
+
+    def list_ai_systems(self, org_id: str, environment_id: str = "") -> list[AISystem]:
+        return self._list_wo28("ai_system", org_id, environment_id, AISystem)
+
+    def update_ai_system(self, system: AISystem) -> AISystem:
+        self._write_wo28("ai_system", system)
+        return system
+
+    def create_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        self._write_wo28("capture_connector", conn)
+        return conn
+
+    def get_capture_connector(self, conn_id: str) -> CaptureConnector | None:
+        return self._get_wo28("capture_connector", conn_id, CaptureConnector)
+
+    def list_capture_connectors(self, ai_system_id: str) -> list[CaptureConnector]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'capture_connector' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                {"ai_sys": ai_system_id},
+            ).mappings().all()
+        return [CaptureConnector.from_dict(dict(r["data"])) for r in rows]
+
+    def update_capture_connector(self, conn: CaptureConnector) -> CaptureConnector:
+        self._write_wo28("capture_connector", conn)
+        return conn
+
+    def create_field_handling_rule(self, rule: FieldHandlingRule) -> FieldHandlingRule:
+        self._write_wo28("field_handling_rule", rule)
+        return rule
+
+    def list_field_handling_rules(self, ai_system_id: str) -> list[FieldHandlingRule]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'field_handling_rule' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                {"ai_sys": ai_system_id},
+            ).mappings().all()
+        return [FieldHandlingRule.from_dict(dict(r["data"])) for r in rows]
+
+    def delete_field_handling_rules(self, ai_system_id: str) -> None:
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                "DELETE FROM wo28_objects WHERE kind = 'field_handling_rule' AND data->>'ai_system_id' = %(ai_sys)s",
+                {"ai_sys": ai_system_id},
+            )
+
+    def create_capture_validation_run(self, run: CaptureValidationRun) -> CaptureValidationRun:
+        self._write_wo28("capture_validation_run", run)
+        return run
+
+    def list_capture_validation_runs(self, ai_system_id: str) -> list[CaptureValidationRun]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'capture_validation_run' AND data->>'ai_system_id' = %(ai_sys)s ORDER BY created_at",
+                {"ai_sys": ai_system_id},
+            ).mappings().all()
+        return [CaptureValidationRun.from_dict(dict(r["data"])) for r in rows]
+
+    def create_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        self._write_wo28("decision_family_candidate", candidate)
+        return candidate
+
+    def list_decision_family_candidates(self, org_id: str, ai_system_id: str = "") -> list[DecisionFamilyCandidate]:
+        if ai_system_id:
+            with self._engine.connect() as conn:
+                rows = conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects "
+                    "WHERE kind = 'decision_family_candidate' "
+                    "AND org_id = %(org)s "
+                    "AND data->>'ai_system_id' = %(ai_sys)s "
+                    "ORDER BY created_at",
+                    {"org": org_id, "ai_sys": ai_system_id},
+                ).mappings().all()
+        else:
+            rows = self._list_wo28("decision_family_candidate", org_id, "", DecisionFamilyCandidate)
+            return rows
+        return [DecisionFamilyCandidate.from_dict(dict(r["data"])) for r in rows]
+
+    def update_decision_family_candidate(self, candidate: DecisionFamilyCandidate) -> DecisionFamilyCandidate:
+        self._write_wo28("decision_family_candidate", candidate)
+        return candidate
+
+    def create_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow:
+        self._write_wo28("decision_workflow", wf)
+        return wf
+
+    def get_decision_workflow(self, wf_id: str) -> DecisionWorkflow | None:
+        return self._get_wo28("decision_workflow", wf_id, DecisionWorkflow)
+
+    def list_decision_workflows(self, org_id: str, environment_id: str = "") -> list[DecisionWorkflow]:
+        return self._list_wo28("decision_workflow", org_id, environment_id, DecisionWorkflow)
+
+    def update_decision_workflow(self, wf: DecisionWorkflow) -> DecisionWorkflow:
+        self._write_wo28("decision_workflow", wf)
+        return wf
+
+    def list_workflow_evidence_sources(self, workflow_id: str) -> list[WorkflowEvidenceSource]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'workflow_evidence_source' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
+                {"wf_id": workflow_id},
+            ).mappings().all()
+        return [WorkflowEvidenceSource.from_dict(dict(r["data"])) for r in rows]
+
+    def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]:
+        for src in sources:
+            self._write_wo28("workflow_evidence_source", src)
+        return sources
+
+    def list_record_selection_rules(self, workflow_id: str) -> list[RecordSelectionRule]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'record_selection_rule' AND data->>'workflow_id' = %(wf_id)s ORDER BY created_at",
+                {"wf_id": workflow_id},
+            ).mappings().all()
+        return [RecordSelectionRule.from_dict(dict(r["data"])) for r in rows]
+
+    def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]:
+        for rule in rules:
+            self._write_wo28("record_selection_rule", rule)
+        return rules
+
+    def get_assurance_plan(self, plan_id: str) -> AssuranceSetupPlan | None:
+        return self._get_wo28("assurance_setup_plan", plan_id, AssuranceSetupPlan)
+
+    def save_assurance_plan(self, plan: AssuranceSetupPlan) -> AssuranceSetupPlan:
+        self._write_wo28("assurance_setup_plan", plan)
+        return plan
+
+    def list_assurance_plans(self, org_id: str) -> list[AssuranceSetupPlan]:
+        return self._list_wo28("assurance_setup_plan", org_id, "", AssuranceSetupPlan)
 
 
 def get_storage() -> StorageBackend:

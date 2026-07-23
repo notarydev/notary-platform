@@ -154,6 +154,15 @@ class Organization:
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "environments": self.environments, "created_at": self.created_at}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Organization":
+        return cls(
+            id=d.get("id", ""),
+            name=d.get("name", ""),
+            environments=d.get("environments", ["demo", "staging", "production"]),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class Environment:
@@ -165,6 +174,16 @@ class Environment:
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "org_id": self.org_id, "kind": self.kind, "created_at": self.created_at}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Environment":
+        return cls(
+            id=d.get("id", ""),
+            name=d.get("name", ""),
+            org_id=d.get("org_id", ""),
+            kind=d.get("kind", "demo"),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -195,6 +214,22 @@ class Agent:
             "capture_policy_count": self.capture_policy_count,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Agent":
+        return cls(
+            id=d.get("id", ""),
+            name=d.get("name", ""),
+            org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            risk_tier=d.get("risk_tier", "standard"),
+            sdk_status=d.get("sdk_status", "unknown"),
+            sdk_version=d.get("sdk_version", ""),
+            last_seen=d.get("last_seen", ""),
+            scenario_count=d.get("scenario_count", 0),
+            capture_policy_count=d.get("capture_policy_count", 0),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -256,6 +291,36 @@ class SystemConnection:
             "next_action": self.next_action,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "SystemConnection":
+        return cls(
+            id=d.get("id", ""),
+            name=d.get("name", ""),
+            org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            kind=d.get("kind", "api"),
+            status=d.get("status", "unknown"),
+            last_checked=d.get("last_checked", ""),
+            capability=d.get("capability", ""),
+            sandbox_supported=d.get("sandbox_supported", False),
+            sandbox_replay_modes=d.get("sandbox_replay_modes", []),
+            auth_status=d.get("auth_status", "unknown"),
+            safety_boundary=d.get("safety_boundary", ""),
+            fallback=d.get("fallback", ""),
+            supported_agents=d.get("supported_agents", []),
+            created_at=d.get("created_at", ""),
+            type=d.get("type", "source_system"),
+            model_provider=d.get("model_provider", ""),
+            source_system=d.get("source_system", ""),
+            capture_policies=d.get("capture_policies", []),
+            linked_vrs=d.get("linked_vrs", []),
+            linked_incidents=d.get("linked_incidents", []),
+            linked_proofs=d.get("linked_proofs", []),
+            linked_scenarios=d.get("linked_scenarios", []),
+            limitations=d.get("limitations", []),
+            next_action=d.get("next_action", ""),
+        )
+
 
 @dataclass
 class CapturePolicy:
@@ -279,6 +344,19 @@ class CapturePolicy:
             "coverage": self.coverage,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "CapturePolicy":
+        return cls(
+            id=d.get("id", ""),
+            name=d.get("name", ""),
+            org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            agent_id=d.get("agent_id", ""),
+            status=d.get("status", "active"),
+            coverage=d.get("coverage", "all"),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -490,6 +568,73 @@ class VerificationRecord:
             "processing_path": self.processing_path,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "VerificationRecord":
+        from notary_platform.models import (
+            AIExecutionEvent,
+            DataSourceType,
+            EventKind,
+            ReplayabilityStatus,
+        )
+
+        # Helper to convert string to enum
+        def str_to_enum(enum_cls: type, value: str, default: Any) -> Any:
+            try:
+                return enum_cls(value)
+            except ValueError:
+                return default
+
+        events = []
+        for e in d.get("events", []):
+            try:
+                kind = EventKind(e.get("kind", "model_call"))
+            except ValueError:
+                kind = EventKind.model_call
+            events.append(AIExecutionEvent(
+                id=e.get("id", uuid.uuid4().hex),
+                kind=kind,
+                payload=e.get("payload", {}),
+                order=e.get("order", 0),
+            ))
+
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            source_type=str_to_enum(DataSourceType, d.get("source_type", "api_submission"), DataSourceType.api_submission),
+            external_ref=d.get("external_ref", ""),
+            agent_id=d.get("agent_id", ""),
+            business_function=d.get("business_function", ""),
+            events=events,
+            root_hash=d.get("root_hash", ""),
+            replayability=str_to_enum(ReplayabilityStatus, d.get("replayability", "unknown"), ReplayabilityStatus.unknown),
+            replayability_reason=d.get("replayability_reason", ""),
+            missing_prerequisites=d.get("missing_prerequisites", []),
+            promoted_to_incident=d.get("promoted_to_incident", ""),
+            current_label_id=d.get("current_label_id", ""),
+            created_at=d.get("created_at", ""),
+            is_demo=d.get("is_demo", False),
+            replayability_score=d.get("replayability_score", 0.0),
+            non_deterministic_flags=d.get("non_deterministic_flags", []),
+            defensibility_summary=d.get("defensibility_summary", ""),
+            source_system_id=d.get("source_system_id", ""),
+            source_record_ref=d.get("source_record_ref", ""),
+            agent_version=d.get("agent_version", ""),
+            model_provider=d.get("model_provider", ""),
+            model_name=d.get("model_name", ""),
+            policy_version=d.get("policy_version", ""),
+            capture_policy_id=d.get("capture_policy_id", ""),
+            expected_outcome=d.get("expected_outcome", ""),
+            label_source=d.get("label_source", ""),
+            sandbox_readiness=d.get("sandbox_readiness", {}),
+            next_action=d.get("next_action", ""),
+            suggested_labels=d.get("suggested_labels", []),
+            computed_replayability=str_to_enum(ReplayabilityStatus, d.get("computed_replayability", "unknown"), ReplayabilityStatus.unknown),
+            demo_replayability=str_to_enum(ReplayabilityStatus, d.get("demo_replayability", "unknown"), ReplayabilityStatus.unknown),
+            demo_replayability_reason=d.get("demo_replayability_reason", ""),
+            replayability_source=d.get("replayability_source", "computed"),
+            processing_path=d.get("processing_path", "legacy_verification_record"),
+        )
 
 
 # SDK element kind → AIExecutionEvent kind mapping
@@ -563,6 +708,25 @@ class HumanLabel:
             "approval_reason": self.approval_reason,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "HumanLabel":
+        return cls(
+            id=d.get("id", ""),
+            verification_record_id=d.get("verification_record_id", ""),
+            expected_outcome=d.get("expected_outcome", ""),
+            reviewer=d.get("reviewer", ""),
+            role=d.get("role", ""),
+            reason=d.get("reason", ""),
+            timestamp=d.get("timestamp", ""),
+            status=d.get("status", "active"),
+            version=d.get("version", 1),
+            superseded_by=d.get("superseded_by", ""),
+            category=d.get("category", "incident_type"),
+            suggested_by=d.get("suggested_by", ""),
+            suggested_confidence=d.get("suggested_confidence", 0.0),
+            approval_reason=d.get("approval_reason", ""),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 — API Keys, Audit Log (WO-66)
@@ -633,6 +797,27 @@ class ScenarioCandidate:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ScenarioCandidate":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            source_vr_id=d.get("source_vr_id", ""),
+            source_incident_id=d.get("source_incident_id", ""),
+            business_title=d.get("business_title", ""),
+            source_system_id=d.get("source_system_id", ""),
+            approved_label_id=d.get("approved_label_id", ""),
+            replayability=d.get("replayability", "unknown"),
+            replayability_score=d.get("replayability_score", 0.0),
+            required_sandbox_id=d.get("required_sandbox_id", ""),
+            last_run_status=d.get("last_run_status", "not_started"),
+            release_gate_ids=d.get("release_gate_ids", []),
+            next_action=d.get("next_action", ""),
+            state=d.get("state", "candidate"),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class AuditEvent:
@@ -651,6 +836,17 @@ class AuditEvent:
             "detail": self.detail,
             "timestamp": self.timestamp,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "AuditEvent":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            action=d.get("action", ""),
+            actor=d.get("actor", "system"),
+            detail=d.get("detail", ""),
+            timestamp=d.get("timestamp", ""),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -682,6 +878,19 @@ class EvidenceArtifact:
             "payload": self.payload,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EvidenceArtifact":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            incident_id=d.get("incident_id", ""),
+            verification_record_id=d.get("verification_record_id", ""),
+            kind=d.get("kind", "snapshot"),
+            reference=d.get("reference", ""),
+            payload=d.get("payload", {}),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -741,6 +950,24 @@ class ReplayRun:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ReplayRun":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            verification_record_id=d.get("verification_record_id", ""),
+            incident_id=d.get("incident_id", ""),
+            status=d.get("status", "not_started"),
+            replay_method=d.get("replay_method", "cassette"),
+            original_decision=d.get("original_decision", ""),
+            replayed_decision=d.get("replayed_decision", ""),
+            missing_calls=d.get("missing_calls", []),
+            deterministic_controls=d.get("deterministic_controls", {}),
+            known_limitations=[KnownLimitation(**lim) for lim in d.get("known_limitations", [])],
+            evidence_refs=d.get("evidence_refs", []),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ReplayExecutionEvent:
@@ -765,6 +992,18 @@ class ReplayExecutionEvent:
             "timestamp": self.timestamp,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ReplayExecutionEvent":
+        return cls(
+            step=d.get("step", ""),
+            source=d.get("source", ""),
+            expected=d.get("expected", ""),
+            actual=d.get("actual", ""),
+            status=d.get("status", ""),
+            sequence=d.get("sequence", 0),
+            timestamp=d.get("timestamp", ""),
+        )
+
 
 @dataclass
 class FixReference:
@@ -782,6 +1021,15 @@ class FixReference:
             "description": self.description,
             "agent_id": self.agent_id,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "FixReference":
+        return cls(
+            id=d.get("id", ""),
+            config=d.get("config", {}),
+            description=d.get("description", ""),
+            agent_id=d.get("agent_id", ""),
+        )
 
 
 @dataclass
@@ -825,6 +1073,27 @@ class MutationTest:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MutationTest":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            verification_record_id=d.get("verification_record_id", ""),
+            incident_id=d.get("incident_id", ""),
+            replay_run_id=d.get("replay_run_id", ""),
+            fix_reference=FixReference.from_dict(d.get("fix_reference", {})),
+            expected_outcome=d.get("expected_outcome", ""),
+            label_id=d.get("label_id", ""),
+            original_decision=d.get("original_decision", ""),
+            mutated_decision=d.get("mutated_decision", ""),
+            decision_changed=d.get("decision_changed", False),
+            verdict=d.get("verdict", "not_started"),
+            replay_method=d.get("replay_method", "cassette"),
+            known_limitations=[KnownLimitation(**lim) for lim in d.get("known_limitations", [])],
+            evidence_refs=d.get("evidence_refs", []),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ProofClaim:
@@ -861,6 +1130,24 @@ class ProofClaim:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ProofClaim":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            scenario_id=d.get("scenario_id", ""),
+            scenario_run_id=d.get("scenario_run_id", ""),
+            agent_version=d.get("agent_version", ""),
+            fix_reference=FixReference.from_dict(d.get("fix_reference", {})),
+            release_context=d.get("release_context", ""),
+            expected_outcome=d.get("expected_outcome", ""),
+            label_id=d.get("label_id", ""),
+            replay_method=d.get("replay_method", "cassette"),
+            known_limitations=[KnownLimitation(**lim) for lim in d.get("known_limitations", [])],
+            scope_disclaimer=d.get("scope_disclaimer", "This proof applies to the tested scenario conditions and does not certify general AI safety."),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ProofCertificate:
@@ -896,6 +1183,24 @@ class ProofCertificate:
             "known_limitations": [lim.to_dict() for lim in self.known_limitations],
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ProofCertificate":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            certificate_id=d.get("certificate_id", ""),
+            certificate_type=d.get("certificate_type", "proof_of_mitigation"),
+            subject_id=d.get("subject_id", ""),
+            claim=ProofClaim.from_dict(d.get("claim", {})),
+            issued_at=d.get("issued_at", ""),
+            expires_at=d.get("expires_at", ""),
+            signature=d.get("signature", ""),
+            signed_payload=d.get("signed_payload", {}),
+            integrity_status=d.get("integrity_status", "unverified"),
+            known_limitations=[KnownLimitation(**lim) for lim in d.get("known_limitations", [])],
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -939,6 +1244,27 @@ class Scenario:
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Scenario":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            source_vr_id=d.get("source_vr_id", ""),
+            source_incident_id=d.get("source_incident_id", ""),
+            business_title=d.get("business_title", ""),
+            source_system_id=d.get("source_system_id", ""),
+            expected_outcome=d.get("expected_outcome", ""),
+            approved_label_id=d.get("approved_label_id", ""),
+            replayability=d.get("replayability", "unknown"),
+            replayability_score=d.get("replayability_score", 0.0),
+            required_sandbox_id=d.get("required_sandbox_id", ""),
+            evidence_refs=d.get("evidence_refs", []),
+            state=d.get("state", "active"),
+            last_run_status=d.get("last_run_status", "not_started"),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ScenarioRunResult:
@@ -961,18 +1287,30 @@ class ScenarioRunResult:
             "evidence_ref": self.evidence_ref,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ScenarioRunResult":
+        return cls(
+            scenario_id=d.get("scenario_id", ""),
+            status=d.get("status", "not_started"),
+            expected_decision=d.get("expected_decision", ""),
+            actual_decision=d.get("actual_decision", ""),
+            reason=d.get("reason", ""),
+            evidence_ref=d.get("evidence_ref", ""),
+        )
+
 
 @dataclass
 class ScenarioRun:
-    """Run of one or more Scenarios against an agent version."""
+    """One execution of one or more scenarios against an agent version."""
 
     id: str
     org_id: str = "demo-org"
     environment_id: str = "env:demo"
     agent_version: str = ""
     scenario_ids: list[str] = field(default_factory=list)
-    status: str = "not_started"  # not_started | running | completed | error
     results: list[ScenarioRunResult] = field(default_factory=list)
+    fix_config: dict[str, Any] = field(default_factory=dict)
+    status: str = "not_started"  # not_started | completed | error
     summary: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
@@ -983,16 +1321,32 @@ class ScenarioRun:
             "environment_id": self.environment_id,
             "agent_version": self.agent_version,
             "scenario_ids": self.scenario_ids,
-            "status": self.status,
             "results": [r.to_dict() for r in self.results],
+            "fix_config": self.fix_config,
+            "status": self.status,
             "summary": self.summary,
             "created_at": self.created_at,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ScenarioRun":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            agent_version=d.get("agent_version", ""),
+            scenario_ids=d.get("scenario_ids", []),
+            results=[ScenarioRunResult.from_dict(r) for r in d.get("results", [])],
+            fix_config=d.get("fix_config", {}),
+            status=d.get("status", "not_started"),
+            summary=d.get("summary", {}),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ReadinessPolicy:
-    """Release policy containing required Scenarios and pass condition."""
+    """Policy defining which scenarios must pass for a release gate."""
 
     id: str
     org_id: str = "demo-org"
@@ -1018,6 +1372,21 @@ class ReadinessPolicy:
             "change_history": self.change_history,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ReadinessPolicy":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            name=d.get("name", ""),
+            required_scenario_ids=d.get("required_scenario_ids", []),
+            pass_condition=d.get("pass_condition", "all_pass"),
+            enabled=d.get("enabled", True),
+            version=d.get("version", 1),
+            change_history=d.get("change_history", []),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1050,6 +1419,22 @@ class ReadinessCheck:
             "certificate_id": self.certificate_id,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ReadinessCheck":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            policy_id=d.get("policy_id", ""),
+            agent_version=d.get("agent_version", ""),
+            scenario_run_id=d.get("scenario_run_id", ""),
+            verdict=d.get("verdict", "not_started"),
+            failing_scenarios=d.get("failing_scenarios", []),
+            errored_scenarios=d.get("errored_scenarios", []),
+            certificate_id=d.get("certificate_id", ""),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1088,6 +1473,25 @@ class ReleaseGateResult:
             "ci_cd_command": self.ci_cd_command,
             "created_at": self.created_at,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ReleaseGateResult":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            readiness_check_id=d.get("readiness_check_id", ""),
+            status=d.get("status", "not_started"),
+            failing_scenarios=d.get("failing_scenarios", []),
+            errored_scenarios=d.get("errored_scenarios", []),
+            certificate_id=d.get("certificate_id", ""),
+            scenario_run_id=d.get("scenario_run_id", ""),
+            scenario_results=d.get("scenario_results", []),
+            evidence_refs=d.get("evidence_refs", []),
+            error_code=d.get("error_code", ""),
+            retry_guidance=d.get("retry_guidance", ""),
+            ci_cd_command=d.get("ci_cd_command", ""),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1134,6 +1538,24 @@ class AISystem:
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "AISystem":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            name=d.get("name", ""),
+            system_type=d.get("system_type", "agent"),
+            deployment_version=d.get("deployment_version", ""),
+            decision_endpoint=d.get("decision_endpoint", ""),
+            external_caller=d.get("external_caller", False),
+            risk_classification=d.get("risk_classification", ""),
+            business_owner=d.get("business_owner", ""),
+            technical_owner=d.get("technical_owner", ""),
+            status=d.get("status", "draft"),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class CaptureConnector:
@@ -1151,6 +1573,21 @@ class CaptureConnector:
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "CaptureConnector":
+        return cls(
+            id=d.get("id", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            org_id=d.get("org_id", ""),
+            connector_type=d.get("connector_type", ""),
+            name=d.get("name", ""),
+            status=d.get("status", "not_configured"),
+            config_json=d.get("config_json", "{}"),
+            last_tested_at=d.get("last_tested_at", ""),
+            error_message=d.get("error_message", ""),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class FieldHandlingRule:
@@ -1165,6 +1602,19 @@ class FieldHandlingRule:
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "FieldHandlingRule":
+        return cls(
+            id=d.get("id", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            field_pattern=d.get("field_pattern", ""),
+            action=d.get("action", "store"),
+            retention_days=d.get("retention_days", 365),
+            sensitive=d.get("sensitive", False),
+            use_for_replay=d.get("use_for_replay", True),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1198,6 +1648,18 @@ class CaptureValidationRun:
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "CaptureValidationRun":
+        return cls(
+            id=d.get("id", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            org_id=d.get("org_id", ""),
+            status=d.get("status", "pending"),
+            checks_json=d.get("checks_json", "{}"),
+            coverage_json=d.get("coverage_json", "{}"),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class DecisionFamilyCandidate:
@@ -1211,6 +1673,18 @@ class DecisionFamilyCandidate:
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "DecisionFamilyCandidate":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            pattern_name=d.get("pattern_name", ""),
+            decision_count=d.get("decision_count", 0),
+            confirmed=d.get("confirmed", False),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1237,6 +1711,26 @@ class DecisionWorkflow:
     def touch(self) -> None:
         self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "DecisionWorkflow":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            name=d.get("name", ""),
+            workflow_type=d.get("workflow_type", ""),
+            description=d.get("description", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            primary_source_system_id=d.get("primary_source_system_id", ""),
+            policy_source_system_id=d.get("policy_source_system_id", ""),
+            expected_safe_outcome=d.get("expected_safe_outcome", ""),
+            common_failure=d.get("common_failure", ""),
+            risk_level=d.get("risk_level", "medium"),
+            status=d.get("status", "draft"),
+            created_at=d.get("created_at", ""),
+            updated_at=d.get("updated_at", ""),
+        )
+
 
 @dataclass
 class WorkflowEvidenceSource:
@@ -1259,6 +1753,26 @@ class WorkflowEvidenceSource:
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "WorkflowEvidenceSource":
+        return cls(
+            id=d.get("id", ""),
+            workflow_id=d.get("workflow_id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", ""),
+            source_type=d.get("source_type", ""),
+            name=d.get("name", ""),
+            system_id=d.get("system_id", ""),
+            required=d.get("required", False),
+            selected=d.get("selected", False),
+            captures=d.get("captures", ""),
+            why_include=d.get("why_include", ""),
+            proof_enabled=d.get("proof_enabled", ""),
+            does_not_capture=d.get("does_not_capture", ""),
+            status=d.get("status", "suggested"),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class RecordSelectionRule:
@@ -1274,6 +1788,20 @@ class RecordSelectionRule:
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "RecordSelectionRule":
+        return cls(
+            id=d.get("id", ""),
+            workflow_id=d.get("workflow_id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            trigger_type=d.get("trigger_type", ""),
+            condition=d.get("condition", "{}"),
+            enabled=d.get("enabled", True),
+            label=d.get("label", ""),
+            description=d.get("description", ""),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
