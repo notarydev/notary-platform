@@ -14,7 +14,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from notary_platform.api_server.main import app
-from notary_platform.api_server.routers.ingestion import set_replay_runner, storage
+from notary_platform.api_server.routers.ingestion import get_registry, set_replay_runner, storage
 from notary_platform.services import DemoReplayRunner
 
 client = TestClient(app)
@@ -278,3 +278,34 @@ class TestCustomerRecordGoldenPath:
         )
         assert gate.status_code == 200, gate.text
         assert gate.json()["status"] == "pass"
+
+    def test_non_demo_record_without_runner_cannot_report_replay_success(self) -> None:
+        """Regression: non-demo VR without a configured replay runner must not report successful replay."""
+        _clear_storage()
+        # Clear the global registry's replay runner to simulate production without runner config
+        reg = get_registry()
+        reg.set_replay_runner(None)
+
+        vr = self._create_record_with_sdk_snapshot()
+        assert vr["is_demo"] is False
+        vr_id = vr["id"]
+
+        # Label it
+        label_resp = client.post(
+            f"/v1/verification-records/{vr_id}/label",
+            params={"expected_outcome": "APPROVE", "reviewer": "Test", "role": "QA", "reason": "Regression test"},
+        )
+        assert label_resp.status_code == 200
+
+        # Attempt replay — must fail or return non-success status
+        replay = client.post(f"/v1/verification-records/{vr_id}/replay-runs").json()
+        # Either replay fails to start, or status is not "replayed"
+        assert replay["status"] != "replayed", f"Non-demo record without runner must not replay successfully, got {replay['status']}"
+        # The status should indicate missing runner or incomplete
+        assert replay["status"] in ("runner_unavailable", "failed", "pending", "unsupported_runner"), f"Unexpected status: {replay['status']}"
+
+    def test_vr_has_processing_path_marker(self) -> None:
+        """Transitional marker: VRs created via legacy path include processing_path."""
+        vr = self._create_record_with_sdk_snapshot()
+        assert vr.get("processing_path") == "legacy_verification_record", \
+            f"Expected processing_path=legacy_verification_record, got {vr.get('processing_path')}"

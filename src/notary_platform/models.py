@@ -446,6 +446,9 @@ class VerificationRecord:
     demo_replayability: ReplayabilityStatus = ReplayabilityStatus.unknown
     demo_replayability_reason: str = ""
     replayability_source: str = "computed"  # "computed" | "demo_seed"
+    # WP-000: Transitional marker — path used to create this VR
+    # "legacy_verification_record" | "dep_ingress" | "sweep_bridge" | "manual"
+    processing_path: str = "legacy_verification_record"
 
     def to_dict(self) -> dict:
         return {
@@ -484,6 +487,7 @@ class VerificationRecord:
             "demo_replayability": self.demo_replayability.value,
             "demo_replayability_reason": self.demo_replayability_reason,
             "replayability_source": self.replayability_source,
+            "processing_path": self.processing_path,
         }
 
 
