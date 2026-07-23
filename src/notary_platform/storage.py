@@ -1319,7 +1319,10 @@ class PostgresS3Storage(StorageBackend):
     def get_label(self, label_id: str) -> HumanLabel | None:
         return self._get_wo28("human_label", label_id, HumanLabel)
     def list_labels_for_vr(self, vr_id: str) -> list[HumanLabel]:
-        return [lbl for lbl in self._list_wo28("human_label", "", "", HumanLabel) if lbl.verification_record_id == vr_id]
+        vr = self.get_vr(vr_id)
+        if not vr:
+            return []
+        return [lbl for lbl in self._list_wo28("human_label", vr.org_id, "", HumanLabel) if lbl.verification_record_id == vr_id]
     def create_evidence_artifact(self, artifact: EvidenceArtifact) -> EvidenceArtifact:
         self._write_wo28("evidence_artifact", artifact)
         return artifact
@@ -1333,7 +1336,10 @@ class PostgresS3Storage(StorageBackend):
     def get_replay_run(self, run_id: str) -> ReplayRun | None:
         return self._get_wo28("replay_run", run_id, ReplayRun)
     def list_replay_runs_for_vr(self, vr_id: str) -> list[ReplayRun]:
-        return [r for r in self._list_wo28("replay_run", "", "", ReplayRun) if r.verification_record_id == vr_id]
+        vr = self.get_vr(vr_id)
+        if not vr:
+            return []
+        return [r for r in self._list_wo28("replay_run", vr.org_id, "", ReplayRun) if r.verification_record_id == vr_id]
     def create_replay_execution_events(self, run_id: str, events: list[ReplayExecutionEvent]) -> None:
         with self._engine.begin() as conn:
             for i, ev in enumerate(events):
@@ -1385,7 +1391,10 @@ class PostgresS3Storage(StorageBackend):
     def get_mutation_test(self, test_id: str) -> MutationTest | None:
         return self._get_wo28("mutation_test", test_id, MutationTest)
     def list_mutation_tests_for_vr(self, vr_id: str) -> list[MutationTest]:
-        return [t for t in self._list_wo28("mutation_test", "", "", MutationTest) if t.verification_record_id == vr_id]
+        vr = self.get_vr(vr_id)
+        if not vr:
+            return []
+        return [t for t in self._list_wo28("mutation_test", vr.org_id, "", MutationTest) if t.verification_record_id == vr_id]
     def create_proof_certificate(self, cert: ProofCertificate) -> ProofCertificate:
         self._write_wo28("proof_certificate", cert)
         return cert
@@ -1556,6 +1565,11 @@ class PostgresS3Storage(StorageBackend):
         return [WorkflowEvidenceSource.from_dict(dict(r["data"])) for r in rows]
 
     def save_workflow_evidence_sources(self, workflow_id: str, sources: list[WorkflowEvidenceSource]) -> list[WorkflowEvidenceSource]:
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                "DELETE FROM wo28_objects WHERE kind = 'workflow_evidence_source' AND data->>'workflow_id' = %(wf_id)s",
+                {"wf_id": workflow_id},
+            )
         for src in sources:
             self._write_wo28("workflow_evidence_source", src)
         return sources
@@ -1569,6 +1583,11 @@ class PostgresS3Storage(StorageBackend):
         return [RecordSelectionRule.from_dict(dict(r["data"])) for r in rows]
 
     def save_record_selection_rules(self, workflow_id: str, rules: list[RecordSelectionRule]) -> list[RecordSelectionRule]:
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                "DELETE FROM wo28_objects WHERE kind = 'record_selection_rule' AND data->>'workflow_id' = %(wf_id)s",
+                {"wf_id": workflow_id},
+            )
         for rule in rules:
             self._write_wo28("record_selection_rule", rule)
         return rules

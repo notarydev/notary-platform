@@ -1863,6 +1863,27 @@ class AssuranceSetupPlan:
     def touch(self) -> None:
         self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "AssuranceSetupPlan":
+        return cls(
+            id=d.get("id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            environment_id=d.get("environment_id", "env:demo"),
+            status=d.get("status", "draft"),
+            current_step=d.get("current_step", 0),
+            objective=d.get("objective", ""),
+            workflow_type=d.get("workflow_type", ""),
+            workflow_name=d.get("workflow_name", ""),
+            workflow_id=d.get("workflow_id", ""),
+            ai_system_id=d.get("ai_system_id", ""),
+            evidence_contract=d.get("evidence_contract", "{}"),
+            capture_policy=d.get("capture_policy", "{}"),
+            import_policy=d.get("import_policy", "{}"),
+            readiness_policy_id=d.get("readiness_policy_id", ""),
+            created_at=d.get("created_at", ""),
+            updated_at=d.get("updated_at", ""),
+        )
+
 
 @dataclass
 class EvidenceContract:
@@ -1880,6 +1901,21 @@ class EvidenceContract:
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EvidenceContract":
+        return cls(
+            id=d.get("id", ""),
+            plan_id=d.get("plan_id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            required_fields=d.get("required_fields", []),
+            optional_fields=d.get("optional_fields", []),
+            excluded_fields=d.get("excluded_fields", []),
+            sensitivity_rules=d.get("sensitivity_rules", "{}"),
+            replay_required_fields=d.get("replay_required_fields", []),
+            proof_required_fields=d.get("proof_required_fields", []),
+            created_at=d.get("created_at", ""),
+        )
+
 
 @dataclass
 class ImportPolicy:
@@ -1895,6 +1931,20 @@ class ImportPolicy:
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ImportPolicy":
+        return cls(
+            id=d.get("id", ""),
+            plan_id=d.get("plan_id", ""),
+            org_id=d.get("org_id", "demo-org"),
+            source_type=d.get("source_type", ""),
+            field_mapping=d.get("field_mapping", "{}"),
+            dedupe_key=d.get("dedupe_key", "source_record_ref"),
+            batch_size=d.get("batch_size", 1000),
+            preview_limit=d.get("preview_limit", 20),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass
@@ -1913,6 +1963,22 @@ class RecordSelectionResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "RecordSelectionResult":
+        return cls(
+            id=d.get("id", ""),
+            plan_id=d.get("plan_id", ""),
+            source_row_id=d.get("source_row_id", ""),
+            decision=d.get("decision", "ignore"),
+            matched_rules=d.get("matched_rules", []),
+            create_vr=d.get("create_vr", False),
+            trigger=d.get("trigger", ""),
+            reason=d.get("reason", ""),
+            replayability=d.get("replayability", ""),
+            scenario_candidate=d.get("scenario_candidate", False),
+            created_at=d.get("created_at", ""),
+        )
 
 
 @dataclass

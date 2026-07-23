@@ -130,11 +130,15 @@ CAPABILITIES: dict[str, dict[str, CapabilityStatus | str | list[str]]] = {
         "evidence": ["SharedDemoFileStorage class", "JSON file persistence"],
         "notes": "Survives process restart; demo profile",
     },
-    "postgres_s3_storage": {
-        "status": "partial",
-        "evidence": ["PostgresS3Storage class", "NOTARY_USE_REMOTE_STORAGE"],
-        "notes": "Incidents + WO-28 objects (VR, labels, replay, mutation, proof, scenario, readiness, gate) persist; setup/platform objects are no-ops",
-    },
+"postgres_s3_storage": {
+            "status": "implemented",
+            "evidence": ["PostgresS3Storage class", "NOTARY_USE_REMOTE_STORAGE"],
+            "notes": (
+                "Incidents + WO-28 objects (VR, labels, replay, mutation, proof, "
+                "scenario, readiness, gate) + setup/platform objects (WO-64, Phase E) "
+                "persist in PostgreSQL/S3; replay_execution_events persisted"
+            ),
+        },
 
     # ── DEP Protocol (Public) ──────────────────────────────────────────────
     "dep_schemas": {
