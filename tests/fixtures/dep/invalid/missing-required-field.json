@@ -1,0 +1,12 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/missing",
+  "version": "0.1.0",
+  "resource": {
+    "type": "observation",
+    "id": "obs-missing"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T12:00:00Z"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/envelope",
+  "title": "DEP Envelope",
+  "description": "Top-level wrapper for all DEP resources. Every resource is delivered inside an envelope that carries provenance, digest, and optional signature metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "id", "version", "resource", "provenance", "digest"],
+  "properties": {
+    "$schema": { "type": "string", "const": "dep://schema/envelope" },
+    "id": { "type": "string", "format": "uri", "description": "Stable identifier for this envelope instance." },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "description": "Protocol version." },
+    "resource": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "description": "Resource type identifier, e.g. observation, assessment." },
+        "id": { "type": "string", "description": "Resource identifier within the provider namespace." },
+        "provider_id": { "type": "string", "description": "Provider or source system identifier." },
+        "subject_ref": { "type": "string", "description": "Reference to the subject entity (e.g. deployment, agent version)." }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collected_at"],
+      "properties": {
+        "collected_at": { "type": "string", "format": "date-time" },
+        "received_at": { "type": "string", "format": "date-time" },
+        "source_ref": { "type": "string", "description": "Original source system reference." },
+        "transformation": { "type": "string", "description": "Description of any transformation applied." }
+      }
+    },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "type": "string", "enum": ["sha256", "sha512"] },
+        "value": { "type": "string", "description": "Digest value in RFC 6920 format: base64url-encoded hash." }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key_ref", "algorithm", "value"],
+      "properties": {
+        "key_ref": { "type": "string", "description": "Reference to the signing key." },
+        "algorithm": { "type": "string" },
+        "value": { "type": "string" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "reason": { "type": "string" },
+        "authority": { "type": "string" },
+        "previous_digest": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/badts",
+  "version": "0.1.0",
+  "resource": {
+    "type": "observation",
+    "id": "obs-badts"
+  },
+  "provenance": {
+    "collected_at": "not-a-timestamp"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:some-digest"
+  }
+}

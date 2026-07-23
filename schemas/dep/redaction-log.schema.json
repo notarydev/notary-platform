@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/redaction-log",
+  "title": "DEP Redaction Log",
+  "description": "Tracks redaction history applied to DEP resources. Redactions are recorded immutably so the original digest remains verifiable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["log_id", "resource_id", "redacted_fields", "reason", "authority", "timestamp"],
+  "properties": {
+    "log_id": { "type": "string" },
+    "resource_id": { "type": "string", "description": "Resource that was redacted." },
+    "redacted_fields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Field paths that were redacted."
+    },
+    "reason": { "type": "string", "description": "Reason for redaction." },
+    "authority": { "type": "string", "description": "Authorizing entity." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "previous_digest": { "type": "string", "description": "Digest before redaction." }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/provider-registration",
+  "title": "DEP Provider Registration",
+  "description": "Metadata about a data provider that supplies DEP resources. Providers are registered so resource provenance can be traced.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider_id", "name", "provider_type"],
+  "properties": {
+    "provider_id": { "type": "string" },
+    "name": { "type": "string", "description": "Human-readable provider name." },
+    "provider_type": {
+      "type": "string",
+      "description": "Provider type: sdk, platform, trace_system, connector, manual."
+    },
+    "contact": { "type": "string", "description": "Contact information." },
+    "public_key": { "type": "string", "description": "Public key for signature verification." },
+    "asserted_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Declared capabilities."
+    }
+  }
+}

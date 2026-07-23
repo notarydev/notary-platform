@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/context-binding",
+  "title": "DEP Context Binding",
+  "description": "A binding that links a decision evidence record to applicable context artifacts at decision time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["binding_id", "decision_id", "artifact_ids", "selector"],
+  "properties": {
+    "binding_id": { "type": "string", "description": "Unique binding identifier." },
+    "decision_id": { "type": "string", "description": "Reference to the DER this binding applies to." },
+    "artifact_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Context artifact IDs bound to the decision."
+    },
+    "selector": { "type": "string", "description": "Scope selector (e.g. decision family, system ID)." },
+    "authority": { "type": "string", "description": "Authority that established this binding." },
+    "effective_at": { "type": "string", "format": "date-time", "description": "Time at which this binding is/was effective." }
+  }
+}

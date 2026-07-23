@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/ri-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "resource-index",
+    "id": "ri-001",
+    "provider_id": "provider:x"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T21:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:TMNQKcSUdln78GUAMICiEdko12_dd7SO_aaOx-oquSg"
+  }
+}

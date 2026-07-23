@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/context-artifact",
+  "title": "DEP Context Artifact",
+  "description": "A document, policy, configuration, or other artifact that provides context for evaluating a decision. Context artifacts are versioned and time-bound.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_id", "content_type", "content_hash", "effective_from", "authority"],
+  "properties": {
+    "artifact_id": { "type": "string", "description": "Stable identifier for the artifact." },
+    "content_type": { "type": "string", "description": "MIME type or schema name describing the body format." },
+    "content_hash": { "type": "string", "description": "Digest of the body content." },
+    "effective_from": { "type": "string", "format": "date-time", "description": "Start of applicability." },
+    "effective_until": { "type": "string", "format": "date-time", "description": "Optional end of applicability." },
+    "authority": { "type": "string", "description": "Issuing authority or source." },
+    "body": { "type": "object", "description": "Artifact content as structured data." },
+    "source_ref": { "type": "string", "description": "Reference to the source DEP resource that supplied this artifact." },
+    "supersedes": { "type": "string", "description": "Artifact ID this version supersedes." }
+  }
+}

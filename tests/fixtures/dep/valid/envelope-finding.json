@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/f-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "finding",
+    "id": "f-001",
+    "provider_id": "provider:evaluator"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T14:30:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:U68wW9gH1i7wmhMhnKZLBkqx_amp0opXTL2z2Rztzk0"
+  }
+}

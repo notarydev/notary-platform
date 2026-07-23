@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/cb-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "context-binding",
+    "id": "cb-001",
+    "provider_id": "provider:resolver"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T13:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:DSJWlwLGMmXpZokn1GlCUEcwrnVIKJbYRetys7HgwBc"
+  }
+}

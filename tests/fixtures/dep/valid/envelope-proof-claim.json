@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/pc-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "proof-claim",
+    "id": "pc-001",
+    "provider_id": "provider:notary"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T15:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:tBFAo_Xnca8NGsK1AS2Z17UgDyJ9tE3ITRiPxADhXM0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/eb-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "evidence-bundle",
+    "id": "eb-001",
+    "provider_id": "provider:notary"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T16:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:FF3gXoseu9f1ZcaoCvONnE2B_0eagi5dhW9L7WDnAF8"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/integrity-conflict",
+  "title": "DEP Integrity Conflict",
+  "description": "Records a digest mismatch or integrity violation when a resource with the same identifier arrives with different content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["conflict_id", "resource_id", "expected_digest", "received_digest", "timestamp"],
+  "properties": {
+    "conflict_id": { "type": "string" },
+    "resource_id": { "type": "string", "description": "Resource identifier that conflicts." },
+    "expected_digest": { "type": "string", "description": "Previously recorded digest." },
+    "received_digest": { "type": "string", "description": "Digest of the newly received content." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "resolution": {
+      "type": "string",
+      "enum": ["pending", "accepted_new", "kept_original", "quarantined"],
+      "description": "Current resolution state."
+    },
+    "previous_ref": { "type": "string", "description": "Reference to the previously accepted version." }
+  }
+}

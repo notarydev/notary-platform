@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/rl-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "redaction-log",
+    "id": "rl-001",
+    "provider_id": "provider:compliance"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T19:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:MPvLpHd6mhLVAUEan3fDWDBmir6ZBXv0cPsjXf0MxhM"
+  }
+}

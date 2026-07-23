@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/finding",
+  "title": "DEP Finding",
+  "description": "A specific issue, gap, or notable condition discovered during evaluation. Findings reference the assessment that produced them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["finding_id", "assessment_id", "type", "severity", "description"],
+  "properties": {
+    "finding_id": { "type": "string" },
+    "assessment_id": { "type": "string", "description": "Parent assessment reference." },
+    "type": {
+      "type": "string",
+      "enum": ["missing_evidence", "outcome_mismatch", "replayability_failure", "policy_violation", "integrity_issue", "context_conflict", "guardrail_violation", "consistency_issue"],
+      "description": "Finding classification."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "critical"],
+      "description": "Severity level."
+    },
+    "description": { "type": "string", "description": "Human-readable description." },
+    "location": { "type": "string", "description": "Where the issue was observed (field path, resource ref)." },
+    "remediation": { "type": "string", "description": "Suggested remediation action." },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Evidence resource references."
+    }
+  }
+}

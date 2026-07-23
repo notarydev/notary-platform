@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/link-assertion",
+  "title": "DEP Link Assertion",
+  "description": "A declared relationship between two DEP resources. Link assertions can be authoritative (provider-supplied) or inferred (system-generated).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assertion_id", "source_id", "target_id", "relationship_type"],
+  "properties": {
+    "assertion_id": { "type": "string" },
+    "source_id": { "type": "string", "description": "Source resource reference." },
+    "target_id": { "type": "string", "description": "Target resource reference." },
+    "relationship_type": { "type": "string", "description": "Type of relationship, e.g. derives_from, supersedes, supports, contradicts." },
+    "authority": { "type": "string", "description": "Establishing authority." },
+    "confidence": {
+      "type": "string",
+      "enum": ["authoritative", "confirmed", "inferred"],
+      "description": "Confidence level of the link."
+    },
+    "basis": { "type": "string", "description": "Basis for the assertion." }
+  }
+}

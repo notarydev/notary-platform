@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/pr-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "provider-registration",
+    "id": "pr-001",
+    "provider_id": "provider:x"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T20:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:6JVtnhL8k2WUu-ObYgOoBsn8JYMc-6ihVijuPO8TKZ0"
+  }
+}

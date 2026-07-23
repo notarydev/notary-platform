@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/proof-claim",
+  "title": "DEP Proof Claim",
+  "description": "A signed claim that a verified decision outcome was produced under known conditions. Proof claims are verifiable independently.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "subject_id", "claim_type", "statement", "timestamp"],
+  "properties": {
+    "claim_id": { "type": "string" },
+    "subject_id": { "type": "string", "description": "Reference to the subject (decision, observation, bundle)." },
+    "claim_type": { "type": "string", "description": "Type of claim, e.g. proof_of_mitigation, verified_outcome." },
+    "statement": { "type": "string", "description": "Human-readable claim statement." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "signature": { "type": "string", "description": "Cryptographic signature over the claim fields." },
+    "verifier": { "type": "string", "description": "Verifier identifier or key reference." },
+    "conditions": { "type": "string", "description": "Conditions under which the claim is valid." }
+  }
+}

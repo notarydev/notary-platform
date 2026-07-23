@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/observation",
+  "title": "DEP Observation",
+  "description": "An observed event, trace element, or decision execution captured from an AI system. Observations are the atomic evidence unit in DEP.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "timestamp", "type", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "description": "Unique identifier for this observation event." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "type": { "type": "string", "description": "Event type: call, response, guardrail, human_action, decision, tool, retrieval, memory, error." },
+    "source": { "type": "string", "description": "Originating component or layer." },
+    "payload": { "type": "object", "description": "Event-specific payload. Structure depends on event type." },
+    "context_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to context artifacts applicable at this observation."
+    },
+    "input_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to input resources or prior observations."
+    },
+    "output_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to output resources or subsequent observations."
+    }
+  }
+}

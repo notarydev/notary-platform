@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/ctx-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "context-artifact",
+    "id": "ctx-001",
+    "provider_id": "provider:policy"
+  },
+  "provenance": {
+    "collected_at": "2026-06-15T08:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:tFtGbSJMFemxCp2tc9hvyfpl7pdC1wFM_e_8XJtIbNU"
+  }
+}

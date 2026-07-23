@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/ic-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "integrity-conflict",
+    "id": "ic-001",
+    "provider_id": "provider:ingress"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T17:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:CKWK4zp0fr4LLAEw8rOcJdC3MychpAqEzf-5HS0y05U"
+  }
+}

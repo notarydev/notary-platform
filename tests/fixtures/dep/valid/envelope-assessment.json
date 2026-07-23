@@ -1,0 +1,17 @@
+{
+  "$schema": "dep://schema/envelope",
+  "id": "dep://example/envelope/as-001",
+  "version": "0.1.0",
+  "resource": {
+    "type": "assessment",
+    "id": "as-001",
+    "provider_id": "provider:evaluator"
+  },
+  "provenance": {
+    "collected_at": "2026-07-01T14:00:00Z"
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "value": "sha256:D8G79ZAzhTvWeM1fVtn1RzI90fhLIbpoJuX2zh_tcM4"
+  }
+}

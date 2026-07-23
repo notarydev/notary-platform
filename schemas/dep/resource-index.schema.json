@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dep://schema/resource-index",
+  "title": "DEP Resource Index",
+  "description": "An inventory of DEP resources from a provider or source. Indexes support discovery and paginated retrieval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index_id", "provider_id", "resource_ids", "generated_at"],
+  "properties": {
+    "index_id": { "type": "string" },
+    "provider_id": { "type": "string" },
+    "source_ref": { "type": "string", "description": "Source reference for this index." },
+    "resource_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of available resource identifiers."
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "pagination": {
+      "type": "object",
+      "properties": {
+        "cursor": { "type": "string" },
+        "has_more": { "type": "boolean" }
+      }
+    }
+  }
+}
