@@ -1,4 +1,4 @@
-"""Assurance Candidate router (WP-080).
+"""Assurance Candidate router (WP-080 + WP-090).
 
 Spec:
   GET    /v1/discovery/candidates
@@ -9,6 +9,9 @@ Spec:
   GET    /v1/discovery/suppressions
   POST   /v1/discovery/promotion-delegations
   GET    /v1/discovery/promotion-delegations
+  POST   /v1/discovery/candidates/{candidate_id}/promote
+  GET    /v1/discovery/candidates/{candidate_id}/proof-eligibility
+  GET    /v1/discovery/candidates/{candidate_id}/lineage
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from notary_platform.api_server.auth import require_auth
 from notary_platform.storage import get_storage
+from notary_platform.sweep.bridge import ProofBridgeService
 from notary_platform.sweep.candidates import CandidateReviewService
 from notary_platform.sweep.models import (
     PromotionDelegation,
@@ -123,3 +127,49 @@ def list_delegations(
 ) -> list[dict[str, Any]]:
     svc = _review_svc()
     return [d.to_dict() for d in svc.list_delegations(org_id)]
+
+
+# ── WP-090: Proof Bridge ──
+
+
+def _bridge_svc() -> ProofBridgeService:
+    return ProofBridgeService(storage)
+
+
+@router.post("/discovery/candidates/{candidate_id}/promote")
+def promote_candidate(
+    candidate_id: str,
+    org_id: str = Depends(require_auth),
+) -> dict[str, Any]:
+    candidate = storage.get_assurance_candidate(candidate_id)
+    if candidate is None or candidate.org_id != org_id:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    svc = _bridge_svc()
+    result = svc.promote(candidate_id, org_id)
+    if not result["success"]:
+        raise HTTPException(status_code=409, detail=result["error"])
+    return result
+
+
+@router.get("/discovery/candidates/{candidate_id}/proof-eligibility")
+def proof_eligibility(
+    candidate_id: str,
+    org_id: str = Depends(require_auth),
+) -> dict[str, Any]:
+    candidate = storage.get_assurance_candidate(candidate_id)
+    if candidate is None or candidate.org_id != org_id:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    svc = _bridge_svc()
+    return svc.check_eligibility(candidate_id, org_id)
+
+
+@router.get("/discovery/candidates/{candidate_id}/lineage")
+def candidate_lineage(
+    candidate_id: str,
+    org_id: str = Depends(require_auth),
+) -> dict[str, Any]:
+    candidate = storage.get_assurance_candidate(candidate_id)
+    if candidate is None or candidate.org_id != org_id:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    svc = _bridge_svc()
+    return svc.get_lineage(candidate_id, org_id)

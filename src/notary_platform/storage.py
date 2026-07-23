@@ -184,6 +184,13 @@ class StorageBackend(abc.ABC):
     def update_vr(self, vr: VerificationRecord) -> VerificationRecord: ...
 
     @abc.abstractmethod
+    def list_vrs_by_bridge_key(self, bridge_key: str, org_id: str) -> list[VerificationRecord]: ...
+
+    @abc.abstractmethod
+    def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
+        """Persist an Evidence Bundle manifest; returns storage ref."""
+
+    @abc.abstractmethod
     def create_label(self, label: HumanLabel) -> HumanLabel: ...
 
     @abc.abstractmethod
@@ -838,6 +845,14 @@ class MemoryStorage(StorageBackend):
     def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
         self._vrs[vr.id] = vr
         return vr
+
+    def list_vrs_by_bridge_key(self, bridge_key: str, org_id: str) -> list[VerificationRecord]:
+        return [vr for vr in self._vrs.values() if vr.bridge_key == bridge_key and vr.org_id == org_id]
+
+    def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
+        ref = bundle.get("bundle_id", f"eb-{uuid.uuid4().hex[:12]}")
+        self._evidence[ref] = bundle
+        return ref
 
     def create_label(self, label: HumanLabel) -> HumanLabel:
         self._labels[label.id] = label
@@ -1906,6 +1921,13 @@ class PostgresS3Storage(StorageBackend):
     def update_vr(self, vr: VerificationRecord) -> VerificationRecord:
         self._write_wo28("verification_record", vr)
         return vr
+    def list_vrs_by_bridge_key(self, bridge_key: str, org_id: str) -> list[VerificationRecord]:
+        all_vrs = self._list_wo28("verification_record", org_id, "", VerificationRecord)
+        return [vr for vr in all_vrs if vr.bridge_key == bridge_key]
+    def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
+        ref = bundle.get("bundle_id", f"eb-{uuid.uuid4().hex[:12]}")
+        self._write_wo28("evidence_bundle", bundle)
+        return ref
     def create_label(self, label: HumanLabel) -> HumanLabel:
         self._write_wo28("human_label", label)
         return label

@@ -491,6 +491,7 @@ class VerificationRecord:
     environment_id: str = "env:demo"
     source_type: DataSourceType = DataSourceType.api_submission
     external_ref: str = ""
+    bridge_key: str = ""
     agent_id: str = ""
     business_function: str = ""
     events: List[AIExecutionEvent] = field(default_factory=list)
@@ -535,6 +536,7 @@ class VerificationRecord:
             "environment_id": self.environment_id,
             "source_type": self.source_type.value,
             "external_ref": self.external_ref,
+            "bridge_key": self.bridge_key,
             "agent_id": self.agent_id,
             "business_function": self.business_function,
             "events": [e.to_dict() for e in self.events],
@@ -603,6 +605,7 @@ class VerificationRecord:
             environment_id=d.get("environment_id", "env:demo"),
             source_type=str_to_enum(DataSourceType, d.get("source_type", "api_submission"), DataSourceType.api_submission),
             external_ref=d.get("external_ref", ""),
+            bridge_key=d.get("bridge_key", ""),
             agent_id=d.get("agent_id", ""),
             business_function=d.get("business_function", ""),
             events=events,
