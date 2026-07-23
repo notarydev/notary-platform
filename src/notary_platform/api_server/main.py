@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from notary_platform.api_server.routers import certificates, dep_ingress, discovery, incidents, ingestion, platform, release_gate, setup, verification, viz
+from notary_platform.api_server.routers import certificates, dep_ingress, discovery, incidents, ingestion, platform, release_gate, setup, source_profiling, verification, viz
 from notary_platform.config import SETTINGS
 
 app = FastAPI(title="Notary Platform", version="0.0.1")
@@ -36,6 +36,7 @@ app.include_router(viz.router, prefix="/v1")
 app.include_router(setup.router, prefix="/v1")
 app.include_router(dep_ingress.router, prefix="/v1")
 app.include_router(discovery.router, prefix="/v1")
+app.include_router(source_profiling.router, prefix="/v1")
 # Redirect root to the platform SPA (must be before dashboard router).
 @app.get("/", include_in_schema=False)
 def root_redirect() -> RedirectResponse:

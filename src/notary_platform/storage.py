@@ -21,6 +21,12 @@ from notary_platform.discovery.models import (
     IntegrityConflict,
     ProviderRegistration,
 )
+from notary_platform.discovery.sources import (
+    FieldMappingVersion,
+    SourceConnection,
+    SourceCursor,
+    SourceProfile,
+)
 from notary_platform.models import (
     Agent,
     AISystem,
@@ -399,6 +405,50 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]: ...
 
+    # ── WP-040: Source Connections ──
+
+    @abc.abstractmethod
+    def create_source_connection(self, conn: SourceConnection) -> SourceConnection: ...
+
+    @abc.abstractmethod
+    def get_source_connection(self, conn_id: str, org_id: str) -> SourceConnection | None: ...
+
+    @abc.abstractmethod
+    def list_source_connections(self, org_id: str) -> list[SourceConnection]: ...
+
+    @abc.abstractmethod
+    def update_source_connection(self, conn: SourceConnection) -> SourceConnection: ...
+
+    # ── WP-040: Source Cursors ──
+
+    @abc.abstractmethod
+    def upsert_source_cursor(self, cursor: SourceCursor) -> SourceCursor: ...
+
+    @abc.abstractmethod
+    def get_source_cursor(self, source_id: str) -> SourceCursor | None: ...
+
+    # ── WP-040: Source Profiles ──
+
+    @abc.abstractmethod
+    def create_source_profile(self, profile: SourceProfile) -> SourceProfile: ...
+
+    @abc.abstractmethod
+    def get_source_profile(self, profile_id: str) -> SourceProfile | None: ...
+
+    @abc.abstractmethod
+    def list_source_profiles(self, source_id: str) -> list[SourceProfile]: ...
+
+    # ── WP-040: Field Mapping Versions ──
+
+    @abc.abstractmethod
+    def create_field_mapping_version(self, mapping: FieldMappingVersion) -> FieldMappingVersion: ...
+
+    @abc.abstractmethod
+    def get_field_mapping_version(self, mapping_id: str) -> FieldMappingVersion | None: ...
+
+    @abc.abstractmethod
+    def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -446,6 +496,11 @@ class MemoryStorage(StorageBackend):
         self._resources: dict[str, DecisionEvidenceResource] = {}
         self._integrity_conflicts: dict[str, IntegrityConflict] = {}
         self._payloads: dict[str, dict[str, Any]] = {}
+        # WP-040: Source connections, cursors, profiles, mappings
+        self._source_connections = {}
+        self._source_cursors = {}
+        self._source_profiles = {}
+        self._field_mappings = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -868,6 +923,58 @@ class MemoryStorage(StorageBackend):
 
     def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]:
         return [c for c in self._integrity_conflicts.values() if c.org_id == org_id]
+
+    # ── WP-040: Source Connections ──
+
+    def create_source_connection(self, conn: SourceConnection) -> SourceConnection:
+        self._source_connections[conn.id] = conn
+        return conn
+
+    def get_source_connection(self, conn_id: str, org_id: str) -> SourceConnection | None:
+        c = self._source_connections.get(conn_id)
+        if c is not None and c.org_id != org_id:
+            return None
+        return c
+
+    def list_source_connections(self, org_id: str) -> list[SourceConnection]:
+        return [c for c in self._source_connections.values() if c.org_id == org_id]
+
+    def update_source_connection(self, conn: SourceConnection) -> SourceConnection:
+        self._source_connections[conn.id] = conn
+        return conn
+
+    # ── WP-040: Source Cursors ──
+
+    def upsert_source_cursor(self, cursor: SourceCursor) -> SourceCursor:
+        self._source_cursors[cursor.source_id] = cursor
+        return cursor
+
+    def get_source_cursor(self, source_id: str) -> SourceCursor | None:
+        return self._source_cursors.get(source_id)
+
+    # ── WP-040: Source Profiles ──
+
+    def create_source_profile(self, profile: SourceProfile) -> SourceProfile:
+        self._source_profiles[profile.id] = profile
+        return profile
+
+    def get_source_profile(self, profile_id: str) -> SourceProfile | None:
+        return self._source_profiles.get(profile_id)
+
+    def list_source_profiles(self, source_id: str) -> list[SourceProfile]:
+        return [p for p in self._source_profiles.values() if p.source_id == source_id]
+
+    # ── WP-040: Field Mapping Versions ──
+
+    def create_field_mapping_version(self, mapping: FieldMappingVersion) -> FieldMappingVersion:
+        self._field_mappings[mapping.id] = mapping
+        return mapping
+
+    def get_field_mapping_version(self, mapping_id: str) -> FieldMappingVersion | None:
+        return self._field_mappings.get(mapping_id)
+
+    def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]:
+        return [m for m in self._field_mappings.values() if m.source_id == source_id]
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -1730,13 +1837,82 @@ class PostgresS3Storage(StorageBackend):
     def list_integrity_conflicts(self, org_id: str) -> list[IntegrityConflict]:
         return self._list_wo28("integrity_conflict", org_id, "", IntegrityConflict)
 
+    # ── WP-040: Source Connections ──
+
+    def create_source_connection(self, conn: SourceConnection) -> SourceConnection:
+        self._write_wo28("source_connection", conn)
+        return conn
+
+    def get_source_connection(self, conn_id: str, org_id: str) -> SourceConnection | None:
+        c = self._get_wo28("source_connection", conn_id, SourceConnection)
+        if c is not None and c.org_id != org_id:
+            return None
+        return c
+
+    def list_source_connections(self, org_id: str) -> list[SourceConnection]:
+        return self._list_wo28("source_connection", org_id, "", SourceConnection)
+
+    def update_source_connection(self, conn: SourceConnection) -> SourceConnection:
+        self._write_wo28("source_connection", conn)
+        return conn
+
+    # ── WP-040: Source Cursors ──
+
+    def upsert_source_cursor(self, cursor: SourceCursor) -> SourceCursor:
+        self._write_wo28("source_cursor", cursor)
+        return cursor
+
+    def get_source_cursor(self, source_id: str) -> SourceCursor | None:
+        return self._get_wo28("source_cursor", source_id, SourceCursor)
+
+    # ── WP-040: Source Profiles ──
+
+    def create_source_profile(self, profile: SourceProfile) -> SourceProfile:
+        self._write_wo28("source_profile", profile)
+        return profile
+
+    def get_source_profile(self, profile_id: str) -> SourceProfile | None:
+        return self._get_wo28("source_profile", profile_id, SourceProfile)
+
+    def list_source_profiles(self, source_id: str) -> list[SourceProfile]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'source_profile' AND data->>'source_id' = %(sid)s ORDER BY created_at DESC",
+                {"sid": source_id},
+            ).mappings().all()
+        return [SourceProfile.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-040: Field Mapping Versions ──
+
+    def create_field_mapping_version(self, mapping: FieldMappingVersion) -> FieldMappingVersion:
+        self._write_wo28("field_mapping", mapping)
+        return mapping
+
+    def get_field_mapping_version(self, mapping_id: str) -> FieldMappingVersion | None:
+        return self._get_wo28("field_mapping", mapping_id, FieldMappingVersion)
+
+    def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'field_mapping' AND data->>'source_id' = %(sid)s ORDER BY (data->>'version')::int DESC",
+                {"sid": source_id},
+            ).mappings().all()
+        return [FieldMappingVersion.from_dict(dict(r["data"])) for r in rows]
+
 
 _storage_instance: StorageBackend | None = None
 
 
 def reset_storage() -> None:
-    """Reset the storage singleton (used in tests)."""
+    """Reset the storage singleton (used in tests).
+    
+    Clears all data on the existing singleton rather than replacing it,
+    so router modules that already hold a reference stay consistent.
+    """
     global _storage_instance  # noqa: PLW0603
+    if _storage_instance is not None and isinstance(_storage_instance, MemoryStorage):
+        _storage_instance._reset_memory()
+        return
     _storage_instance = None
 
 
