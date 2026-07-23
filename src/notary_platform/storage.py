@@ -1021,75 +1021,9 @@ class PostgresS3Storage(StorageBackend):
         self._prefix = SETTINGS.evidence_prefix
         self._session = boto3.session.Session()
         self._s3 = self._session.client("s3")
-        self._ensure_schema()
+        from notary_platform.persistence.migrations import run_migrations as _run_migrations
 
-    # -- metadata (Postgres) -------------------------------------------------
-    def _ensure_schema(self) -> None:
-        with self._engine.begin() as conn:
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS incidents (
-                    incident_id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    snapshot_summary JSONB,
-                    replay_result JSONB,
-                    mutation_result JSONB,
-                    certificate JSONB,
-                    custody JSONB,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS wo28_objects (
-                    id TEXT PRIMARY KEY,
-                    org_id TEXT NOT NULL,
-                    environment_id TEXT NOT NULL DEFAULT 'env:demo',
-                    kind TEXT NOT NULL,
-                    data JSONB NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS replay_execution_events (
-                    run_id TEXT NOT NULL,
-                    sequence INT NOT NULL,
-                    step TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    expected TEXT NOT NULL,
-                    actual TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    PRIMARY KEY (run_id, sequence)
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS idx_wo28_kind_org_env ON wo28_objects(kind, org_id, environment_id)"
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS replay_execution_events (
-                    run_id TEXT NOT NULL,
-                    sequence INTEGER NOT NULL,
-                    step TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    expected TEXT NOT NULL,
-                    actual TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    PRIMARY KEY (run_id, sequence)
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS idx_replay_events_run_id ON replay_execution_events(run_id)"
-            )
+        _run_migrations(self._engine)
 
     def _write_wo28(self, kind: str, obj: Any) -> None:
         data = obj.to_dict()
@@ -1251,7 +1185,10 @@ class PostgresS3Storage(StorageBackend):
             return None
 
     def persist_evidence(self, incident_id: str, kind: str, payload: dict[str, Any]) -> str:
-        ref = f"{self._prefix.rstrip('/')}/{incident_id}/{kind}/{uuid.uuid4().hex}.json"
+        if kind in ("snapshot", "certificate"):
+            ref = f"{self._prefix.rstrip('/')}/{incident_id}/{kind}.json"
+        else:
+            ref = f"{self._prefix.rstrip('/')}/{incident_id}/{kind}/{uuid.uuid4().hex}.json"
         self._s3.put_object(
             Bucket=self._bucket,
             Key=ref,
