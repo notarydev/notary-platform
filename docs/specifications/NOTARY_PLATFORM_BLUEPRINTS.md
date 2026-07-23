@@ -289,7 +289,7 @@ The Data Layer owns durability and immutability guarantees; it does not enforce 
 
 ## Container Summary
 
-The Web Dashboard is the browser-based interface users use to operate Notary's active discovery-to-release-gate workflow. It lets users authenticate, connect initial evidence sources, inspect source profiles and discovery maps, confirm setup progressively, review Verification Records, inspect Decision Evidence Graph elements, run replay and fix verification, issue Proof of Mitigation, promote Scenarios, run Scenario sets, manage Readiness Policies, and trigger Release Gate checks. It is a thin client over the #API Server and holds no forensic business logic or durable evidence itself.
+The Web Dashboard is the browser-based interface users use to operate Notary's active release-gate workflow. It lets users authenticate, set up SDK capture, review Verification Records, inspect Decision Evidence Graph elements, run replay and fix verification, issue Proof of Mitigation, promote Scenarios, run Scenario sets, manage Readiness Policies, and trigger Release Gate checks. It is a thin client over the #API Server and holds no forensic business logic or durable evidence itself.
 
 ## Infrastructure
 
@@ -300,7 +300,6 @@ The current deployed dashboard is a static HTML/CSS/JavaScript single-page app s
 Work enters through the browser UI, which calls the #API Server's authenticated REST endpoints. Primary surfaces:
 
 * Setup and SDK onboarding, including Python SDK install instructions, copyable snippets, API token guidance, and demo/local mode distinction.
-* Discovery setup, including source connection, profiling, mapping confirmation, initial decision map, evaluator unlocks, and confirmation of recurring Sweep execution.
 * Verification Record list and detail views showing source, replayability, captured events, labels, missing prerequisites, custody, and evidence.
 * Replay, mutation test, Proof of Mitigation, and signature-verification actions with server-provided eligibility reasons.
 * Scenario Candidate, Scenario Library, and Scenario Run surfaces.
@@ -2709,7 +2708,7 @@ The #GrcEvidencePusher is triggered by the #CertificateService after a certifica
 
 ## Feature Summary
 
-The browser interface teams use to operate Notary's active discovery-to-release-gate workflow end to end: connect evidence, inspect discovery results, confirm setup, review Verification Records, trigger replay and fix verification, issue proofs, promote Scenarios, run Scenario sets, manage Readiness Policies, and trigger Release Gate checks. It implements @Web Dashboard as a thin client over the #API Server, holding no forensic logic or durable evidence itself. See the @Web Dashboard container blueprint for infrastructure and hosting.
+The browser interface teams use to operate Notary's active release-gate workflow end to end: set up SDK capture, review Verification Records, trigger replay and fix verification, issue proofs, promote Scenarios, run Scenario sets, manage Readiness Policies, and trigger Release Gate checks. It implements @Web Dashboard as a thin client over the #API Server, holding no forensic logic or durable evidence itself. See the @Web Dashboard container blueprint for infrastructure and hosting.
 
 ## Component Blueprint Composition
 
@@ -2733,18 +2732,6 @@ responsibilities:
 	- Render deployed-demo and local-development SDK setup instructions with accurate API URL and token guidance
 	- Provide copyable install commands, capture snippets, and API submission examples that match the current Python SDK package
 	- Surface agent and system setup status returned by the #API Server
-	- Separate required corrections from optional enrichment for discovery setup
-
-```
-
-```component
-name: DiscoveryWorkspaceView
-container: Web Dashboard
-responsibilities:
-	- Render source connections, SourceProfiles, mapping confirmation, initial decision maps, and evidence sufficiency
-	- Show which evaluators are currently enabled, blocked, or unlocked by additional context
-	- Present advisory policy candidates, context-source candidates, and unlock plans with supporting evidence
-	- Confirm recurring Sweep execution only after initial discovery results are visible
 ```
 
 ```component
@@ -2951,17 +2938,15 @@ The Sweep Worker is the proprietary background-execution container for the Notar
 
 Decision Evidence Discovery and Sweep implements Notary's proprietary use of the independent Decision Evidence Protocol. It accepts heterogeneous evidence without flattening source ownership, builds a temporal Assurance Graph, runs prerequisite-aware evaluators, and produces explainable Assurance Candidates. Human or explicitly delegated deterministic authority controls Incident promotion. Accepted Incidents enter the existing proof loop through one bridge.
 
-Discovery is designed to show value before full setup is complete. Logs, SDK traces, DEP resources, and source exports provide the initial signal; policy systems, expected-outcome systems, guardrail systems, and business systems provide decision-time context that raises evidence sufficiency and unlocks stronger evaluators over time. The feature therefore separates initial mapping and candidate generation from later confirmation of recurring monitoring and broader governance coverage.
-
 This feature replaces the assumption that a meaningful Incident must arrive fully assembled. It extends, rather than replaces, @Manual Submission and Source-System Connectors, @Capture Rules and Decision Triggers, @Scenario Intelligence, @Deterministic Replay, and @Proof of Mitigation Certificates.
 
 ## Component Blueprint Composition
 
 * **@API Server** hosts #DEPIngressGateway, #DiscoverySetupService, #CandidateReviewService, and #ProofBridgeService. It owns authorization and synchronous commands.
-* **@Sweep Worker** hosts #SourceProfiler, #DecisionIdentityResolver, #TemporalContextResolver, #SweepPlanner, #EvaluatorRegistry, #EvidenceSufficiencyService, #DiscoveryAdvisor, and #CandidateAssembler.
+* **@Sweep Worker** hosts #SourceProfiler, #DecisionIdentityResolver, #TemporalContextResolver, #SweepPlanner, #EvaluatorRegistry, #EvidenceSufficiencyService, and #CandidateAssembler.
 * **@Data Layer** hosts immutable DEP resources in S3 and graph, mapping, definition, run, assessment, and candidate metadata in PostgreSQL.
 * **@Replay Engine** remains the exclusive execution path for replay and fix verification after candidate promotion.
-* **@Web Dashboard** renders progressive setup, source coverage, SourceProfiles, initial decision maps, advisory discovery guidance, Sweep Runs, candidate evidence, missing prerequisites, review actions, and proof-loop eligibility.
+* **@Web Dashboard** renders progressive setup, source coverage, Sweep Runs, candidate evidence, missing prerequisites, review actions, and proof-loop eligibility.
 
 ## Feature-Specific Components
 
@@ -2994,7 +2979,6 @@ responsibilities:
 	- Present required corrections separately from optional context enrichment
 	- Start source profiling and return the evaluators each proposed mapping would enable
 	- Require human confirmation for inferred mappings before they support authoritative evaluation
-	- Attach adopted PolicyPacks and customer forks to discovery setup without treating them as authoritative until confirmed
 ```
 
 ```component
@@ -3005,16 +2989,6 @@ responsibilities:
 	- Produce a non-authoritative SourceProfile and sample-based mapping proposals
 	- Classify every proposed mapping as inferred until confirmed
 	- Avoid creating Incidents or Assurance Candidates during profiling
-```
-
-```component
-name: DiscoveryAdvisor
-container: Sweep Worker
-responsibilities:
-	- Generate advisory policy candidates, context-source candidates, link hypotheses, and unlock plans from observed evidence and confirmed mappings
-	- Mark each suggestion with method class, support basis, and confidence without promoting it to authoritative context
-	- Learn prospectively from confirmed and rejected suggestions without rewriting prior SweepRuns
-	- Feed buyer-readable setup guidance to the #DiscoveryWorkspaceView and #CandidateAssembler
 ```
 
 ```component
@@ -3075,17 +3049,6 @@ responsibilities:
 	- Cluster related candidates while preserving each candidate's evidence and lifecycle
 	- Calculate internal ranking and prioritization without changing evidence authority or candidate severity
 	- Produce buyer-readable summaries whose factual claims link to supporting resources
-	- Attach advisory next-best-action guidance, including source additions or policy confirmations that would raise evidence sufficiency
-```
-
-```component
-name: PolicyPackRegistry
-container: API Server
-responsibilities:
-	- Store versioned PolicyPacks and customer forks containing starter policies, evaluator presets, scenario seeds, and mapping hints
-	- Expose preview, adopt, fork, edit, disable, and confirm operations for PolicyPacks
-	- Keep pack lineage and applicability metadata explicit so starter guidance is distinguishable from customer-confirmed authority
-	- Provide pack-linked presets to #DiscoverySetupService, #TemporalContextResolver, and #DiscoveryWorkspaceView
 ```
 
 ```component
@@ -3271,7 +3234,6 @@ constraints:
 * Context resolution is time-aware, authority-aware, and conflict-preserving. Collection time alone never establishes applicability.
 * Every evaluator invocation is preceded by a recorded prerequisite decision, and every skipped check exposes exact missing or conflicted inputs.
 * Evidence sufficiency E0-E4 is deterministic and separate from severity, confidence, and priority.
-* Discovery assistance is advisory. Suggestions about policies, links, or next integrations never become authoritative context or proof claims without confirmation.
 * Sweep creates Assurance Candidates by default. Incident promotion requires an authorized ReviewDecision or explicit deterministic delegation.
 * The existing Replay Engine, mutation, certificate, Scenario, and Release Gate components remain the sole proof path.
 * Completed Sweep Runs, review decisions, and proof lineage are append-only and tenant-isolated.
@@ -3282,7 +3244,7 @@ constraints:
 * Replaces direct Scenario Intelligence analysis of undifferentiated VerificationRecords with AssuranceCandidates whose evidence and prerequisites are explicit.
 * Supplies accepted Incidents to @Forensics Platform and @Deterministic Replay through #ProofBridgeService.
 * Supplies verified Incidents to @Scenario Library and @Proof of Readiness through the existing proof-loop contracts.
-* Supplies source coverage, run state, SourceProfiles, policy-pack presets, advisory discovery guidance, candidate explanations, review actions, and eligibility reasons to @Web Dashboard.
+* Supplies source coverage, run state, candidate explanations, review actions, and eligibility reasons to @Web Dashboard.
 
 ## Architecture Decision Records
 

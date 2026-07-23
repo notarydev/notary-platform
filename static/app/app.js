@@ -35,6 +35,7 @@ const S = {
   discoveryRecords: [],
   discoveryFindings: [],
   discoveryMapping: {},
+  discoveryCommitted: false,
   onbSystems: [],
   onbReceived: null,
   onbSending: false,
@@ -178,14 +179,20 @@ function switchAgentVersion(v) {
 
 function nav(v) {
   const [view, query] = v.split("?");
-  S.view = view;
+  // Keep the old Discovery shortcut pointed at the canonical Setup plan.
+  if (view === "discovery") {
+    S.view = "setup";
+    S.setupStep = SETUP_STEPS.findIndex((step) => step.id === "discovery");
+  } else {
+    S.view = view;
+  }
   S.viewParams = {};
   if (query) {
     const params = new URLSearchParams(query);
     params.forEach((value, key) => { S.viewParams[key] = value; });
   }
   qa(".nav-item[data-view]").forEach((x) => x.classList.remove("active"));
-  const b = q(`.nav-item[data-view="${view}"]`);
+  const b = q(`.nav-item[data-view="${S.view}"]`);
   if (b) b.classList.add("active");
   R();
 }
@@ -533,7 +540,8 @@ function setupCanNext(step) {
   if (id === "evidence") { const s = S.setupEvidenceSources; return s && s.some(x => x.selected); }
   if (id === "capture") return !!S.setupCaptureMethod;
   if (id === "selection-rules") return true;
-  if (id === "send" || id === "replay") { const v = S.onbReceived; return !!v; }
+  if (id === "discovery") return S.discoveryCommitted || !!S.onbReceived;
+  if (id === "send" || id === "replay") { const v = S.onbReceived || S.discoveryCommitted; return !!v; }
   if (id === "readiness") return true;
   return true;
 }
@@ -557,6 +565,10 @@ async function continueFromStep(step) {
   }
   if (id === "selection-rules") {
     await saveRecordSelectionRules();
+  }
+  if (id === "discovery" && !S.discoveryCommitted) {
+    notify("Preview and commit at least one decision record before continuing", "error");
+    return;
   }
   if (id === "capture" && S.setupCaptureMethod) {
     await saveCaptureMethod();
@@ -597,6 +609,7 @@ const SETUP_STEPS = [
   { id: "evidence", label: "Decision Evidence Sources", desc: "What evidence explains the decision" },
   { id: "capture", label: "Choose Capture Method", desc: "How Notary receives records" },
   { id: "selection-rules", label: "Record Selection Rules", desc: "Which conversations become records" },
+  { id: "discovery", label: "Discover Decision Records", desc: "Preview and select decisions worth proving" },
   { id: "send", label: "Send or Import Records", desc: "Create first Verification Records" },
   { id: "replay", label: "Review Replayability", desc: "Can it be deterministically replayed?" },
   { id: "readiness", label: "Readiness Assessment", desc: "Is everything ready for production?" },
@@ -1236,7 +1249,7 @@ async function renderOnbSendStep() {
 async function sendTestCapture() {
   if (S.onbSending) return;
   S.onbSending = true;
-  renderSetupStep(6);
+  renderSetupStep(7);
   try {
     const snapshot = {
       schema_version: 1,
@@ -1256,7 +1269,7 @@ async function sendTestCapture() {
     notify("Failed: " + e.message, "error");
   }
   S.onbSending = false;
-  renderSetupStep(6);
+  renderSetupStep(7);
 }
 
 async function importRecords() {
@@ -1275,7 +1288,7 @@ async function importRecords() {
     } else {
       S.onbReceived = { id: "imported", replayability: "pending" };
     }
-    renderSetupStep(7);
+    renderSetupStep(8);
   } catch (e) {
     notify("Import failed: " + e.message, "error");
   }
@@ -1348,13 +1361,34 @@ function renderDiscoveryMapping(records) {
   return `<div class="discovery-mapping"><div class="section-title" style="margin:0 0 6px">Field Mapping</div><div class="section-sub">Confirm how this export maps into a Verification Record. Fields are read-only until you preview again.</div><div class="discovery-mapping-grid">${DISCOVERY_MAPPING_FIELDS.map(([field, label]) => `<label class="np-field"><span>${label}</span><select class="discovery-map" data-field="${field}">${option(S.discoveryMapping[field])}</select></label>`).join("")}</div><button class="btn btn-sm" onclick="applyDiscoveryMapping()">Preview with mapping</button></div>`;
 }
 
-async function renderDiscovery(c) {
-  if (!S.discoveryPlanId) {
-    const plans = await apiGet("/v1/setup/plans").catch(() => []);
-    if (plans.length) S.discoveryPlanId = plans[0].id;
-    else S.discoveryPlanId = (await apiPost("/v1/setup/plans", {workflow_name: "Decision Discovery", workflow_type: "custom"})).id;
+async function ensureDiscoveryPlan() {
+  // Discovery is a Setup phase. Keep the legacy shortcut on the same plan.
+  if (S.setupPlanId) {
+    S.discoveryPlanId = S.setupPlanId;
+    return S.setupPlanId;
   }
-  c.innerHTML = `<div class="section-title">Decision Discovery</div><div class="section-sub">Import decision events, see what is worth proving, and commit only the records you select.</div><section class="discovery-import-panel"><div class="discovery-input-row"><div class="np-field"><label>Format</label><select id="discovery-format"><option value="json">JSON</option><option value="jsonl">JSONL</option><option value="csv">CSV</option></select></div><div class="np-field discovery-file"><label>File</label><input id="discovery-file" type="file" accept=".json,.jsonl,.ndjson,.csv" onchange="loadDiscoveryFile(this)"></div></div><div class="np-field"><label>Decision event data</label><textarea id="discovery-content" rows="10" placeholder='[{"source_record_ref":"CASE-123","elements":[{"kind":"decision","payload":{"decision":"DENY"}}]}]'></textarea></div><div class="action-row"><button class="btn" onclick="previewDiscovery()">Preview findings</button><span class="section-sub" style="margin:0">JSON, JSONL, or CSV. Nothing is committed until you confirm.</span></div></section><div id="discovery-results">${S.discoveryFindings.length ? renderDiscoveryResults() : renderEmptyState("No preview yet", "Load decision events to see replayability and candidate findings.", "")}</div>`;
+  if (S.discoveryPlanId) {
+    S.setupPlanId = S.discoveryPlanId;
+    return S.discoveryPlanId;
+  }
+  const plan = await apiPost("/v1/setup/plans", {workflow_name: "Decision Discovery", workflow_type: "custom"});
+  S.setupPlanId = plan.id;
+  S.discoveryPlanId = plan.id;
+  return plan.id;
+}
+
+function renderDiscoveryMarkup(embedded = false) {
+  return `${embedded ? '<div class="setup-step-content">' : ''}<div class="section-title">Decision Discovery</div><div class="section-sub">Import decision events, preview what is worth proving, and commit only the records you select. This is the evidence intake phase of the active Setup plan.</div><section class="discovery-import-panel"><div class="discovery-input-row"><div class="np-field"><label>Format</label><select id="discovery-format"><option value="json">JSON</option><option value="jsonl">JSONL</option><option value="csv">CSV</option></select></div><div class="np-field discovery-file"><label>File</label><input id="discovery-file" type="file" accept=".json,.jsonl,.ndjson,.csv" onchange="loadDiscoveryFile(this)"></div></div><div class="np-field"><label>Decision event data</label><textarea id="discovery-content" rows="10" placeholder='[{"source_record_ref":"CASE-123","elements":[{"kind":"decision","payload":{"decision":"DENY"}}]}]'></textarea></div><div class="action-row"><button class="btn" onclick="previewDiscovery()">Preview findings</button><span class="section-sub" style="margin:0">JSON, JSONL, or CSV. Nothing is committed until you confirm.</span></div></section><div id="discovery-results">${S.discoveryFindings.length ? renderDiscoveryResults() : renderEmptyState("No preview yet", "Load decision events to see replayability and candidate findings.", "")}</div>${embedded ? '</div>' : ''}`;
+}
+
+async function renderSetupDiscoveryStep() {
+  await ensureDiscoveryPlan();
+  return renderDiscoveryMarkup(true);
+}
+
+async function renderDiscovery(c) {
+  await ensureDiscoveryPlan();
+  c.innerHTML = renderDiscoveryMarkup();
 }
 
 async function loadDiscoveryFile(input) {
@@ -1371,6 +1405,7 @@ async function previewDiscovery() {
   const format = q("#discovery-format")?.value || "json";
   if (!content) { notify("Add a decision export first", "error"); return; }
   try {
+    await ensureDiscoveryPlan();
     const parsed = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/parse`, {format, content});
     const records = parsed.records || [];
     const mapping = buildFieldMapping(records);
@@ -1395,6 +1430,7 @@ async function applyDiscoveryMapping() {
   qa(".discovery-map").forEach(select => { if (select.value) mapping[select.dataset.field] = select.value; });
   S.discoveryMapping = mapping;
   try {
+    await ensureDiscoveryPlan();
     const preview = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/preview`, {records: S.discoveryRecords, field_mapping: mapping});
     S.discoveryFindings = preview.findings || [];
     const target = q("#discovery-results");
@@ -1407,8 +1443,11 @@ async function commitDiscoverySelection() {
   const selected = Array.from(qa(".discovery-select")).filter(x => x.checked).map(x => x.dataset.ref);
   if (!selected.length) { notify("Select at least one finding", "error"); return; }
   try {
+    await ensureDiscoveryPlan();
     const result = await apiPost(`/v1/setup/plans/${S.discoveryPlanId}/imports/commit`, {records: S.discoveryRecords, field_mapping: S.discoveryMapping, selected_source_record_refs: selected});
     notify(`Committed ${result.imported} Verification Record${result.imported === 1 ? "" : "s"}`, "success");
+    S.discoveryCommitted = (result.imported || 0) > 0;
+    S.onbReceived = S.onbReceived || (result.records && result.records[result.records.length - 1]) || {id: "discovery-imported"};
     S.discoveryFindings = result.discovery_findings || S.discoveryFindings;
     const target = q("#discovery-results");
     if (target) target.innerHTML = renderDiscoveryResults({findings: S.discoveryFindings, matched_count: S.discoveryFindings.length});
@@ -1829,7 +1868,7 @@ async function sendHarborlineTestCapture() {
       replayability: vr.replayability || "Pending assessment",
     };
     notify("Meridian test capture created", "success");
-    renderSetupStep(8); // jump to readiness
+    renderSetupStep(9); // jump to readiness
   } catch (e) {
     notify("Test capture failed: " + e.message, "error");
   } finally {
@@ -1950,6 +1989,7 @@ async function renderSetupStep(step) {
     case "evidence": content = await renderEvidenceSourcesStep(); break;
     case "capture": content = await renderSetupCaptureStep(); break;
     case "selection-rules": content = await renderSetupSelectionRulesStep(); break;
+    case "discovery": content = await renderSetupDiscoveryStep(); break;
     case "send": content = await renderOnbSendStep(); break;
     case "replay": content = await renderSetupReplayStep(); break;
     case "readiness": content = await renderSetupReadinessStep(); break;

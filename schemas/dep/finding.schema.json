@@ -1,31 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dep://schema/finding",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/finding.schema.json",
   "title": "DEP Finding",
-  "description": "A specific issue, gap, or notable condition discovered during evaluation. Findings reference the assessment that produced them.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["finding_id", "assessment_id", "type", "severity", "description"],
-  "properties": {
-    "finding_id": { "type": "string" },
-    "assessment_id": { "type": "string", "description": "Parent assessment reference." },
-    "type": {
-      "type": "string",
-      "enum": ["missing_evidence", "outcome_mismatch", "replayability_failure", "policy_violation", "integrity_issue", "context_conflict", "guardrail_violation", "consistency_issue"],
-      "description": "Finding classification."
-    },
-    "severity": {
-      "type": "string",
-      "enum": ["info", "warning", "critical"],
-      "description": "Severity level."
-    },
-    "description": { "type": "string", "description": "Human-readable description." },
-    "location": { "type": "string", "description": "Where the issue was observed (field path, resource ref)." },
-    "remediation": { "type": "string", "description": "Suggested remediation action." },
-    "evidence_refs": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Evidence resource references."
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["finding_kind", "basis_refs", "evidence_grade", "lifecycle_state"],
+      "properties": {
+        "finding_kind": {"enum": ["policy_mismatch", "expected_outcome_mismatch", "missing_evidence", "guardrail_violation", "consistency_mismatch", "replayability_failure"]},
+        "basis_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "format": "uri"}},
+        "missing_prerequisites": {"type": "array", "items": {"type": "string"}},
+        "evidence_grade": {"enum": ["E0", "E1", "E2", "E3", "E4"]},
+        "severity": {"type": "string"},
+        "business_impact": {"type": "string"},
+        "lifecycle_state": {"enum": ["signal", "candidate", "needs_context", "reviewable", "approved_incident", "dismissed", "accepted_risk", "suppressed", "evidence_sealed", "replayed", "fix_verified", "proof_issued", "scenario_active", "gate_enforced"]},
+        "available_actions": {"type": "array", "items": {"type": "string"}}
+      }
     }
-  }
+  ],
+  "unevaluatedProperties": false
 }

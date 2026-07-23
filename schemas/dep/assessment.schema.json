@@ -1,29 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dep://schema/assessment",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/assessment.schema.json",
   "title": "DEP Assessment",
-  "description": "An evaluator's judgment about a decision or evidence record. Assessments are deterministic outputs of evaluators.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["assessment_id", "der_id", "evaluator_id", "evaluator_version", "result", "timestamp"],
-  "properties": {
-    "assessment_id": { "type": "string" },
-    "der_id": { "type": "string", "description": "Reference to the decision evidence record." },
-    "evaluator_id": { "type": "string", "description": "Evaluator identifier." },
-    "evaluator_version": { "type": "string", "description": "Evaluator contract version." },
-    "result": {
-      "type": "string",
-      "enum": ["pass", "fail", "skip", "error", "inconclusive"],
-      "description": "Evaluator verdict."
-    },
-    "evidence_links": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "References to evidence supporting this assessment."
-    },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "method": { "type": "string", "description": "Evaluator method class." },
-    "limitations": { "type": "string", "description": "Known limitations or caveats." },
-    "details": { "type": "object", "description": "Evaluator-specific result details." }
-  }
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["evaluator_ref", "evaluator_version", "input_refs", "method", "status", "executed_at"],
+      "properties": {
+        "evaluator_ref": {"type": "string", "format": "uri"},
+        "evaluator_version": {"type": "string"},
+        "input_refs": {"type": "array", "items": {"type": "string", "format": "uri"}},
+        "method": {"enum": ["deterministic", "heuristic", "statistical", "model_based", "human"]},
+        "status": {"enum": ["executed", "skipped", "failed", "suppressed"]},
+        "result": {"type": "object"},
+        "missing_prerequisites": {"type": "array", "items": {"type": "string"}},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "errors": {"type": "array", "items": {"type": "string"}},
+        "executed_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
 }

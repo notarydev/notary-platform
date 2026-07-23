@@ -1,27 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dep://schema/evidence-bundle",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/evidence-bundle.schema.json",
   "title": "DEP Evidence Bundle",
-  "description": "A group of DEP resources related to a single decision or evaluation scope. Bundles provide a frozen snapshot of evidence for verification.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["bundle_id", "decision_id", "resource_ids", "created_at"],
-  "properties": {
-    "bundle_id": { "type": "string" },
-    "decision_id": { "type": "string", "description": "Reference to the decision or DER." },
-    "resource_ids": {
-      "type": "array",
-      "items": { "type": "string" },
-      "minItems": 1,
-      "description": "Resource references included in this bundle."
-    },
-    "assessment_ids": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Assessment references included."
-    },
-    "created_at": { "type": "string", "format": "date-time" },
-    "scope": { "type": "string", "description": "Scope description for this bundle." },
-    "manifest_digest": { "type": "string", "description": "Digest of the sorted bundle manifest." }
-  }
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/resourceCore"},
+    {
+      "type": "object",
+      "required": ["manifest_digest", "subjects", "declared_omissions", "sealed_at"],
+      "properties": {
+        "manifest_digest": {"$ref": "common.schema.json#/$defs/digest"},
+        "subjects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["resource_ref", "digest"],
+            "properties": {
+              "resource_ref": {"type": "string", "format": "uri"},
+              "digest": {"$ref": "common.schema.json#/$defs/digest"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "declared_omissions": {"type": "array", "items": {"type": "string"}},
+        "custody_events": {"type": "array", "items": {"type": "object"}},
+        "sealed_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
 }

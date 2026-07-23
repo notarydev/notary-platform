@@ -41,6 +41,14 @@ def test_decision_discovery_workspace_is_registered() -> None:
     assert '/v1/scenarios?vr_id=' in js
 
 
+def test_decision_discovery_is_a_canonical_setup_phase() -> None:
+    text = APP_JS.read_text(encoding="utf-8")
+    assert '{ id: "discovery", label: "Discover Decision Records"' in text
+    assert 'S.setupStep = SETUP_STEPS.findIndex((step) => step.id === "discovery")' in text
+    assert "S.discoveryPlanId = S.setupPlanId" in text
+    assert "case \"discovery\": content = await renderSetupDiscoveryStep(); break;" in text
+
+
 def test_auth_failure_keeps_token_prompt_visible() -> None:
     text = APP_JS.read_text(encoding="utf-8")
     assert 'if (S.authConfigured) {' in text

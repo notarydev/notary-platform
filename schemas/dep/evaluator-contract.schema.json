@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/evaluator-contract.schema.json",
+  "title": "DEP Evaluator Contract",
+  "type": "object",
+  "required": ["evaluator_id", "version", "method", "requires", "minimum_evidence_grade", "produces", "authority"],
+  "properties": {
+    "evaluator_id": {"type": "string", "format": "uri"},
+    "version": {"type": "string"},
+    "method": {"enum": ["deterministic", "heuristic", "statistical", "model_based", "human"]},
+    "requires": {"type": "array", "items": {"type": "string"}},
+    "minimum_evidence_grade": {"enum": ["E0", "E1", "E2", "E3", "E4"]},
+    "produces": {"type": "string", "pattern": "^assessment\\."},
+    "authority": {"enum": ["signal_only", "candidate_only", "review_support", "delegated_deterministic"]},
+    "parameters_schema": {"type": "object"}
+  },
+  "additionalProperties": false
+}

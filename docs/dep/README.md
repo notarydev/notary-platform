@@ -1,33 +1,38 @@
-# Decision Evidence Protocol (DEP) v0.1
+# Decision Evidence Protocol
 
-A vendor-neutral specification for packaging, verifying, and linking evidence of AI system decisions.
+Decision Evidence Protocol (DEP) is an open, vendor-neutral interchange protocol for evidence about consequential AI decisions. It lets observability systems, governance tools, guardrails, business applications, evaluators, evidence custodians, and independent verifiers contribute to and consume one portable evidence chain without requiring a shared platform.
 
-DEP enables:
+DEP standardizes evidence boundaries, not the algorithm used to judge a decision.
 
-- **Immutable evidence capture** — every observation, context artifact, and assessment is enveloped with provenance and digest.
-- **Deterministic verification** — canonical JSON and digest computation are defined once and used by all implementations.
-- **Context linking** — decisions are evaluated against the policies, configurations, and expected outcomes applicable at decision time.
-- **Auditable assessment** — evaluator results and findings are preserved with full provenance, not overwritten.
+## Documents
 
-## Repository structure
+- [Whitepaper](whitepaper.md): problem, thesis, ecosystem roles, use cases, and adoption path.
+- [Specification](spec.md): normative resources, relationships, transport profiles, processing rules, and conformance profiles.
+- [Governance](governance.md): versioning, change process, neutrality, security, and conformance policy.
+- [JSON Schemas](../../schemas/dep/): machine-readable contracts for the protocol resource families.
 
-- `schemas/dep/` — JSON Schema definitions for all DEP resource types.
-- `docs/dep/` — Specification, whitepaper, and governance.
-- `src/notary_platform/dep/` — Reference implementation: schema registry, canonical JSON, validation, and CLI.
+## Start Here
 
-## Quick start
+A producer can adopt DEP by publishing a Provider Card and emitting one valid Observation. A consumer can adopt DEP by validating envelopes, preserving provenance, and importing the resource without silently changing its epistemic status. Full-chain support is not required.
 
-```bash
-# Validate a DEP envelope
-dep validate path/to/envelope.json
+The smallest useful exchange is:
 
-# Compute canonical digest
-dep digest path/to/envelope.json
-
-# List registered schemas
-dep schema list
+```text
+Observation Provider -> DEP Observation -> Evidence Consumer
 ```
 
-## License
+A complete assurance chain can grow into:
 
-Apache 2.0
+```text
+Observations + Context Bindings + Assessments
+  -> Finding -> Review Decision -> Evidence Bundle
+  -> Verification Claim
+```
+
+## Independence
+
+DEP does not require a particular AI framework, model vendor, cloud, database, governance system, observability platform, evaluator, replay engine, or assurance product. Conformance applies only to observable behavior at the protocol boundary.
+
+## Status
+
+Version 0.1 is a public design draft. Implementers should expect additive changes until the first release candidate. Breaking changes require a new protocol version under the rules in [Governance](governance.md).
