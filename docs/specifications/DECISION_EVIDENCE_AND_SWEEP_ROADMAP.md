@@ -16,17 +16,18 @@ This document is the implementation handoff for turning the currently working No
 The end state is one continuous customer journey:
 
 1. A customer starts with evidence they already possess: an SDK cassette, JSON/JSONL/CSV export, DEP resource, OpenTelemetry trace, or supported source adapter.
-2. Notary profiles the source before committing data or requiring a large setup questionnaire.
-3. The customer confirms only the mappings and context needed for the discovery objective.
-4. Notary preserves each source artifact, its provenance, authority, effective time, and epistemic status.
-5. Notary links evidence into a contestable Decision Evidence Record (DER) without flattening source boundaries.
-6. The Notary Sweep Engine (NSE) runs only evaluators whose declared prerequisites are satisfied.
-7. NSE produces explainable Assurance Candidates, not automatic claims that an AI system failed.
-8. An authorized human or an explicit deterministic delegation approves a candidate as an Incident.
-9. The approved Incident enters the existing cassette replay, fix verification, certificate, Scenario, Readiness, and Release Gate path.
-10. Reviewer decisions and verified outcomes improve future mapping, ranking, and evaluator coverage without changing historical evidence or silently creating new truth.
+2. Notary accepts that evidence first, preserves it immutably, and runs a bounded initial discovery pass before asking for a large setup questionnaire.
+3. Notary produces an initial map of detected sources, likely decision workflows, available context, likely evidence gaps, and replayability or assurance constraints.
+4. The customer confirms only the mappings, authority, and context needed to turn the initial map into trustworthy continuous monitoring.
+5. Notary preserves each source artifact, its provenance, authority, effective time, and epistemic status.
+6. Notary links evidence into a contestable Decision Evidence Record (DER) without flattening source boundaries.
+7. The Notary Sweep Engine (NSE) runs only evaluators whose declared prerequisites are satisfied.
+8. NSE produces explainable Assurance Candidates, not automatic claims that an AI system failed.
+9. An authorized human or an explicit deterministic delegation approves a candidate as an Incident.
+10. The approved Incident enters the existing cassette replay, fix verification, certificate, Scenario, Readiness, and Release Gate path.
+11. Reviewer decisions and verified outcomes improve future mapping, ranking, and evaluator coverage without changing historical evidence or silently creating new truth.
 
-The implementation is successful when a non-technical buyer can follow one real decision from imported or captured evidence through context resolution, candidate discovery, review, replay, fix verification, proof issuance, Scenario promotion, and a passing Release Gate.
+The implementation is successful when a non-technical buyer can start with existing evidence, see immediate discovery value, confirm the map rather than define the world from scratch, and then follow one real decision through context resolution, candidate discovery, review, replay, fix verification, proof issuance, Scenario promotion, and a passing Release Gate.
 
 ## 2. Non-Negotiable Product and Engineering Rules
 
@@ -45,8 +46,9 @@ Every coding agent must preserve these rules. A work package is incomplete if it
 11. **Tenant scope is mandatory.** Every query and stored object is scoped by organization and environment. An identifier alone is never an authorization boundary.
 12. **Setup is progressive.** The user may receive useful Evidence Gap or replayability results after one source. Optional enrichment cannot block the entire setup flow.
 13. **No connector catalog before value.** Generic intake plus one trace source and one authoritative context or outcome source is the first vertical slice.
-14. **No graph database initially.** PostgreSQL metadata and immutable S3 payloads are sufficient for the first production release.
-15. **No custom neural network initially.** Improvement comes first from evaluator coverage, confirmed mappings, review feedback, better context bindings, ranking, deduplication, and Scenario promotion.
+14. **Discovery comes before full setup.** The product earns trust first by importing evidence, building an initial map, and surfacing honest findings or gaps. Setup is then a confirmation and operationalization flow.
+15. **No graph database initially.** PostgreSQL metadata and immutable S3 payloads are sufficient for the first production release.
+16. **No custom neural network initially.** Improvement comes first from evaluator coverage, confirmed mappings, review feedback, better context bindings, ranking, deduplication, and Scenario promotion.
 
 ## 3. What Exists Today
 
@@ -237,7 +239,32 @@ Model assistance may be added behind an internal `AssistanceProvider` interface 
 
 Every model-assisted output must include provider, model, prompt/template version, input resource references, generation time, confidence where available, and status `inferred`. It remains inactive until confirmed when used for identity, policy, expected outcome, or applicability.
 
-### 5.3 Prohibited model behavior
+### 5.3 Discovery Intelligence Layer
+
+The platform needs an assistive discovery-intelligence layer in addition to the deterministic Sweep core. Its purpose is to reduce onboarding friction, accelerate context collection, and help reviewers focus. Its purpose is not to create authoritative findings by itself.
+
+This layer must remain strictly advisory:
+
+* it may suggest likely policies, context sources, workflows, cohort groupings, impact signals, and remediation paths;
+* it may not establish policy truth, expected correctness, Incident authority, proof eligibility, or Release Gate outcome by itself;
+* every suggestion must preserve provenance, confidence or basis, and `inferred` status until confirmed.
+
+Over time, this layer should provide five product behaviors:
+
+1. **Policy discovery assistance**
+   Suggest likely governing policies from uploaded documents, knowledge bases, regulations, or previously supplied internal artifacts.
+2. **Context collection roadmap**
+   Translate blocked evaluators and missing prerequisites into specific next data-collection actions, ordered by likely unlock value.
+3. **Advisory anomaly and cohort detection**
+   Suggest unusual patterns, repeated failures, and likely systematic issues without converting them into authoritative findings automatically.
+4. **Business-impact enrichment**
+   Suggest likely priority using frequency, recurrence, value at risk, customer segment, complaint linkage, or regulator-facing significance when those sources are available.
+5. **Causal trace assistance**
+   Suggest plausible event cascades and candidate root-cause paths from captured evidence without claiming full causal proof.
+
+This layer must be built around the deterministic platform, not instead of it.
+
+### 5.4 Prohibited model behavior
 
 An LLM must never:
 
@@ -250,7 +277,7 @@ An LLM must never:
 * train across customer evidence by default;
 * hide the deterministic reason an evaluator ran or was skipped.
 
-### 5.4 Continuous improvement without model training
+### 5.5 Continuous improvement without model training
 
 Implement improvement as governed product data before considering training:
 
@@ -296,7 +323,7 @@ Work packages are ordered by dependency. Coding agents must complete them in ord
 
 ### WP-010: Complete production persistence foundations
 
-**Goal:** Ensure current setup and proof-loop state survives process restart in the remote backend before adding discovery state.
+**Goal:** Ensure current setup, discovery metadata, and proof-loop state survive process restart in the remote backend before DEP becomes the customer-facing intake path.
 
 **Required work:**
 
@@ -331,7 +358,7 @@ Work packages are ordered by dependency. Coding agents must complete them in ord
 
 ### WP-020: DEP runtime validation and conformance harness
 
-**Goal:** Convert the published DEP schemas into an executable platform boundary.
+**Goal:** Convert the published DEP schemas into the executable intake boundary for discovery-first onboarding.
 
 **Required work:**
 
@@ -365,7 +392,7 @@ tests/test_dep_conformance.py
 
 ### WP-030: Immutable DEP ingress and source inventory
 
-**Goal:** Accept portable evidence safely before implementing discovery intelligence.
+**Goal:** Deliver the first customer-visible value surface by accepting portable evidence safely and building source inventory from it.
 
 **Required models:** `ProviderRegistration`, `DecisionEvidenceResource`, `IntegrityConflict`, and `IngestionReceipt`.
 
@@ -388,6 +415,7 @@ tests/test_dep_conformance.py
 * Preserve provider object ID, source reference, event time, collection time, epistemic status, and transformation references.
 * Return per-resource `accepted`, `duplicate`, `rejected`, or `quarantined` state.
 * Bound request and batch sizes and reject decompression bombs or excessive nesting.
+* Expose enough accepted-resource and source inventory metadata for the platform to render an initial discovery map before the user completes full setup.
 
 **Target package:**
 
@@ -408,7 +436,7 @@ tests/test_dep_ingress_tenant_isolation.py
 
 ### WP-040: Progressive source profiling and confirmed mapping
 
-**Goal:** Turn the existing import preview into a truthful inspect-propose-confirm flow.
+**Goal:** Turn the existing import preview into a truthful discovery-map and guided-confirmation flow.
 
 **Required models:** `SourceConnection`, `SourceCursor`, `SourceProfile`, and `FieldMappingVersion`.
 
@@ -443,11 +471,13 @@ tests/test_dep_ingress_tenant_isolation.py
 * Mapping edits create a new version. Existing previews and Sweep Runs remain pinned to their original version.
 * Profiling must not create `VerificationRecord`, `Incident`, `Assessment`, or `AssuranceCandidate` objects.
 * Update the setup-plan object with source and mapping references rather than embedding unversioned JSON strings.
+* Treat setup as confirmation of discovered reality. The UI should begin from what Notary found, what it could not determine, and what confirmation would unlock next.
 
 **UI changes:**
 
 * Keep Decision Discovery inside the current Setup plan.
-* Show source status, profile coverage, required corrections, optional enrichment, mapping confidence/basis, sensitive-field handling, and unlocked evaluators.
+* Show source status, profile coverage, required corrections, optional enrichment, mapping confidence or basis, sensitive-field handling, and unlocked evaluators.
+* Add an initial discovery-map view: detected workflows, likely joins, likely context sources, replayability blockers, and evidence gaps.
 * Keep Preview and Commit separate.
 
 **Tests and exit criteria:**
@@ -459,7 +489,7 @@ tests/test_dep_ingress_tenant_isolation.py
 
 ### WP-050: Decision identity and temporal context resolution
 
-**Goal:** Construct contestable DERs and apply the context that was effective when each decision occurred.
+**Goal:** Turn the initial discovery map into a trustworthy, contestable decision model by resolving identity and decision-time context.
 
 **Required packages:**
 
@@ -502,6 +532,28 @@ Never merge evidence solely because timestamps are close, text is similar, or an
 * `human_override`
 * `business_outcome`
 
+**Discovery-intelligence additions in this package:**
+
+WP-050 is the right place for the first assistive layer because this is where the platform learns what a decision is, what context applies, and what it still does not know.
+
+Add advisory-only capabilities for:
+
+* `policy_candidate` suggestions:
+  likely policies or policy documents that appear to govern a discovered workflow;
+* `context_source_candidate` suggestions:
+  likely systems, documents, exports, or connectors that could satisfy blocked evaluator prerequisites;
+* `unlock_plan` suggestions:
+  "if you connect or confirm X, these evaluators and findings become available";
+* `link_hypothesis` suggestions:
+  plausible but unconfirmed relationships between records, systems, or context artifacts.
+
+These suggestions must:
+
+* remain `inferred` until customer confirmation;
+* cite the source artifacts or basis for the suggestion;
+* include expected unlock value such as evaluators enabled or conflicts resolved;
+* never silently modify DER identity or authoritative context.
+
 **Required APIs:**
 
 * `POST /v1/discovery/context-artifacts`
@@ -511,6 +563,8 @@ Never merge evidence solely because timestamps are close, text is similar, or an
 * `GET /v1/discovery/records/{der_id}`
 * `GET /v1/discovery/records/{der_id}/resolution-trace`
 * `POST /v1/discovery/context-conflicts/{conflict_id}/resolve`
+* `GET /v1/discovery/workflows/{workflow_id}/policy-candidates`
+* `GET /v1/discovery/workflows/{workflow_id}/context-roadmap`
 
 **Exit criteria:**
 
@@ -519,6 +573,7 @@ Never merge evidence solely because timestamps are close, text is similar, or an
 * Historical decisions resolve the policy effective at decision time, not the currently collected policy.
 * Equal-authority conflict blocks dependent evaluators.
 * Every DER is a set of resource and relationship references, not copied flattened source data.
+* The platform can explain which likely policy or context source should be confirmed next and what that confirmation would unlock.
 
 ### WP-060: Sweep runtime, manifests, and evaluator contracts
 
@@ -668,6 +723,18 @@ tests/test_evidence_sufficiency.py
 * available review and proof-loop actions;
 * cluster reference without losing individual disposition.
 
+**Discovery-intelligence additions in this package:**
+
+Candidate assembly may include advisory ranking and clustering inputs, but they cannot replace deterministic evidence, evaluator output, or human review.
+
+Add:
+
+* cluster linkage for likely repeated root causes;
+* `priority_basis` fields describing why a candidate appears more urgent;
+* `impact_hypothesis` fields for frequency, estimated exposure, repeat occurrence, or business-significance signals.
+
+All such fields must remain explainable and advisory.
+
 **Review actions:**
 
 * approve as Incident;
@@ -807,6 +874,17 @@ Implement in this order:
 * Certification state changes are prospective.
 * Golden fixtures cover boundary values, historical policy versions, equal-authority conflicts, guardrail side effects, and cohort variance.
 
+**Discovery-intelligence additions in this package:**
+
+Once authoritative evaluators are stable, add advisory anomaly and systematic-issue detection around them:
+
+* cohort anomaly suggestions based on historical outcome distributions;
+* repeated-root-cause suggestions across many findings;
+* candidate business-impact enrichment when linked business systems are available;
+* causal-path suggestions from captured event sequences.
+
+These outputs must remain non-authoritative until separately confirmed or translated into deterministic evaluator logic.
+
 **Exit criteria:**
 
 * All six initial candidate types exist with explicit prerequisites.
@@ -873,6 +951,13 @@ Implement only after the Python DEP payload and verifier behavior are frozen. Re
 * Deterministic fallback for every customer-critical path.
 * Frozen test sets split by organization; no customer data used across tenants by default.
 
+This package is where the Discovery Intelligence Layer becomes adaptive:
+
+* improve policy-candidate ranking from confirmed or rejected suggestions;
+* improve context-roadmap ordering from historical unlock value;
+* improve clustering and priority suggestions from reviewer disposition patterns;
+* keep all improvements versioned, tenant-safe, and reversible.
+
 **Metrics:**
 
 * mapping acceptance and correction rate;
@@ -931,6 +1016,77 @@ Implement only after the Python DEP payload and verifier behavior are frozen. Re
 * One design-partner case completes the full lifecycle with no manual database changes.
 * A gate never implies coverage for an untested decision family or missing evidence scope.
 * The platform can show how accumulated verified Incidents increase release coverage over time.
+
+### WP-160: Industry policy packs and governance accelerators
+
+**Goal:** Reduce onboarding time and policy-formalization burden by shipping editable domain packs that customers can confirm, adapt, and operationalize inside Notary.
+
+This package is intentionally an acceleration layer, not a legal-truth engine. Notary may provide starting policy structures, scenario templates, evaluator presets, and review guidance for regulated decision families. It must not claim that these packs are complete legal advice or jurisdiction-complete compliance coverage.
+
+**Product boundary:**
+
+Policy packs may include:
+
+* starter structured policy templates;
+* decision-family-specific expected-outcome templates;
+* evidence-requirement templates;
+* evaluator preset configurations;
+* scenario starter packs;
+* review-playbook templates;
+* release-gate starter templates;
+* documentation of assumptions, jurisdictions, and required customer confirmation.
+
+Policy packs must not:
+
+* be treated as automatically authoritative without customer confirmation;
+* silently override customer policy or regulatory counsel;
+* claim full compliance coverage across all jurisdictions or business variants;
+* bypass effective-time, authority, or conflict-resolution rules.
+
+**Initial domains:**
+
+1. Lending
+   * adverse-action and escalation starter templates
+   * expected-outcome and evidence packs for underwriting and denial review
+2. Insurance
+   * underwriting and claims-review starter templates
+3. Customer support
+   * escalation, human-review, and complaint-handling starter templates
+4. Healthcare
+   * prior-authorization and denial-review starter templates
+
+**Required work:**
+
+* Define a versioned `PolicyPack` model and supporting template objects.
+* Add pack metadata for domain, jurisdiction scope, version, status, authority class, assumptions, required confirmation, and provenance.
+* Add APIs to list available packs, preview contents, fork a pack into a customer-owned version, and confirm it for use.
+* Ensure every forked pack becomes customer-owned context artifacts and bindings rather than shared mutable global truth.
+* Add starter scenario bundles and evaluator presets tied to each pack.
+* Add UI flows that let customers choose: `Use as-is`, `Edit before use`, or `Reference only`.
+* Add warnings and confirmation checkpoints when packs are incomplete for the customer's jurisdiction or workflow.
+* Add documentation that clearly separates Notary-provided starter content from customer-confirmed authoritative policy.
+
+**Required APIs:**
+
+* `GET /v1/policy-packs`
+* `GET /v1/policy-packs/{pack_id}`
+* `POST /v1/policy-packs/{pack_id}/fork`
+* `POST /v1/policy-packs/{pack_id}/confirm`
+* `GET /v1/policy-packs/{pack_id}/scenarios`
+* `GET /v1/policy-packs/{pack_id}/evaluator-presets`
+
+**Dependencies and sequencing:**
+
+* Requires WP-050 so identity, authority, effective time, and context confirmation already exist.
+* Requires WP-110 so structured policy evaluators are mature enough to consume confirmed packs.
+* Should follow WP-130 so assistive policy suggestions and extraction drafts can help customers adapt packs safely.
+
+**Exit criteria:**
+
+* A customer can start from a domain pack instead of authoring every policy from scratch.
+* Every pack-derived policy remains customer-confirmed before authoritative use.
+* Pack-derived scenarios and evaluator presets connect cleanly to Sweep, Proof Bridge, and Release Gates.
+* The UI and docs make it impossible to confuse starter content with binding legal advice.
 
 ## 7. First Vertical Slice
 
@@ -1090,10 +1246,11 @@ Update this table only after implementation, automated verification, and applica
 | WP-130 Assistance/learning | Not started | WP-080, WP-110 | Governed opt-in assistance evaluation |
 | WP-140 Production hardening | Not started | WP-010 through WP-120 | Security, failure, recovery, and SLO evidence |
 | WP-150 Scenario/gate compounding | Not started | WP-090, WP-100, WP-140 | Full design-partner lifecycle demonstration |
+| WP-160 Industry policy packs | Not started | WP-050, WP-110, WP-130 | Pack lifecycle, confirmation flow, and domain-pack demo |
 
 ## 13. Milestones and Decision Gates
 
-### Milestone A: Evidence arrives safely
+### Milestone A: Evidence arrives and maps honestly
 
 Complete WP-000 through WP-040. Demonstrate source profile, mapping confirmation, immutable resource provenance, duplicate handling, and source coverage without creating an Incident.
 
@@ -1117,13 +1274,18 @@ Complete WP-110 through WP-130. Demonstrate context-heavy evaluators, Python SDK
 
 Complete WP-140 and WP-150. Demonstrate recovery, isolation, bounded scheduled Sweep, operational diagnostics, and the full design-partner lifecycle under production storage.
 
+### Milestone G: Domain acceleration and trust packaging
+
+Complete WP-160. Demonstrate one customer can begin from a domain policy pack, confirm or adapt it, run discovery and proof against it, and promote pack-derived scenarios into release assurance without treating the pack as unreviewed legal truth.
+
 ## 14. Product Success Metrics
 
 Measure whether discovery creates trusted proof-loop throughput, not whether it creates the most alerts.
 
 Primary metrics:
 
-* time from first source connection to first useful profile;
+* time from first evidence intake to first useful discovery map;
+* time from first discovery map to confirmed monitoring setup;
 * percentage of DERs with exact confirmed identity;
 * percentage of candidate evaluations skipped due to missing context, by prerequisite;
 * percentage of candidates dismissed, approved, or awaiting context;
@@ -1161,6 +1323,7 @@ Do not optimize for raw candidate volume. A lower-volume system with explicit pr
 For this roadmap, the Decision Evidence and Sweep platform is complete only when:
 
 * a customer can start with one source and see honest value without a full integration program;
+* a customer can begin with imported evidence, see an initial map, and confirm setup rather than author it from scratch;
 * multiple heterogeneous evidence and context sources can be linked without flattening provenance;
 * the system can state exactly which checks ran, which did not, and why;
 * every candidate is explainable and governed before becoming an Incident;
@@ -1169,4 +1332,4 @@ For this roadmap, the Decision Evidence and Sweep platform is complete only when
 * optional model assistance can be disabled without breaking assurance behavior;
 * the platform does not need a neural network, graph database, Command Center, process-mining product, or connector for every customer system to deliver the first design-partner value.
 
-The immediate next work package is **WP-000**, followed by **WP-010 and WP-020 in parallel** once the baseline is green.
+The immediate next work package is **WP-000**. After the baseline is green, complete **WP-010** and **WP-020**, then treat **WP-030** as the first customer-visible discovery slice and **WP-040** as the guided confirmation layer that follows it.

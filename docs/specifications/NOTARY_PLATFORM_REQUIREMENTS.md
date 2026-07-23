@@ -161,7 +161,11 @@ The long-term destination — the five-year vision, not today's positioning — 
 
 ## How Notary Is Delivered
 
-Notary uses a hybrid model. A Python-first open source SDK lets developers instrument agents to record decision evidence with a few lines of code; being open source makes the sealing logic auditable and builds regulator trust. Source-system connectors and generic APIs let business users send overrides, complaints, denials, claims, tickets, or other cases to Notary from existing systems using a "Send to Notary" action where native SDK capture is not available. A managed cloud platform ingests those records as Verification Records, evaluates replayability, runs cassette-first replay and fix verification, manages the Scenario Library, and generates bounded Proof of Mitigation and Proof of Readiness certificates. Planned GRC integrations will later push generated evidence into enterprise systems such as ServiceNow, OneTrust, and AuditBoard, but they are consumers of the proof loop rather than prerequisites for the Release Gate. Notary is not a better log file — it is the replay and proof layer that turns real AI failures into recurrence prevention.
+Notary uses a hybrid model. A Python-first open source SDK lets developers instrument agents to record decision evidence with a few lines of code; being open source makes the sealing logic auditable and builds regulator trust. Source-system connectors and generic APIs let business users send overrides, complaints, denials, claims, tickets, or other cases to Notary from existing systems using a "Send to Notary" action where native SDK capture is not available.
+
+The managed cloud platform now starts with a discovery-first onboarding motion. A customer can connect one evidence source first — for example SDK traffic, logs in object storage, database exports, or DEP resources from an existing tool — and receive an initial decision map, evidence-quality findings, and replayability findings before they complete every context integration. Setup becomes a confirmation and enrichment workflow after that first map exists: the platform identifies what it can already see, what context is missing, which evaluators are enabled, and what additional sources would unlock stronger assurance or continuous monitoring. After confirmation, the same platform runs bounded Sweep jobs, promotes accepted findings into the existing proof loop, manages the Scenario Library, and generates bounded Proof of Mitigation and Proof of Readiness certificates.
+
+Planned GRC integrations will later push generated evidence into enterprise systems such as ServiceNow, OneTrust, and AuditBoard, but they are consumers of the proof loop rather than prerequisites for the Release Gate. Notary is not a better log file — it is the discovery, replay, and proof layer that turns real AI failures and assurance gaps into recurrence prevention.
 
 ## Personas
 
@@ -419,19 +423,32 @@ The mitigation is positioning discipline: lead with deterministic fix-verificati
 
 ## Overview
 
-This document sets Notary's product direction and separates the active build horizon from planned expansion. The product framing remains **AI Decision Assurance**: Notary turns real AI decisions, human overrides, disputes, and incidents into sealed, replayable evidence; verifies fixes against the same recorded conditions; and converts resolved failures into regression scenarios that prevent recurrence. The active build runs through the **Release Gate**: capture a Verification Record, prove remediation, promote the verified case into a Scenario, run an agent version against the required Scenario set, and return a pass/fail/error readiness result that can block deployment.
+This document sets Notary's product direction and separates the active build horizon from planned expansion. The product framing remains **AI Decision Assurance**: Notary turns real AI decisions, human overrides, disputes, and incidents into sealed, replayable evidence; verifies fixes against the same recorded conditions; and converts resolved failures into regression scenarios that prevent recurrence. The active build now begins one step earlier, with **discovery-first onboarding**: connect available evidence, build an initial decision map, surface assurance candidates and evidence gaps, confirm context and mappings, and then carry accepted findings through the proof loop and into the **Release Gate**.
 
-That horizon is intentionally narrower than the full platform vision. Notary should not try to build the whole operational trust layer before the proof loop is trusted. The near-term product must prove one compounding workflow: a consequential AI decision becomes sealed evidence, sealed evidence becomes a replayable Scenario, the Scenario verifies a fix, and the same Scenario gates the next release. Everything beyond that — GRC delivery, evidence datasets, enterprise inventory, organization-wide policy management, broad connector coverage, and trust-layer platform tooling — remains planned until the Release Gate is credible with design partners.
+That horizon is intentionally narrower than the full platform vision. Notary should not try to build the whole operational trust layer before the proof loop is trusted. The near-term product must prove one compounding workflow: a consequential AI decision becomes attributable evidence, attributable evidence becomes an explainable assurance candidate, an accepted candidate becomes sealed proof-loop evidence, sealed evidence becomes a replayable Scenario, the Scenario verifies a fix, and the same Scenario gates the next release. Everything beyond that — GRC delivery, evidence datasets, enterprise inventory, organization-wide policy management, broad connector coverage, and trust-layer platform tooling — remains planned until the Release Gate is credible with design partners.
 
 The core evidence object behind the engine is the **Decision Evidence Graph**: the sealed graph of decision-relevant workflow elements for one AI run. It includes the user input, prompt and policy context, exact model invocation, retrieval, memory state, MCP tool calls, connector/API calls, guardrail results, human overrides, business side effects, final decision, and release context where those elements affect the decision or its remediation. The platform stores that graph as a **Verification Record**, with Incident remaining the failure-triggered case. This expands Notary beyond a simple "LLM + API + decision" recorder without turning it into observability: Notary captures only what is needed to replay, explain, verify, and prove decision outcomes.
 
 The strategic gap Notary fills sits between compliance and business operations. Compliance and legal teams need defensible evidence: what happened, whether it was tampered with, why it happened, and whether remediation worked. Business owners need recurrence prevention: the same bad AI decision, failed handoff, or human override should not ship again after the next prompt, model, policy, or code release. Notary connects those needs with one engine: capture, seal, replay, verify, and gate future releases against real past failures.
 
-## Active Build Horizon — Through the Release Gate
+## Active Build Horizon — Discovery Through the Release Gate
 
-The active build horizon ends when Notary can serve as a release gate for known failure modes. That means the product can ingest a Verification Record, preserve it as sealed evidence, replay it from the sealed cassette by default, verify a customer-supplied fix or agent version, save the verified case as a Scenario, run a Scenario set against a release candidate, and return a readiness verdict suitable for CI/CD.
+The active build horizon ends when Notary can serve as a release gate for known failure modes, starting from incomplete customer evidence rather than assuming a fully assembled Incident. That means the product can ingest DEP resources, SDK evidence, logs, or selected source exports; build an initial decision map; show source coverage, missing context, and eligible evaluators; run bounded Sweep analysis; preserve accepted findings as sealed proof-loop evidence; replay from the sealed cassette by default; verify a customer-supplied fix or agent version; save the verified case as a Scenario; run a Scenario set against a release candidate; and return a readiness verdict suitable for CI/CD.
 
-This horizon includes the customer-facing surfaces needed to make the loop understandable and operable: verification record review, incident investigation, proof state, Scenario Library, Scenario Runs, readiness history, claim scope, and known limitations. It does not include every future enterprise surface. Planned items should remain visible in the roadmap, but they should not be treated as blockers for proving the release-gate loop.
+This horizon includes the customer-facing surfaces needed to make the loop understandable and operable: discovery setup, source profiling, initial decision mapping, candidate review, verification record review, incident investigation, proof state, Scenario Library, Scenario Runs, readiness history, claim scope, and known limitations. It does not include every future enterprise surface. Planned items should remain visible in the roadmap, but they should not be treated as blockers for proving the discovery-to-release-gate loop.
+
+## Phase 0 — Discover: Initial Map Before Full Setup
+
+Notary should show value before demanding a full integration project. Phase 0 is the discovery wedge: a customer connects available evidence sources and receives an initial decision map, evidence sufficiency, replayability gaps, and candidate assurance findings. This is intentionally useful even when only logs or partial SDK data are present, but it does not overclaim correctness or policy applicability where context is still missing.
+
+Core capabilities in this phase:
+
+* DEP, SDK, API, file, object-store, and selected source ingestion without requiring every context system up front.
+* Source profiling that previews identifiers, timestamps, schemas, candidate joins, sensitive fields, and likely decision counts.
+* Progressive setup that separates required corrections from optional enrichment.
+* Initial evaluators focused on what the evidence can actually support, especially missing evidence, expected-outcome mismatch, and replayability failure.
+* Candidate review, suppression, and promotion into the existing proof loop rather than a parallel workflow.
+* Confirmation of continuous monitoring only after the customer has reviewed the initial map and approved the source and policy shape.
 
 ## Phase 1 — Land: Proof of Remediation for Real AI Failures
 
@@ -445,7 +462,7 @@ Core capabilities in this phase:
 * Sandbox escalation where the cassette cannot answer a changed external call or where the customer needs live provider confirmation.
 * Fix verification against the same recorded conditions.
 * Proof of Mitigation: cryptographically signed verification that a fix resolves the captured failure under the tested conditions.
-* A Forensic Control Center surface that shows the decision path, failure node, replay proof, fix state, certificate state, claim scope, and known limitations.
+* An investigation surface that shows the captured decision path, replay trace, fix-verification state, certificate state, claim scope, and known limitations.
 
 Cryptographic integrity remains a core differentiator throughout, expressed as a customer outcome — trustworthy, defensible evidence — rather than led with as an algorithmic claim. Customers buy trustworthy evidence and recurrence prevention; cryptography is why the evidence is defensible.
 
@@ -474,6 +491,7 @@ The following capabilities remain planned and should not be treated as part of t
 * **Enterprise AI Inventory and organization policies.** These become natural expansions once many agents emit execution records, but they move Notary into contested AI-operations territory and should remain planned until the wedge has traction.
 * **Enterprise operations tooling.** Broad CLI workflows, org-wide SDK standardization, and full operational records are platform expansion items.
 * **Broad connector and provider coverage.** Additional sandbox providers, source-system connectors, model providers, and framework adapters should be sequenced by customer demand rather than treated as launch prerequisites.
+* **Industry policy packs and governance accelerators.** Starter packs for domains such as lending, insurance, customer support, and healthcare should accelerate setup and review, but they must remain editable customer-confirmed guidance rather than turnkey legal truth.
 * **Transparency logs and advanced trust infrastructure.** Public append-only certificate logs and other long-horizon trust systems deepen defensibility but are later trust infrastructure, not wedge proof.
 
 ## Widening the Trigger: From Incident to Verification Event
@@ -2363,7 +2381,7 @@ This feature is a distinct capability that consumes the outputs of the Forensics
 
 The Web Dashboard is the browser-based interface teams use to operate Notary without writing code. Through it, a user installs or verifies the SDK, reviews Verification Records, inspects captured Decision Evidence Graph elements, triggers cassette replay, verifies a fix, issues Proof of Mitigation, promotes verified cases into Scenarios, runs Scenario sets, creates Readiness Policies, and triggers Release Gate checks. It presents the active release-gate product in one place, so compliance, operations, and engineering users can follow the path from captured decision to proof and recurrence prevention.
 
-The dashboard is a thin client: it holds no forensic logic and stores no evidence itself. Every operation it offers is backed by an authenticated Forensics Platform capability, and every piece of data it shows is scoped to the user's organization. Its job is to make the proof workflow operable: show what was captured, which actions are available, why blocked actions are unavailable, what proof claims and known limitations exist, and whether an agent version passes the Release Gate.
+The dashboard is a thin client: it holds no forensic logic and stores no evidence itself. Every operation it offers is backed by an authenticated Forensics Platform capability, and every piece of data it shows is scoped to the user's organization. Its job is to make the discovery and proof workflow operable: show what was captured, what sources and context are connected, which actions are available, why blocked actions are unavailable, what proof claims and known limitations exist, and whether an agent version passes the Release Gate.
 
 ## Terminology
 
@@ -2403,6 +2421,17 @@ The dashboard is a thin client: it holds no forensic logic and stores no evidenc
 * **AC-WD-002.3:** When the user views local setup, the dashboard shall distinguish local commands from deployed-demo commands.
 * **AC-WD-002.4:** The dashboard shall provide a minimal capture example that uses the actual SDK API and submits a Verification Record to Notary.
 * **AC-WD-002.5:** When the user copies a setup command or code sample, the dashboard shall copy the visible text and indicate that the copy succeeded.
+
+### REQ-WD-002A: Start With Discovery Before Full Setup
+
+**User Story:** As an AI platform owner, I want the first screen to show what Notary can already learn from the sources I connect, so that setup begins with evidence instead of a long questionnaire.
+
+**Acceptance Criteria:**
+
+* **AC-WD-002A.1:** After the first valid source is connected, the dashboard shall display an initial decision map with discovered decisions or decision families, source coverage, and current evidence sufficiency.
+* **AC-WD-002A.2:** The dashboard shall distinguish required corrections from optional enrichment and explain which evaluators or proof actions each missing input would unlock.
+* **AC-WD-002A.3:** The dashboard shall allow a user to confirm mappings and context progressively rather than requiring all mappings before any discovery result is shown.
+* **AC-WD-002A.4:** If continuous monitoring or recurring Sweep execution is offered, the dashboard shall present it as a confirmation step after initial discovery rather than as a prerequisite for first value.
 
 ### REQ-WD-003: Review Verification Records
 
@@ -2567,7 +2596,7 @@ Decision Evidence Discovery and Sweep is the platform capability that finds assu
 
 The feature produces explainable Assurance Candidates, not automatic declarations that an AI system failed. An authorized reviewer or explicitly delegated deterministic rule decides whether a candidate becomes an Incident. Accepted Incidents enter the existing replay, mutation, certificate, Scenario, and Release Gate workflow without creating a parallel proof system.
 
-Discovery is progressive. A customer can begin with one source and receive evidence-quality or replayability findings before connecting policy, business outcome, or governance systems. The platform requests additional context only when it resolves ambiguity, enables an evaluator, or raises the supported evidence level.
+Discovery is progressive. A customer can begin with one source and receive evidence-quality or replayability findings before connecting policy, business outcome, or governance systems. The platform requests additional context only when it resolves ambiguity, enables an evaluator, or raises the supported evidence level. Logs are one input, not the whole answer: meaningful assurance depends on connecting context from policy, expected-outcome, guardrail, deployment, and source-of-truth systems over time.
 
 ## Terminology
 
@@ -2583,6 +2612,8 @@ Discovery is progressive. A customer can begin with one source and receive evide
 * **Sweep Run:** An immutable execution record containing frozen inputs, resolved context, evaluator versions, results, skips, failures, suppressions, and generated candidates.
 * **Assurance Candidate:** A potential concern supported by referenced evidence and awaiting review or delegated deterministic promotion.
 * **Evidence Gap:** A supported finding that required evidence is missing, conflicted, stale, redacted, or unverifiable. It does not imply that the underlying decision was wrong.
+* **Policy Candidate:** An advisory suggestion that a policy, rule family, or policy source appears relevant to a decision family and should be confirmed by the customer before authoritative evaluation.
+* **Policy Pack:** A versioned starter library of industry-specific policies, evaluator presets, scenario seeds, and review guidance that a customer may adopt, edit, fork, or reject.
 
 ## Requirements
 
@@ -2763,6 +2794,28 @@ Discovery is progressive. A customer can begin with one source and receive evide
 * **AC-FP-DES-016.2:** The platform shall support raw, redacted, hashed, reference-only, and omitted field handling and shall expose the assurance limitations of each choice.
 * **AC-FP-DES-016.3:** Customer evidence, mappings, labels, or review decisions shall not be used for cross-customer learning by default.
 * **AC-FP-DES-016.4:** Any cross-customer aggregate learning shall require explicit opt-in, de-identification controls, documented purpose, and auditable governance.
+
+### REQ-FP-DES-017: Provide Advisory Discovery Intelligence
+
+**User Story:** As a setup owner, I want Notary to suggest likely policies, missing context, and next integration steps without silently deciding for me, so that onboarding gets smarter without becoming opaque.
+
+**Acceptance Criteria:**
+
+* **AC-FP-DES-017.1:** The platform shall be able to suggest policy candidates, context-source candidates, decision-family link hypotheses, and unlock plans based on observed evidence patterns and confirmed prior mappings.
+* **AC-FP-DES-017.2:** Every suggestion shall identify whether it was generated deterministically, heuristically, or with model assistance, and shall remain advisory until confirmed by an authorized user or deterministic rule.
+* **AC-FP-DES-017.3:** Suggestions shall cite the supporting source fields, sample records, or prior confirmed mappings that caused them to appear.
+* **AC-FP-DES-017.4:** Rejecting or editing a suggestion shall affect subsequent recommendations without rewriting prior Sweep Runs or prior review history.
+
+### REQ-FP-DES-018: Support Industry Policy Packs as Accelerators
+
+**User Story:** As a regulated customer, I want starter policy packs and evaluator presets for my industry, so that I can get to a credible first review faster without surrendering control over what is authoritative.
+
+**Acceptance Criteria:**
+
+* **AC-FP-DES-018.1:** The platform shall support versioned Policy Packs containing starter policies, evaluator presets, scenario seeds, mapping hints, and review guidance for a named domain.
+* **AC-FP-DES-018.2:** A customer shall be able to preview, adopt, fork, edit, disable, or reject a Policy Pack independently of other packs.
+* **AC-FP-DES-018.3:** A Policy Pack shall be labeled as starter guidance and shall not become authoritative for a customer organization until adopted and confirmed through the organization's own mappings or review workflow.
+* **AC-FP-DES-018.4:** Changes to a Policy Pack or a customer's fork shall apply prospectively and shall not rewrite historical candidates, Sweep Runs, or proof artifacts.
 
 ## Non-Goals
 

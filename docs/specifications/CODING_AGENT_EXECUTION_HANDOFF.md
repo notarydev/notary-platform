@@ -36,6 +36,18 @@ Ask for a product decision only if the requirements and blueprints truly leave a
 
 Build Notary Platform and the Notary SDK only.
 
+## Discovery-First Product Motion
+
+Build toward this customer journey:
+
+1. connect or import evidence the customer already has;
+2. validate and preserve it through DEP;
+3. generate an initial discovery map and honest findings or gaps;
+4. ask the customer to confirm mappings, authority, and context only where needed;
+5. turn confirmed discovery into continuous monitoring and the existing proof loop.
+
+Do not build toward a setup-first experience where the customer must define the whole environment before seeing value.
+
 In scope:
 
 * progressive Decision Discovery setup;
@@ -105,7 +117,7 @@ Do not represent any of these areas as production-complete.
 
 ## First Execution Queue
 
-Execute the roadmap by work package. Do not start with connectors, LLM assistance, or UI redesign.
+Execute the roadmap by work package. Do not start with connectors, LLM assistance, or UI redesign. The first customer-visible vertical slice is DEP intake plus discovery map, not a broad onboarding questionnaire.
 
 ### Work Order 1: WP-000 Baseline and Guardrails
 
@@ -176,7 +188,7 @@ Required outcome:
 * a standalone offline validation command passes the fixture suite;
 * public fixtures contain no Notary or NSE implementation fields.
 
-WP-030 DEP ingress starts only after WP-010 and WP-020 are complete.
+WP-030 DEP ingress starts only after WP-010 and WP-020 are complete. WP-030 is the first customer-visible discovery surface, and WP-040 converts that surface into guided confirmation rather than blank-slate setup.
 
 ## Deterministic and Model-Assisted Boundary
 
