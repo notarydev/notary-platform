@@ -63,6 +63,13 @@ from notary_platform.models import (
     VerificationRecord,
     WorkflowEvidenceSource,
 )
+from notary_platform.sweep.jobs import SweepJob
+from notary_platform.sweep.models import (
+    AssessmentRecord,
+    EvaluatorContractRecord,
+    SweepDefinition,
+    SweepRun,
+)
 
 _PERSISTED_COLLECTIONS: dict[str, tuple[str, type[Any]]] = {
     "orgs": ("_orgs", Organization),
@@ -539,6 +546,70 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion: ...
 
+    # ── WP-060: Evaluator Contracts ──
+
+    @abc.abstractmethod
+    def create_evaluator_contract(self, contract: EvaluatorContractRecord) -> EvaluatorContractRecord: ...
+
+    @abc.abstractmethod
+    def get_evaluator_contract(self, contract_id: str) -> EvaluatorContractRecord | None: ...
+
+    @abc.abstractmethod
+    def list_evaluator_contracts(self, org_id: str) -> list[EvaluatorContractRecord]: ...
+
+    # ── WP-060: Sweep Definitions ──
+
+    @abc.abstractmethod
+    def create_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition: ...
+
+    @abc.abstractmethod
+    def get_sweep_definition(self, sd_id: str) -> SweepDefinition | None: ...
+
+    @abc.abstractmethod
+    def list_sweep_definitions(self, org_id: str) -> list[SweepDefinition]: ...
+
+    @abc.abstractmethod
+    def update_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition: ...
+
+    # ── WP-060: Sweep Runs ──
+
+    @abc.abstractmethod
+    def create_sweep_run(self, run: SweepRun) -> SweepRun: ...
+
+    @abc.abstractmethod
+    def get_sweep_run(self, run_id: str) -> SweepRun | None: ...
+
+    @abc.abstractmethod
+    def list_sweep_runs(self, org_id: str) -> list[SweepRun]: ...
+
+    @abc.abstractmethod
+    def update_sweep_run(self, run: SweepRun) -> SweepRun: ...
+
+    # ── WP-060: Sweep Jobs ──
+
+    @abc.abstractmethod
+    def create_sweep_job(self, job: SweepJob) -> SweepJob: ...
+
+    @abc.abstractmethod
+    def get_sweep_job(self, job_id: str) -> SweepJob | None: ...
+
+    @abc.abstractmethod
+    def list_sweep_jobs(self, run_id: str) -> list[SweepJob]: ...
+
+    @abc.abstractmethod
+    def update_sweep_job(self, job: SweepJob) -> SweepJob: ...
+
+    # ── WP-060: Assessment Records ──
+
+    @abc.abstractmethod
+    def create_assessment(self, assessment: AssessmentRecord) -> AssessmentRecord: ...
+
+    @abc.abstractmethod
+    def get_assessment(self, assessment_id: str) -> AssessmentRecord | None: ...
+
+    @abc.abstractmethod
+    def list_assessments(self, run_id: str) -> list[AssessmentRecord]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -598,6 +669,12 @@ class MemoryStorage(StorageBackend):
         self._resolution_traces: dict[str, ResolutionTrace] = {}
         self._decision_evidence_records: dict[str, DecisionEvidenceRecord] = {}
         self._advisory_suggestions: dict[str, AdvisorySuggestion] = {}
+        # WP-060: Sweep Runtime
+        self._evaluator_contracts: dict[str, EvaluatorContractRecord] = {}
+        self._sweep_definitions: dict[str, SweepDefinition] = {}
+        self._sweep_runs: dict[str, SweepRun] = {}
+        self._sweep_jobs: dict[str, SweepJob] = {}
+        self._assessments: dict[str, AssessmentRecord] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -1177,6 +1254,78 @@ class MemoryStorage(StorageBackend):
     def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
         self._advisory_suggestions[s.id] = s
         return s
+
+    # ── WP-060: Evaluator Contracts ──
+
+    def create_evaluator_contract(self, contract: EvaluatorContractRecord) -> EvaluatorContractRecord:
+        self._evaluator_contracts[contract.id] = contract
+        return contract
+
+    def get_evaluator_contract(self, contract_id: str) -> EvaluatorContractRecord | None:
+        return self._evaluator_contracts.get(contract_id)
+
+    def list_evaluator_contracts(self, org_id: str) -> list[EvaluatorContractRecord]:
+        return [c for c in self._evaluator_contracts.values() if c.org_id == org_id]
+
+    # ── WP-060: Sweep Definitions ──
+
+    def create_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition:
+        self._sweep_definitions[sd.id] = sd
+        return sd
+
+    def get_sweep_definition(self, sd_id: str) -> SweepDefinition | None:
+        return self._sweep_definitions.get(sd_id)
+
+    def list_sweep_definitions(self, org_id: str) -> list[SweepDefinition]:
+        return [d for d in self._sweep_definitions.values() if d.org_id == org_id]
+
+    def update_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition:
+        self._sweep_definitions[sd.id] = sd
+        return sd
+
+    # ── WP-060: Sweep Runs ──
+
+    def create_sweep_run(self, run: SweepRun) -> SweepRun:
+        self._sweep_runs[run.id] = run
+        return run
+
+    def get_sweep_run(self, run_id: str) -> SweepRun | None:
+        return self._sweep_runs.get(run_id)
+
+    def list_sweep_runs(self, org_id: str) -> list[SweepRun]:
+        return [r for r in self._sweep_runs.values() if r.org_id == org_id]
+
+    def update_sweep_run(self, run: SweepRun) -> SweepRun:
+        self._sweep_runs[run.id] = run
+        return run
+
+    # ── WP-060: Sweep Jobs ──
+
+    def create_sweep_job(self, job: SweepJob) -> SweepJob:
+        self._sweep_jobs[job.id] = job
+        return job
+
+    def get_sweep_job(self, job_id: str) -> SweepJob | None:
+        return self._sweep_jobs.get(job_id)
+
+    def list_sweep_jobs(self, run_id: str) -> list[SweepJob]:
+        return [j for j in self._sweep_jobs.values() if j.run_id == run_id]
+
+    def update_sweep_job(self, job: SweepJob) -> SweepJob:
+        self._sweep_jobs[job.id] = job
+        return job
+
+    # ── WP-060: Assessment Records ──
+
+    def create_assessment(self, assessment: AssessmentRecord) -> AssessmentRecord:
+        self._assessments[assessment.id] = assessment
+        return assessment
+
+    def get_assessment(self, assessment_id: str) -> AssessmentRecord | None:
+        return self._assessments.get(assessment_id)
+
+    def list_assessments(self, run_id: str) -> list[AssessmentRecord]:
+        return [a for a in self._assessments.values() if a.run_id == run_id]
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -2212,6 +2361,80 @@ class PostgresS3Storage(StorageBackend):
 
     def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
         return self._write_wo28("advisory_suggestion", s)
+
+    # ── WP-060: Evaluator Contracts ──
+
+    def create_evaluator_contract(self, contract: EvaluatorContractRecord) -> EvaluatorContractRecord:
+        return self._write_wo28("evaluator_contract", contract)
+
+    def get_evaluator_contract(self, contract_id: str) -> EvaluatorContractRecord | None:
+        return self._get_wo28("evaluator_contract", contract_id, EvaluatorContractRecord)
+
+    def list_evaluator_contracts(self, org_id: str) -> list[EvaluatorContractRecord]:
+        return self._list_wo28("evaluator_contract", org_id, "", EvaluatorContractRecord)
+
+    # ── WP-060: Sweep Definitions ──
+
+    def create_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition:
+        return self._write_wo28("sweep_definition", sd)
+
+    def get_sweep_definition(self, sd_id: str) -> SweepDefinition | None:
+        return self._get_wo28("sweep_definition", sd_id, SweepDefinition)
+
+    def list_sweep_definitions(self, org_id: str) -> list[SweepDefinition]:
+        return self._list_wo28("sweep_definition", org_id, "", SweepDefinition)
+
+    def update_sweep_definition(self, sd: SweepDefinition) -> SweepDefinition:
+        return self._write_wo28("sweep_definition", sd)
+
+    # ── WP-060: Sweep Runs ──
+
+    def create_sweep_run(self, run: SweepRun) -> SweepRun:
+        return self._write_wo28("sweep_run", run)
+
+    def get_sweep_run(self, run_id: str) -> SweepRun | None:
+        return self._get_wo28("sweep_run", run_id, SweepRun)
+
+    def list_sweep_runs(self, org_id: str) -> list[SweepRun]:
+        return self._list_wo28("sweep_run", org_id, "", SweepRun)
+
+    def update_sweep_run(self, run: SweepRun) -> SweepRun:
+        return self._write_wo28("sweep_run", run)
+
+    # ── WP-060: Sweep Jobs ──
+
+    def create_sweep_job(self, job: SweepJob) -> SweepJob:
+        return self._write_wo28("sweep_job", job)
+
+    def get_sweep_job(self, job_id: str) -> SweepJob | None:
+        return self._get_wo28("sweep_job", job_id, SweepJob)
+
+    def list_sweep_jobs(self, run_id: str) -> list[SweepJob]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'sweep_job' AND data->>'run_id' = %(rid)s ORDER BY created_at",
+                {"rid": run_id},
+            ).mappings().all()
+        return [SweepJob.from_dict(dict(r["data"])) for r in rows]
+
+    def update_sweep_job(self, job: SweepJob) -> SweepJob:
+        return self._write_wo28("sweep_job", job)
+
+    # ── WP-060: Assessment Records ──
+
+    def create_assessment(self, assessment: AssessmentRecord) -> AssessmentRecord:
+        return self._write_wo28("assessment", assessment)
+
+    def get_assessment(self, assessment_id: str) -> AssessmentRecord | None:
+        return self._get_wo28("assessment", assessment_id, AssessmentRecord)
+
+    def list_assessments(self, run_id: str) -> list[AssessmentRecord]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'assessment' AND data->>'run_id' = %(rid)s ORDER BY created_at",
+                {"rid": run_id},
+            ).mappings().all()
+        return [AssessmentRecord.from_dict(dict(r["data"])) for r in rows]
 
 
 _storage_instance: StorageBackend | None = None
