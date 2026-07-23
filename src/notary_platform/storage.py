@@ -17,9 +17,15 @@ from typing import Any
 
 from notary_platform.config import SETTINGS
 from notary_platform.discovery.models import (
+    AdvisorySuggestion,
+    ContextBinding,
+    ContextConflict,
+    DecisionEvidenceRecord,
     DecisionEvidenceResource,
     IntegrityConflict,
+    LinkAssertion,
     ProviderRegistration,
+    ResolutionTrace,
 )
 from notary_platform.discovery.sources import (
     FieldMappingVersion,
@@ -449,6 +455,90 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]: ...
 
+    # ── WP-050: Link Assertions ──
+
+    @abc.abstractmethod
+    def create_link_assertion(self, la: LinkAssertion) -> LinkAssertion: ...
+
+    @abc.abstractmethod
+    def get_link_assertion(self, la_id: str) -> LinkAssertion | None: ...
+
+    @abc.abstractmethod
+    def list_link_assertions(self, org_id: str) -> list[LinkAssertion]: ...
+
+    @abc.abstractmethod
+    def list_link_assertions_for_resource(self, resource_id: str, org_id: str) -> list[LinkAssertion]: ...
+
+    @abc.abstractmethod
+    def update_link_assertion(self, la: LinkAssertion) -> LinkAssertion: ...
+
+    # ── WP-050: Context Bindings ──
+
+    @abc.abstractmethod
+    def create_context_binding(self, cb: ContextBinding) -> ContextBinding: ...
+
+    @abc.abstractmethod
+    def get_context_binding(self, cb_id: str) -> ContextBinding | None: ...
+
+    @abc.abstractmethod
+    def list_context_bindings(self, org_id: str) -> list[ContextBinding]: ...
+
+    @abc.abstractmethod
+    def list_context_bindings_for_scope(self, org_id: str, subject_scope: str, subject_selector: str) -> list[ContextBinding]: ...
+
+    # ── WP-050: Context Conflicts ──
+
+    @abc.abstractmethod
+    def create_context_conflict(self, cc: ContextConflict) -> ContextConflict: ...
+
+    @abc.abstractmethod
+    def get_context_conflict(self, cc_id: str) -> ContextConflict | None: ...
+
+    @abc.abstractmethod
+    def list_context_conflicts(self, org_id: str) -> list[ContextConflict]: ...
+
+    @abc.abstractmethod
+    def list_context_conflicts_for_der(self, der_id: str) -> list[ContextConflict]: ...
+
+    @abc.abstractmethod
+    def update_context_conflict(self, cc: ContextConflict) -> ContextConflict: ...
+
+    # ── WP-050: Resolution Traces ──
+
+    @abc.abstractmethod
+    def create_resolution_trace(self, rt: ResolutionTrace) -> ResolutionTrace: ...
+
+    @abc.abstractmethod
+    def get_resolution_trace(self, rt_id: str) -> ResolutionTrace | None: ...
+
+    # ── WP-050: Decision Evidence Records ──
+
+    @abc.abstractmethod
+    def create_decision_evidence_record(self, der: DecisionEvidenceRecord) -> DecisionEvidenceRecord: ...
+
+    @abc.abstractmethod
+    def get_decision_evidence_record(self, der_id: str) -> DecisionEvidenceRecord | None: ...
+
+    @abc.abstractmethod
+    def list_decision_evidence_records(self, org_id: str) -> list[DecisionEvidenceRecord]: ...
+
+    @abc.abstractmethod
+    def list_decision_evidence_records_by_identity(self, decision_identity: str, org_id: str) -> list[DecisionEvidenceRecord]: ...
+
+    # ── WP-050: Advisory Suggestions ──
+
+    @abc.abstractmethod
+    def create_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion: ...
+
+    @abc.abstractmethod
+    def get_advisory_suggestion(self, s_id: str) -> AdvisorySuggestion | None: ...
+
+    @abc.abstractmethod
+    def list_advisory_suggestions(self, org_id: str, workflow_id: str = "") -> list[AdvisorySuggestion]: ...
+
+    @abc.abstractmethod
+    def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -497,10 +587,17 @@ class MemoryStorage(StorageBackend):
         self._integrity_conflicts: dict[str, IntegrityConflict] = {}
         self._payloads: dict[str, dict[str, Any]] = {}
         # WP-040: Source connections, cursors, profiles, mappings
-        self._source_connections = {}
-        self._source_cursors = {}
-        self._source_profiles = {}
-        self._field_mappings = {}
+        self._source_connections: dict[str, SourceConnection] = {}
+        self._source_cursors: dict[str, SourceCursor] = {}
+        self._source_profiles: dict[str, SourceProfile] = {}
+        self._field_mappings: dict[str, FieldMappingVersion] = {}
+        # WP-050: Identity & Context
+        self._link_assertions: dict[str, LinkAssertion] = {}
+        self._context_bindings: dict[str, ContextBinding] = {}
+        self._context_conflicts: dict[str, ContextConflict] = {}
+        self._resolution_traces: dict[str, ResolutionTrace] = {}
+        self._decision_evidence_records: dict[str, DecisionEvidenceRecord] = {}
+        self._advisory_suggestions: dict[str, AdvisorySuggestion] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -975,6 +1072,111 @@ class MemoryStorage(StorageBackend):
 
     def list_field_mapping_versions(self, source_id: str) -> list[FieldMappingVersion]:
         return [m for m in self._field_mappings.values() if m.source_id == source_id]
+
+    # ── WP-050: Link Assertions ──
+
+    def create_link_assertion(self, la: LinkAssertion) -> LinkAssertion:
+        self._link_assertions[la.id] = la
+        return la
+
+    def get_link_assertion(self, la_id: str) -> LinkAssertion | None:
+        return self._link_assertions.get(la_id)
+
+    def list_link_assertions(self, org_id: str) -> list[LinkAssertion]:
+        return [la for la in self._link_assertions.values() if la.org_id == org_id]
+
+    def list_link_assertions_for_resource(self, resource_id: str, org_id: str) -> list[LinkAssertion]:
+        return [
+            la for la in self._link_assertions.values()
+            if la.org_id == org_id and (la.source_resource_id == resource_id or la.target_resource_id == resource_id)
+        ]
+
+    def update_link_assertion(self, la: LinkAssertion) -> LinkAssertion:
+        self._link_assertions[la.id] = la
+        return la
+
+    # ── WP-050: Context Bindings ──
+
+    def create_context_binding(self, cb: ContextBinding) -> ContextBinding:
+        self._context_bindings[cb.id] = cb
+        return cb
+
+    def get_context_binding(self, cb_id: str) -> ContextBinding | None:
+        return self._context_bindings.get(cb_id)
+
+    def list_context_bindings(self, org_id: str) -> list[ContextBinding]:
+        return [cb for cb in self._context_bindings.values() if cb.org_id == org_id]
+
+    def list_context_bindings_for_scope(self, org_id: str, subject_scope: str, subject_selector: str) -> list[ContextBinding]:
+        return [
+            cb for cb in self._context_bindings.values()
+            if cb.org_id == org_id and cb.subject_scope == subject_scope and cb.subject_selector == subject_selector
+        ]
+
+    # ── WP-050: Context Conflicts ──
+
+    def create_context_conflict(self, cc: ContextConflict) -> ContextConflict:
+        self._context_conflicts[cc.id] = cc
+        return cc
+
+    def get_context_conflict(self, cc_id: str) -> ContextConflict | None:
+        return self._context_conflicts.get(cc_id)
+
+    def list_context_conflicts(self, org_id: str) -> list[ContextConflict]:
+        return [cc for cc in self._context_conflicts.values() if cc.org_id == org_id]
+
+    def list_context_conflicts_for_der(self, der_id: str) -> list[ContextConflict]:
+        return [cc for cc in self._context_conflicts.values() if cc.der_id == der_id]
+
+    def update_context_conflict(self, cc: ContextConflict) -> ContextConflict:
+        self._context_conflicts[cc.id] = cc
+        return cc
+
+    # ── WP-050: Resolution Traces ──
+
+    def create_resolution_trace(self, rt: ResolutionTrace) -> ResolutionTrace:
+        self._resolution_traces[rt.id] = rt
+        return rt
+
+    def get_resolution_trace(self, rt_id: str) -> ResolutionTrace | None:
+        return self._resolution_traces.get(rt_id)
+
+    # ── WP-050: Decision Evidence Records ──
+
+    def create_decision_evidence_record(self, der: DecisionEvidenceRecord) -> DecisionEvidenceRecord:
+        self._decision_evidence_records[der.id] = der
+        return der
+
+    def get_decision_evidence_record(self, der_id: str) -> DecisionEvidenceRecord | None:
+        return self._decision_evidence_records.get(der_id)
+
+    def list_decision_evidence_records(self, org_id: str) -> list[DecisionEvidenceRecord]:
+        return [d for d in self._decision_evidence_records.values() if d.org_id == org_id]
+
+    def list_decision_evidence_records_by_identity(self, decision_identity: str, org_id: str) -> list[DecisionEvidenceRecord]:
+        return [
+            d for d in self._decision_evidence_records.values()
+            if d.org_id == org_id and d.decision_identity == decision_identity
+        ]
+
+    # ── WP-050: Advisory Suggestions ──
+
+    def create_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
+        self._advisory_suggestions[s.id] = s
+        return s
+
+    def get_advisory_suggestion(self, s_id: str) -> AdvisorySuggestion | None:
+        return self._advisory_suggestions.get(s_id)
+
+    def list_advisory_suggestions(self, org_id: str, workflow_id: str = "") -> list[AdvisorySuggestion]:
+        results = [s for s in self._advisory_suggestions.values() if s.org_id == org_id]
+        if workflow_id:
+            results = [s for s in results if s.workflow_id == workflow_id]
+        return results
+
+    def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
+        self._advisory_suggestions[s.id] = s
+        return s
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -1898,6 +2100,118 @@ class PostgresS3Storage(StorageBackend):
                 {"sid": source_id},
             ).mappings().all()
         return [FieldMappingVersion.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-050: Link Assertions ──
+
+    def create_link_assertion(self, la: LinkAssertion) -> LinkAssertion:
+        return self._write_wo28("link_assertion", la)
+
+    def get_link_assertion(self, la_id: str) -> LinkAssertion | None:
+        return self._get_wo28("link_assertion", la_id, LinkAssertion)
+
+    def list_link_assertions(self, org_id: str) -> list[LinkAssertion]:
+        return self._list_wo28("link_assertion", org_id, "", LinkAssertion)
+
+    def list_link_assertions_for_resource(self, resource_id: str, org_id: str) -> list[LinkAssertion]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'link_assertion' AND data->>'org_id' = %(org)s AND (data->>'source_resource_id' = %(rid)s OR data->>'target_resource_id' = %(rid)s)",
+                {"org": org_id, "rid": resource_id},
+            ).mappings().all()
+        return [LinkAssertion.from_dict(dict(r["data"])) for r in rows]
+
+    def update_link_assertion(self, la: LinkAssertion) -> LinkAssertion:
+        return self._write_wo28("link_assertion", la)
+
+    # ── WP-050: Context Bindings ──
+
+    def create_context_binding(self, cb: ContextBinding) -> ContextBinding:
+        return self._write_wo28("context_binding", cb)
+
+    def get_context_binding(self, cb_id: str) -> ContextBinding | None:
+        return self._get_wo28("context_binding", cb_id, ContextBinding)
+
+    def list_context_bindings(self, org_id: str) -> list[ContextBinding]:
+        return self._list_wo28("context_binding", org_id, "", ContextBinding)
+
+    def list_context_bindings_for_scope(self, org_id: str, subject_scope: str, subject_selector: str) -> list[ContextBinding]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'context_binding' AND data->>'org_id' = %(org)s AND data->>'subject_scope' = %(scope)s AND data->>'subject_selector' = %(sel)s",
+                {"org": org_id, "scope": subject_scope, "sel": subject_selector},
+            ).mappings().all()
+        return [ContextBinding.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-050: Context Conflicts ──
+
+    def create_context_conflict(self, cc: ContextConflict) -> ContextConflict:
+        return self._write_wo28("context_conflict", cc)
+
+    def get_context_conflict(self, cc_id: str) -> ContextConflict | None:
+        return self._get_wo28("context_conflict", cc_id, ContextConflict)
+
+    def list_context_conflicts(self, org_id: str) -> list[ContextConflict]:
+        return self._list_wo28("context_conflict", org_id, "", ContextConflict)
+
+    def list_context_conflicts_for_der(self, der_id: str) -> list[ContextConflict]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'context_conflict' AND data->>'der_id' = %(did)s",
+                {"did": der_id},
+            ).mappings().all()
+        return [ContextConflict.from_dict(dict(r["data"])) for r in rows]
+
+    def update_context_conflict(self, cc: ContextConflict) -> ContextConflict:
+        return self._write_wo28("context_conflict", cc)
+
+    # ── WP-050: Resolution Traces ──
+
+    def create_resolution_trace(self, rt: ResolutionTrace) -> ResolutionTrace:
+        return self._write_wo28("resolution_trace", rt)
+
+    def get_resolution_trace(self, rt_id: str) -> ResolutionTrace | None:
+        return self._get_wo28("resolution_trace", rt_id, ResolutionTrace)
+
+    # ── WP-050: Decision Evidence Records ──
+
+    def create_decision_evidence_record(self, der: DecisionEvidenceRecord) -> DecisionEvidenceRecord:
+        return self._write_wo28("decision_evidence_record", der)
+
+    def get_decision_evidence_record(self, der_id: str) -> DecisionEvidenceRecord | None:
+        return self._get_wo28("decision_evidence_record", der_id, DecisionEvidenceRecord)
+
+    def list_decision_evidence_records(self, org_id: str) -> list[DecisionEvidenceRecord]:
+        return self._list_wo28("decision_evidence_record", org_id, "", DecisionEvidenceRecord)
+
+    def list_decision_evidence_records_by_identity(self, decision_identity: str, org_id: str) -> list[DecisionEvidenceRecord]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'decision_evidence_record' AND data->>'org_id' = %(org)s AND data->>'decision_identity' = %(di)s",
+                {"org": org_id, "di": decision_identity},
+            ).mappings().all()
+        return [DecisionEvidenceRecord.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-050: Advisory Suggestions ──
+
+    def create_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
+        return self._write_wo28("advisory_suggestion", s)
+
+    def get_advisory_suggestion(self, s_id: str) -> AdvisorySuggestion | None:
+        return self._get_wo28("advisory_suggestion", s_id, AdvisorySuggestion)
+
+    def list_advisory_suggestions(self, org_id: str, workflow_id: str = "") -> list[AdvisorySuggestion]:
+        with self._engine.connect() as conn:
+            if workflow_id:
+                rows = conn.exec_driver_sql(
+                    "SELECT data FROM wo28_objects WHERE kind = 'advisory_suggestion' AND data->>'org_id' = %(org)s AND data->>'workflow_id' = %(wid)s",
+                    {"org": org_id, "wid": workflow_id},
+                ).mappings().all()
+            else:
+                rows = self._exec_list("advisory_suggestion", org_id, conn)
+        return [AdvisorySuggestion.from_dict(dict(r["data"])) for r in rows]
+
+    def update_advisory_suggestion(self, s: AdvisorySuggestion) -> AdvisorySuggestion:
+        return self._write_wo28("advisory_suggestion", s)
 
 
 _storage_instance: StorageBackend | None = None
