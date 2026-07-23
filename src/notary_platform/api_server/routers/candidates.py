@@ -38,6 +38,23 @@ def _review_svc() -> CandidateReviewService:
     return CandidateReviewService(storage)
 
 
+# Lazy registry for IngestionService (avoids circular imports with certificates)
+_registry = None
+
+
+def _get_registry():
+    global _registry
+    if _registry is None:
+        from notary_platform.services import ServiceRegistry
+        _registry = ServiceRegistry(storage)
+    return _registry
+
+
+def _bridge_svc() -> ProofBridgeService:
+    from notary_platform.services import IngestionService
+    return ProofBridgeService(storage, IngestionService(_get_registry()))
+
+
 @router.get("/discovery/candidates")
 def list_candidates(
     org_id: str = Depends(require_auth),
@@ -132,10 +149,6 @@ def list_delegations(
 # ── WP-090: Proof Bridge ──
 
 
-def _bridge_svc() -> ProofBridgeService:
-    return ProofBridgeService(storage)
-
-
 @router.post("/discovery/candidates/{candidate_id}/promote")
 def promote_candidate(
     candidate_id: str,
@@ -147,7 +160,15 @@ def promote_candidate(
     svc = _bridge_svc()
     result = svc.promote(candidate_id, org_id)
     if not result["success"]:
-        raise HTTPException(status_code=409, detail=result["error"])
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": result.get("error_code", "PROMOTION_FAILED"),
+                "message": result.get("error", "promotion failed"),
+                "next_actions": result.get("next_actions", []),
+                "prerequisites": result.get("prerequisites", []),
+            },
+        )
     return result
 
 

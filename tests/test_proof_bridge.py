@@ -91,7 +91,7 @@ class TestProofBridgeService:
         svc = ProofBridgeService(get_storage())
         result = svc.check_eligibility("ac-1", "test-org")
         assert not result["eligible"]
-        assert "approved review decision" in result["prerequisites"]
+        assert "approved review decision" in result["prerequisites"][0]
 
     def test_eligibility_evidence_too_low(self) -> None:
         reset_storage()

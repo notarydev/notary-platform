@@ -44,6 +44,7 @@ from notary_platform.models import (
     DecisionWorkflow,
     Environment,
     EvidenceArtifact,
+    EvidenceBundle,
     FieldHandlingRule,
     HumanLabel,
     Incident,
@@ -1926,7 +1927,10 @@ class PostgresS3Storage(StorageBackend):
         return [vr for vr in all_vrs if vr.bridge_key == bridge_key]
     def store_evidence_bundle(self, bundle: dict[str, Any], org_id: str) -> str:
         ref = bundle.get("bundle_id", f"eb-{uuid.uuid4().hex[:12]}")
-        self._write_wo28("evidence_bundle", bundle)
+        bundle["bundle_id"] = ref
+        bundle["org_id"] = org_id
+        from notary_platform.models import EvidenceBundle
+        self._write_wo28("evidence_bundle", EvidenceBundle.from_dict(bundle))
         return ref
     def create_label(self, label: HumanLabel) -> HumanLabel:
         self._write_wo28("human_label", label)
@@ -2610,7 +2614,7 @@ _storage_instance: StorageBackend | None = None
 
 def reset_storage() -> None:
     """Reset the storage singleton (used in tests).
-    
+
     Clears all data on the existing singleton rather than replacing it,
     so router modules that already hold a reference stay consistent.
     """

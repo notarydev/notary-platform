@@ -2003,6 +2003,31 @@ class SetupReadinessAssessment:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
 
+@dataclass
+class EvidenceBundle:
+    bundle_id: str
+    bridge_key: str
+    created_at: str
+    candidate_id: str
+    der_id: str
+    sweep_run_id: str
+    evidence_level: str
+    candidate_type: str
+    source_resource_ids: list[str]
+    context_binding_ids: list[str]
+    resolution_trace_id: str
+    assessment_ids: list[str]
+    declared_omissions: list[str]
+    sealed_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EvidenceBundle":
+        return cls(**{f.name: d.get(f.name, "") for f in dataclasses.fields(cls)})
+
+
 # Attach generic from_dict to all dataclasses for storage reconstruction.
 _DATACLASS_MODELS = [
     Organization,
@@ -2047,6 +2072,7 @@ _DATACLASS_MODELS = [
     ImportPolicy,
     RecordSelectionResult,
     SetupReadinessAssessment,
+    EvidenceBundle,
 ]
 for _model_cls in _DATACLASS_MODELS:
     if not hasattr(_model_cls, "from_dict"):
