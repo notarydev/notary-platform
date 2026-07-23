@@ -47,10 +47,11 @@ class ValidationResult:
 
 
 def validate_envelope(envelope: dict[str, Any], registry: SchemaRegistry) -> ValidationResult:
-    """Validate a full DEP envelope — structure, version, resource, digest.
+    """Validate an inner DEP resource envelope.
 
-    Uses ``jsonschema`` to validate the envelope against the published
-    ``envelope.schema.json``.
+    The outer CloudEvents exchange envelope is a transport concern and has its
+    own ``cloudevent-envelope`` schema. CloudEvents ingestion unwraps its
+    ``data`` field before calling this validator.
     """
     result = ValidationResult()
 
@@ -60,7 +61,7 @@ def validate_envelope(envelope: dict[str, Any], registry: SchemaRegistry) -> Val
 
     resource_id = envelope.get("resource", {}).get("id", "")
 
-    # ── Step 1: validate envelope structure against envelope.schema.json ──
+    # ── Step 1: validate the inner resource envelope structure ──
     envelope_schema = registry.get_schema("envelope")
 
     store: dict[str, dict[str, Any]] = {}
@@ -80,12 +81,14 @@ def validate_envelope(envelope: dict[str, Any], registry: SchemaRegistry) -> Val
     # ── Step 2: version gate ──
     version = envelope.get("version", "")
     if version not in SUPPORTED_VERSIONS:
-        result.add_error(VersionUnsupportedError(
-            f"DEP version '{version}' is not supported",
-            json_pointer="/version",
-            resource_id=resource_id,
-            details={"version": version, "supported": sorted(SUPPORTED_VERSIONS)},
-        ))
+        result.add_error(
+            VersionUnsupportedError(
+                f"DEP version '{version}' is not supported",
+                json_pointer="/version",
+                resource_id=resource_id,
+                details={"version": version, "supported": sorted(SUPPORTED_VERSIONS)},
+            )
+        )
 
     # ── Step 3: verify resource type exists in registry ──
     resource_type = envelope.get("resource", {}).get("type", "")
@@ -93,33 +96,39 @@ def validate_envelope(envelope: dict[str, Any], registry: SchemaRegistry) -> Val
         try:
             registry.get_schema(resource_type)
         except SchemaNotFoundError:
-            result.add_error(SchemaValidationError(
-                f"Unknown resource type: '{resource_type}'",
-                json_pointer="/resource/type",
-                resource_id=resource_id,
-                details={"resource_type": resource_type},
-            ))
+            result.add_error(
+                SchemaValidationError(
+                    f"Unknown resource type: '{resource_type}'",
+                    json_pointer="/resource/type",
+                    resource_id=resource_id,
+                    details={"resource_type": resource_type},
+                )
+            )
 
     # ── Step 4: digest verification ──
     try:
         if not _check_digest(envelope):
             declared = envelope.get("digest", {}).get("value", "")
             expected = compute_digest(envelope)
-            result.add_error(DigestMismatchError(
-                "Declared digest does not match recomputed digest",
-                json_pointer="/digest/value",
-                resource_id=resource_id,
-                details={
-                    "declared": declared,
-                    "expected": expected,
-                    "algorithm": envelope.get("digest", {}).get("algorithm", "sha256"),
-                },
-            ))
+            result.add_error(
+                DigestMismatchError(
+                    "Declared digest does not match recomputed digest",
+                    json_pointer="/digest/value",
+                    resource_id=resource_id,
+                    details={
+                        "declared": declared,
+                        "expected": expected,
+                        "algorithm": envelope.get("digest", {}).get("algorithm", "sha256"),
+                    },
+                )
+            )
     except Exception as exc:
-        result.add_error(SchemaValidationError(
-            f"Digest computation failed: {exc}",
-            resource_id=resource_id,
-        ))
+        result.add_error(
+            SchemaValidationError(
+                f"Digest computation failed: {exc}",
+                resource_id=resource_id,
+            )
+        )
 
     return result
 
@@ -134,11 +143,13 @@ def _add_jsonschema_error(
     and add it to the result.
     """
     path = "/" + "/".join(str(p) for p in e.absolute_path) if e.absolute_path else ""
-    result.add_error(SchemaValidationError(
-        message=e.message,
-        json_pointer=path,
-        resource_id=resource_id,
-    ))
+    result.add_error(
+        SchemaValidationError(
+            message=e.message,
+            json_pointer=path,
+            resource_id=resource_id,
+        )
+    )
 
 
 def _check_digest(envelope: dict[str, Any]) -> bool:

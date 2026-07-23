@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from notary_platform.dep.canonical import canonical_json, compute_digest, verify_digest
 from notary_platform.dep.errors import SchemaNotFoundError
@@ -20,6 +21,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "dep"
 
 
 # ── Schema registry tests ───────────────────────────────────────────────
+
 
 class TestSchemaRegistry:
     def test_loads_all_schemas(self) -> None:
@@ -32,7 +34,15 @@ class TestSchemaRegistry:
         registry = SchemaRegistry()
         schema = registry.get_schema("envelope")
         assert schema["title"] == "DEP Envelope"
+        assert schema["$id"] == "dep://schema/envelope"
         assert schema["type"] == "object"
+
+    def test_cloudevent_transport_schema_is_distinct(self) -> None:
+        registry = SchemaRegistry()
+        schema = registry.get_schema("cloudevent-envelope")
+        assert schema["title"] == "DEP CloudEvents Exchange Envelope"
+        assert schema["$id"] == ("https://decisionevidence.org/schemas/dep/0.1/envelope.schema.json")
+        assert {"specversion", "data"}.issubset(schema["required"])
 
     def test_get_schema_raises_for_unknown(self) -> None:
         registry = SchemaRegistry()
@@ -53,10 +63,20 @@ class TestSchemaRegistry:
         registry = SchemaRegistry()
         names = set(registry.list_schemas())
         expected = {
-            "envelope", "observation", "context-artifact", "context-binding",
-            "assessment", "finding", "link-assertion", "integrity-conflict",
-            "evidence-bundle", "proof-claim", "redaction-log",
-            "provider-registration", "resource-index",
+            "envelope",
+            "cloudevent-envelope",
+            "observation",
+            "context-artifact",
+            "context-binding",
+            "assessment",
+            "finding",
+            "link-assertion",
+            "integrity-conflict",
+            "evidence-bundle",
+            "proof-claim",
+            "redaction-log",
+            "provider-registration",
+            "resource-index",
         }
         missing = expected - names
         assert not missing, f"Missing schemas: {missing}"
@@ -67,10 +87,11 @@ class TestSchemaRegistry:
             schema = registry.get_schema(name)
             assert "$id" in schema, f"{name}: missing $id"
             assert "title" in schema, f"{name}: missing title"
-            assert "type" in schema and schema["type"] == "object", f"{name}: type != object"
+            Draft202012Validator.check_schema(schema)
 
 
 # ── Canonical JSON and digest tests ─────────────────────────────────────
+
 
 class TestCanonical:
     def test_canonical_json_sorted_keys(self) -> None:
@@ -123,6 +144,7 @@ class TestCanonical:
 
 
 # ── Validation tests ────────────────────────────────────────────────────
+
 
 class TestValidation:
     def test_valid_envelope_passes(self) -> None:
@@ -204,6 +226,7 @@ class TestValidation:
 
 # ── Fixture conformance tests ───────────────────────────────────────────
 
+
 class TestFixtureConformance:
     """Every fixture in ``tests/fixtures/dep/valid/`` must pass validation;
     every fixture in ``tests/fixtures/dep/invalid/`` must fail."""
@@ -235,12 +258,14 @@ class TestFixtureConformance:
 
 # ── CLI tests ───────────────────────────────────────────────────────────
 
+
 class TestCLI:
     def test_validate_valid_fixture(self) -> None:
         fixture = FIXTURES / "valid" / "envelope-observation.json"
         result = subprocess.run(
             [sys.executable, "-m", "notary_platform.dep.cli", "validate", str(fixture)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
 
@@ -248,7 +273,8 @@ class TestCLI:
         fixture = FIXTURES / "invalid" / "digest-mismatch.json"
         result = subprocess.run(
             [sys.executable, "-m", "notary_platform.dep.cli", "validate", str(fixture)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 1, f"Expected exit 1, got {result.returncode}"
 
@@ -256,7 +282,8 @@ class TestCLI:
         fixture = FIXTURES / "valid" / "envelope-observation.json"
         result = subprocess.run(
             [sys.executable, "-m", "notary_platform.dep.cli", "digest", str(fixture)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert result.stdout.strip().startswith("sha256:")
@@ -264,7 +291,8 @@ class TestCLI:
     def test_schema_list(self) -> None:
         result = subprocess.run(
             [sys.executable, "-m", "notary_platform.dep.cli", "schema", "list"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "envelope" in result.stdout
@@ -272,6 +300,7 @@ class TestCLI:
     def test_unknown_command(self) -> None:
         result = subprocess.run(
             [sys.executable, "-m", "notary_platform.dep.cli", "bogus"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 2
