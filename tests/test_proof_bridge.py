@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from notary_platform.dep.registry import SchemaRegistry
 from notary_platform.discovery.models import DecisionEvidenceRecord, DecisionEvidenceResource
-from notary_platform.models import ReadinessCheck, ReleaseGateResult, Scenario, ScenarioRun
+from notary_platform.models import (
+    MutationTest,
+    ReadinessCheck,
+    ReleaseGateResult,
+    ReplayRun,
+    Scenario,
+    ScenarioRun,
+)
 from notary_platform.services import IngestionService, ServiceRegistry
 from notary_platform.storage import StorageBackend, get_storage, reset_storage
 from notary_platform.sweep.bridge import ProofBridgeService
@@ -374,3 +381,170 @@ class TestProofBridgeService:
         assert lineage["candidate_id"] == "ac-1"
         assert lineage["evidence_bundle_ref"] == result["evidence_bundle_ref"]
         assert lineage["review_decision_id"]
+
+    def test_e4_recalculated_from_verified_proof_loop_not_direct_assignment(self) -> None:
+        reset_storage()
+        _, der = _setup_candidate(evidence_level="E3")
+        svc = _service()
+        result = svc.promote("ac-1", "test-org")
+        s = get_storage()
+        vr = s.get_vr(result["verification_record_id"])
+        replay = ReplayRun(
+            id="rp-e4-1",
+            org_id="test-org",
+            verification_record_id=vr.id,
+            status="completed",
+        )
+        s.create_replay_run(replay)
+        mutation = MutationTest(
+            id="mt-e4-1",
+            org_id="test-org",
+            verification_record_id=vr.id,
+            verdict="verified",
+        )
+        s.create_mutation_test(mutation)
+        recalculated = ProofBridgeService._recalculate_evidence_level(svc, "ac-1", "test-org", result["bridge_key"])
+        assert recalculated == "E4"
+        assert recalculated != "E3"
+
+    def test_e4_stays_e3_when_verification_incomplete(self) -> None:
+        reset_storage()
+        _setup_candidate(evidence_level="E3")
+        svc = _service()
+        result = svc.promote("ac-1", "test-org")
+        s = get_storage()
+        vr = s.get_vr(result["verification_record_id"])
+        replay = ReplayRun(
+            id="rp-e4-2",
+            org_id="test-org",
+            verification_record_id=vr.id,
+            status="completed",
+        )
+        s.create_replay_run(replay)
+        recalculated = ProofBridgeService._recalculate_evidence_level(svc, "ac-1", "test-org", result["bridge_key"])
+        assert recalculated == "E3"
+
+    def test_evidence_bundle_digest_verification(self) -> None:
+        reset_storage()
+        _setup_candidate()
+        result = _service().promote("ac-1", "test-org")
+        s = get_storage()
+        bundle = s._evidence[result["evidence_bundle_ref"]]
+        assert ProofBridgeService._verify_bundle_digest(bundle)
+        bundle["manifest_digest"]["value"] = "tampered"
+        assert not ProofBridgeService._verify_bundle_digest(bundle)
+
+    def test_lineage_filters_by_environment_scope(self) -> None:
+        reset_storage()
+        _setup_candidate()
+        svc = _service()
+        promoted = svc.promote("ac-1", "test-org")
+        s = get_storage()
+        s.create_scenario(
+            Scenario(
+                id="scenario-env-a",
+                org_id="test-org",
+                environment_id="env-test",
+                source_vr_id=promoted["verification_record_id"],
+                source_incident_id=promoted["incident_ref"],
+            )
+        )
+        s.create_scenario(
+            Scenario(
+                id="scenario-other-env",
+                org_id="test-org",
+                environment_id="other-env",
+                source_vr_id=promoted["verification_record_id"],
+                source_incident_id=promoted["incident_ref"],
+            )
+        )
+        lineage = svc.get_lineage("ac-1", "test-org")
+        proof = lineage["proof_loop_records"][0]
+        scenario_ids = {item["id"] for item in proof["scenarios"]}
+        assert "scenario-env-a" in scenario_ids
+        assert "scenario-other-env" not in scenario_ids
+
+    def test_full_gate_lineage_integration(self) -> None:
+        reset_storage()
+        _setup_candidate()
+        svc = _service()
+        promoted = svc.promote("ac-1", "test-org")
+        s = get_storage()
+        s.create_scenario(
+            Scenario(
+                id="scenario-full-1",
+                org_id="test-org",
+                environment_id="env-test",
+                source_vr_id=promoted["verification_record_id"],
+                source_incident_id=promoted["incident_ref"],
+            )
+        )
+        s.create_scenario(
+            Scenario(
+                id="scenario-full-2",
+                org_id="test-org",
+                environment_id="env-test",
+                source_vr_id=promoted["verification_record_id"],
+                source_incident_id=promoted["incident_ref"],
+            )
+        )
+        s.create_scenario_run(
+            ScenarioRun(
+                id="run-full-1",
+                org_id="test-org",
+                environment_id="env-test",
+                scenario_ids=["scenario-full-1", "scenario-full-2"],
+            )
+        )
+        s.create_readiness_check(
+            ReadinessCheck(
+                id="readiness-full-1",
+                org_id="test-org",
+                environment_id="env-test",
+                scenario_run_id="run-full-1",
+            )
+        )
+        s.create_release_gate_result(
+            ReleaseGateResult(
+                id="gate-full-1",
+                org_id="test-org",
+                readiness_check_id="readiness-full-1",
+                scenario_run_id="run-full-1",
+            )
+        )
+        lineage = svc.get_lineage("ac-1", "test-org")
+        assert len(lineage["proof_loop_records"]) == 1
+        proof = lineage["proof_loop_records"][0]
+        assert {item["id"] for item in proof["scenarios"]} == {"scenario-full-1", "scenario-full-2"}
+        assert [item["id"] for item in proof["scenario_runs"]] == ["run-full-1"]
+        assert [item["id"] for item in proof["readiness_checks"]] == ["readiness-full-1"]
+        assert [item["id"] for item in proof["release_gates"]] == ["gate-full-1"]
+
+    def test_authority_fails_closed_on_cross_env_delegation(self) -> None:
+        reset_storage()
+        _setup_candidate(with_review=False)
+        s = get_storage()
+        delegation = PromotionDelegation(
+            org_id="test-org",
+            environment_id="wrong-env",
+            name="cross-env",
+            rule_type="deterministic",
+            conditions={"evidence_level": "E3", "org_id": "test-org"},
+        )
+        s.create_promotion_delegation(delegation)
+        result = _service(s).check_eligibility("ac-1", "test-org")
+        assert not result["eligible"]
+        assert "PROMOTION_AUTHORITY_MISSING" in {f["code"] for f in result["failures"]}
+
+    def test_promotion_retry_idempotent_same_bridge_key(self) -> None:
+        reset_storage()
+        _setup_candidate()
+        svc = _service()
+        r1 = svc.promote("ac-1", "test-org")
+        r2 = svc.promote("ac-1", "test-org")
+        assert r1["success"]
+        assert r2["success"]
+        assert r1["bridge_key"] == r2["bridge_key"]
+        assert r1["verification_record_id"] == r2["verification_record_id"]
+        assert r1["incident_ref"] == r2["incident_ref"]
+        assert r2["is_new_record"] is False

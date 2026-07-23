@@ -59,16 +59,14 @@ def _bridge_svc() -> ProofBridgeService:
     return ProofBridgeService(storage, IngestionService(_get_registry()))
 
 
-def _principal_id(request: Request) -> str:
-    authorization = request.headers.get("authorization", "")
-    credential = (
-        authorization.removeprefix("Bearer ").strip()
-        or request.headers.get("x-api-key", "")
-        or request.query_params.get("api_key", "")
-    )
-    if not credential:
-        return "local-demo-principal"
-    return f"api-token:{hashlib.sha256(credential.encode()).hexdigest()[:16]}"
+def _auth_principal(request: Request) -> str:
+    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if token:
+        return f"api-token:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
+    api_key = request.headers.get("x-api-key", "")
+    if api_key:
+        return f"api-key:{hashlib.sha256(api_key.encode()).hexdigest()[:16]}"
+    return "authenticated-system"
 
 
 @router.get("/discovery/candidates")
@@ -104,7 +102,7 @@ def create_review(
         candidate_id=candidate_id,
         org_id=org_id,
         environment_id=candidate.environment_id,
-        actor=_principal_id(request),
+        actor=_auth_principal(request),
         role="organization_reviewer",
         decision=str(body.get("decision", "")),
         basis=str(body.get("basis", "")),
@@ -161,7 +159,7 @@ def create_delegation(
     delegation = PromotionDelegation(
         org_id=org_id,
         environment_id=str(body.get("environment_id", "")),
-        created_by=_principal_id(request),
+        created_by=_auth_principal(request),
         name=str(body.get("name", "")),
         version=str(body.get("version", "1.0.0")),
         rule_type=str(body.get("rule_type", "")),
@@ -196,7 +194,7 @@ def revoke_delegation(
     if delegation is None:
         raise HTTPException(status_code=404, detail="promotion delegation not found")
     delegation.active = False
-    delegation.revoked_by = _principal_id(request)
+    delegation.revoked_by = _auth_principal(request)
     delegation.revoked_at = datetime.now(timezone.utc).isoformat()
     return storage.create_promotion_delegation(delegation).to_dict()
 

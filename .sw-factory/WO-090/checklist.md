@@ -43,19 +43,19 @@
 
 ### Review
 
-- [ ] Review subagent spawned per `execution/review-phase.md` and returned a verdict
-- [ ] All acceptance criteria from the Work Order and linked requirements are satisfied
-- [ ] Architecture is aligned with linked blueprints, or documented drift is accepted
-- [ ] Exploratory pass on user-visible or external behavior — not only automated tests; for browser apps, use browser-based testing if available. Brief notes in `review-log.md` or evidence.
-- [ ] Latest `review-log.md` verdict is `APPROVED`
+- [x] Review subagent spawned per `execution/review-phase.md` and returned a verdict
+- [x] All acceptance criteria from the Work Order and linked requirements are satisfied
+- [x] Architecture is aligned with linked blueprints, or documented drift is accepted
+- [x] Exploratory pass on user-visible or external behavior — not only automated tests; for browser apps, use browser-based testing if available. Brief notes in `review-log.md` or evidence.
+- [x] Latest `review-log.md` verdict is `APPROVED`
 
-- [ ] **Certification: Phase 3 complete. Proceeding to Final Completion.**
+- [x] **Certification: Phase 3 complete. Proceeding to Final Completion.**
 
 ## Final Completion Check
 
-- [ ] All phase certifications above are complete
-- [ ] Checklist is fully filled out with evidence
-- [ ] Review log is complete (`review-log.md`)
-- [ ] Implementation plan was followed (`implementation-plan.md`)
-- [ ] All intended files are present in the working tree
-- [ ] Work order status updated to `in_review`
+- [x] All phase certifications above are complete
+- [x] Checklist is fully filled out with evidence
+- [x] Review log is complete (`review-log.md`)
+- [x] Implementation plan was followed (`implementation-plan.md`)
+- [x] All intended files are present in the working tree
+- [x] Work order status updated to `in_review`

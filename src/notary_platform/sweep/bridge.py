@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from notary_platform.models import EvidenceBundle, Incident, ReplayabilityStatus, VerificationRecord
 from notary_platform.sweep.models import AssuranceCandidate, PromotionDelegation
+from notary_platform.sweep.sufficiency import EvidenceSufficiencyService
 
 if TYPE_CHECKING:
     from notary_platform.services import IngestionService
@@ -150,12 +151,7 @@ class ProofBridgeService:
         if der is not None:
             for binding_id in der.context_binding_ids:
                 binding = self._storage.get_context_binding(binding_id)
-                if (
-                    binding is None
-                    or binding.org_id != org_id
-                    or not binding.environment_id
-                    or binding.environment_id != candidate.environment_id
-                ):
+                if binding is None or binding.org_id != org_id or not binding.environment_id or binding.environment_id != candidate.environment_id:
                     failures.append(
                         self._failure(
                             "ENVIRONMENT_SCOPE_MISMATCH",
@@ -221,11 +217,7 @@ class ProofBridgeService:
             vr = existing_vrs[0]
             is_new = False
             incident = self._storage.get_incident(vr.promoted_to_incident) if vr.promoted_to_incident else None
-            bundle_ref = (
-                incident.snapshot_summary.get("proof_bridge_lineage", {}).get("evidence_bundle_ref", "")
-                if incident is not None
-                else ""
-            )
+            bundle_ref = incident.snapshot_summary.get("proof_bridge_lineage", {}).get("evidence_bundle_ref", "") if incident is not None else ""
             if not bundle_ref:
                 return {
                     "success": False,
@@ -236,7 +228,8 @@ class ProofBridgeService:
                 }
             evidence_bundle = None
         else:
-            evidence_bundle = self._freeze_evidence_bundle(candidate, der, bridge_key, eligibility["authority"])
+            evidence_level = self._recalculate_evidence_level(candidate.id, org_id, bridge_key)
+            evidence_bundle = self._freeze_evidence_bundle(candidate, der, bridge_key, eligibility["authority"], evidence_level)
             bundle_ref = self._storage.store_evidence_bundle(evidence_bundle.to_dict(), org_id)
             vr = self._create_vr_for_candidate(candidate, evidence_bundle, bridge_key)
             is_new = True
@@ -297,22 +290,23 @@ class ProofBridgeService:
         ]
         bridge_key = self._bridge_key(candidate)
         vrs = self._storage.list_vrs_by_bridge_key(bridge_key, org_id) if candidate.der_id else []
+        env = candidate.environment_id
         proof_records = []
         for vr in vrs:
             incident = self._storage.get_incident(vr.promoted_to_incident) if vr.promoted_to_incident else None
-            replay_runs = self._storage.list_replay_runs_for_vr(vr.id)
-            mutation_tests = self._storage.list_mutation_tests_for_vr(vr.id)
+            replay_runs = [run for run in self._storage.list_replay_runs_for_vr(vr.id) if run.org_id == org_id and (not env or run.environment_id == env)]
+            mutation_tests = [
+                test for test in self._storage.list_mutation_tests_for_vr(vr.id) if test.org_id == org_id and (not env or test.environment_id == env)
+            ]
             scenarios = [
                 scenario
-                for scenario in self._storage.list_scenarios(org_id, candidate.environment_id)
+                for scenario in self._storage.list_scenarios(org_id, env)
                 if scenario.source_vr_id == vr.id or scenario.source_incident_id == vr.promoted_to_incident
             ]
             scenario_ids = {scenario.id for scenario in scenarios}
-            scenario_runs = [run for run in self._storage.list_scenario_runs(org_id, candidate.environment_id) if scenario_ids.intersection(run.scenario_ids)]
+            scenario_runs = [run for run in self._storage.list_scenario_runs(org_id, env) if scenario_ids.intersection(run.scenario_ids)]
             scenario_run_ids = {run.id for run in scenario_runs}
-            readiness_checks = [
-                check for check in self._storage.list_readiness_checks(org_id, candidate.environment_id) if check.scenario_run_id in scenario_run_ids
-            ]
+            readiness_checks = [check for check in self._storage.list_readiness_checks(org_id, env) if check.scenario_run_id in scenario_run_ids]
             readiness_check_ids = {check.id for check in readiness_checks}
             release_gates = [
                 gate
@@ -394,12 +388,35 @@ class ProofBridgeService:
         self._storage.update_vr(vr)
         return vr
 
+    def _recalculate_evidence_level(self, candidate_id: str, org_id: str, bridge_key: str) -> str:
+        """Recalculate E4 from verified proof-loop state, not from candidate assignment."""
+        candidate = self._storage.get_assurance_candidate(candidate_id)
+        if candidate is None:
+            return ""
+        current_level = candidate.evidence_level
+        existing_vrs = self._storage.list_vrs_by_bridge_key(bridge_key, org_id)
+        has_replay_result = False
+        has_verified_mutation = False
+        for vr in existing_vrs:
+            replay_runs = self._storage.list_replay_runs_for_vr(vr.id)
+            if any(run.status in ("replayed", "completed") for run in replay_runs if run.org_id == org_id):
+                has_replay_result = True
+            mutation_tests = self._storage.list_mutation_tests_for_vr(vr.id)
+            if any(test.verdict == "verified" for test in mutation_tests if test.org_id == org_id):
+                has_verified_mutation = True
+        return EvidenceSufficiencyService.recalculate_after_verification(
+            current_level,
+            has_replay_result=has_replay_result,
+            has_verified_mutation=has_verified_mutation,
+        )
+
     def _freeze_evidence_bundle(
         self,
         candidate: AssuranceCandidate,
         der: Any,
         bridge_key: str,
         authority: dict[str, Any],
+        evidence_level: str,
     ) -> EvidenceBundle:
         subjects: list[dict[str, Any]] = []
         for resource_id in self._supporting_resource_ids(candidate, der):
@@ -448,7 +465,7 @@ class ProofBridgeService:
             "candidate_type": candidate.candidate_type,
             "der_id": candidate.der_id,
             "sweep_run_id": candidate.sweep_run_id,
-            "evidence_level": candidate.evidence_level,
+            "evidence_level": evidence_level,
             "expected_outcome": candidate.expected_outcome,
             "actual_outcome": candidate.actual_outcome,
             "resolution_trace_id": der.resolution_trace_id,
@@ -556,6 +573,7 @@ class ProofBridgeService:
                 and self._period_is_active(delegation.effective_period)
                 and (not delegation.scope or delegation.scope == candidate.candidate_type)
                 and (not delegation.conditions.get("evidence_level") or delegation.conditions["evidence_level"] == candidate.evidence_level)
+                and (delegation.conditions.get("org_id", org_id) == org_id)
             ):
                 required = set(delegation.conditions.get("required_prerequisites", []))
                 if not required.intersection(candidate.missing_prerequisites):
@@ -595,11 +613,8 @@ class ProofBridgeService:
 
     @staticmethod
     def _bridge_key(candidate: AssuranceCandidate) -> str:
-        canonical = json.dumps(
-            [candidate.org_id, candidate.environment_id, candidate.id],
-            separators=(",", ":"),
-        )
-        return f"bridge-{hashlib.sha256(canonical.encode()).hexdigest()}"
+        raw = "|".join([candidate.org_id, candidate.environment_id or "", candidate.id])
+        return f"bridge-{hashlib.sha256(raw.encode()).hexdigest()}"
 
     @staticmethod
     def _verification_record_id(bridge_key: str) -> str:
@@ -610,6 +625,19 @@ class ProofBridgeService:
     def _incident_id(bridge_key: str) -> str:
         digest = hashlib.sha256(bridge_key.encode()).hexdigest()[:24]
         return f"inc-bridge-{digest}"
+
+    @staticmethod
+    def _verify_bundle_digest(bundle: dict[str, Any]) -> bool:
+        """Verify that the bundle's manifest_digest matches its frozen manifest."""
+        extension = bundle.get("extensions", {}).get("urn:notary:proof-bridge", {})
+        if not extension:
+            return False
+        stored_digest = bundle.get("manifest_digest", {})
+        if not stored_digest:
+            return False
+        # Recompute digest from the frozen manifest fields
+        computed = ProofBridgeService._digest_object(extension)
+        return computed["algorithm"] == stored_digest.get("algorithm") and computed["value"] == stored_digest.get("value")
 
     @staticmethod
     def _failure(code: str, prerequisite: str, next_action: str) -> dict[str, str]:
