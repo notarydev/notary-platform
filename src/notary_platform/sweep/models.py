@@ -321,3 +321,229 @@ class Evaluator(Protocol):
         context: Any,  # ResolvedContext
         parameters: dict[str, Any],
     ) -> AssessmentRecord: ...
+
+
+# ── WP-080: Assurance Candidate ──
+
+
+@dataclass
+class AssuranceCandidate:
+    id: str = ""
+    org_id: str = ""
+    environment_id: str = ""
+    der_id: str = ""
+    sweep_run_id: str = ""
+    candidate_type: str = ""  # missing_evidence, expected_outcome_mismatch, replayability_failure
+    assessment_ids: list[str] = field(default_factory=list)
+    supporting_resource_ids: list[str] = field(default_factory=list)
+    context_binding_ids: list[str] = field(default_factory=list)
+    resolution_trace_id: str = ""
+    missing_prerequisites: list[str] = field(default_factory=list)
+    evidence_level: str = ""  # E0, E1, E2, E3, E4
+    severity: str = "medium"  # info, low, medium, high, critical
+    lifecycle_state: str = "needs_context"  # needs_context, reviewable, approved_incident, dismissed, accepted_risk, suppressed, instrument_next
+    business_summary: str = ""
+    actual_outcome: str = ""
+    expected_outcome: str = ""
+    priority_basis: str = ""
+    impact_hypothesis: str = ""
+    cluster_ref: str = ""
+    created_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            object.__setattr__(self, "id", f"ac-{uuid.uuid4().hex[:12]}")
+        if not self.created_at:
+            self.created_at = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "environment_id": self.environment_id,
+            "der_id": self.der_id,
+            "sweep_run_id": self.sweep_run_id,
+            "candidate_type": self.candidate_type,
+            "assessment_ids": list(self.assessment_ids),
+            "supporting_resource_ids": list(self.supporting_resource_ids),
+            "context_binding_ids": list(self.context_binding_ids),
+            "resolution_trace_id": self.resolution_trace_id,
+            "missing_prerequisites": list(self.missing_prerequisites),
+            "evidence_level": self.evidence_level,
+            "severity": self.severity,
+            "lifecycle_state": self.lifecycle_state,
+            "business_summary": self.business_summary,
+            "actual_outcome": self.actual_outcome,
+            "expected_outcome": self.expected_outcome,
+            "priority_basis": self.priority_basis,
+            "impact_hypothesis": self.impact_hypothesis,
+            "cluster_ref": self.cluster_ref,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> AssuranceCandidate:
+        return cls(
+            id=d.get("id", f"ac-{uuid.uuid4().hex[:12]}"),
+            org_id=d.get("org_id", ""),
+            environment_id=d.get("environment_id", ""),
+            der_id=d.get("der_id", ""),
+            sweep_run_id=d.get("sweep_run_id", ""),
+            candidate_type=d.get("candidate_type", ""),
+            assessment_ids=list(d.get("assessment_ids", [])),
+            supporting_resource_ids=list(d.get("supporting_resource_ids", [])),
+            context_binding_ids=list(d.get("context_binding_ids", [])),
+            resolution_trace_id=d.get("resolution_trace_id", ""),
+            missing_prerequisites=list(d.get("missing_prerequisites", [])),
+            evidence_level=d.get("evidence_level", ""),
+            severity=d.get("severity", "medium"),
+            lifecycle_state=d.get("lifecycle_state", "needs_context"),
+            business_summary=d.get("business_summary", ""),
+            actual_outcome=d.get("actual_outcome", ""),
+            expected_outcome=d.get("expected_outcome", ""),
+            priority_basis=d.get("priority_basis", ""),
+            impact_hypothesis=d.get("impact_hypothesis", ""),
+            cluster_ref=d.get("cluster_ref", ""),
+            created_at=d.get("created_at", ""),
+        )
+
+
+@dataclass
+class ReviewDecision:
+    id: str = ""
+    candidate_id: str = ""
+    org_id: str = ""
+    actor: str = ""
+    role: str = ""
+    decision: str = ""  # approve_incident, dismiss, request_context, accept_risk, suppress, instrument_next, supersede
+    basis: str = ""
+    scope: str = ""
+    effective_period: str = ""
+    superseded_decision_id: str = ""
+    created_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            object.__setattr__(self, "id", f"rd-{uuid.uuid4().hex[:12]}")
+        if not self.created_at:
+            self.created_at = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "candidate_id": self.candidate_id,
+            "org_id": self.org_id,
+            "actor": self.actor,
+            "role": self.role,
+            "decision": self.decision,
+            "basis": self.basis,
+            "scope": self.scope,
+            "effective_period": self.effective_period,
+            "superseded_decision_id": self.superseded_decision_id,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ReviewDecision:
+        return cls(
+            id=d.get("id", f"rd-{uuid.uuid4().hex[:12]}"),
+            candidate_id=d.get("candidate_id", ""),
+            org_id=d.get("org_id", ""),
+            actor=d.get("actor", ""),
+            role=d.get("role", ""),
+            decision=d.get("decision", ""),
+            basis=d.get("basis", ""),
+            scope=d.get("scope", ""),
+            effective_period=d.get("effective_period", ""),
+            superseded_decision_id=d.get("superseded_decision_id", ""),
+            created_at=d.get("created_at", ""),
+        )
+
+
+@dataclass
+class SuppressionRule:
+    id: str = ""
+    org_id: str = ""
+    scope: str = ""  # der_id, evaluator_id, candidate_type, source_id
+    scope_value: str = ""
+    reason: str = ""
+    created_by: str = ""
+    active: bool = True
+    created_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            object.__setattr__(self, "id", f"sr-{uuid.uuid4().hex[:12]}")
+        if not self.created_at:
+            self.created_at = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "scope": self.scope,
+            "scope_value": self.scope_value,
+            "reason": self.reason,
+            "created_by": self.created_by,
+            "active": self.active,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> SuppressionRule:
+        return cls(
+            id=d.get("id", f"sr-{uuid.uuid4().hex[:12]}"),
+            org_id=d.get("org_id", ""),
+            scope=d.get("scope", ""),
+            scope_value=d.get("scope_value", ""),
+            reason=d.get("reason", ""),
+            created_by=d.get("created_by", ""),
+            active=d.get("active", True),
+            created_at=d.get("created_at", ""),
+        )
+
+
+@dataclass
+class PromotionDelegation:
+    id: str = ""
+    org_id: str = ""
+    name: str = ""
+    version: str = "1.0.0"
+    rule_type: str = ""  # deterministic, probabilistic
+    conditions: dict[str, Any] = field(default_factory=dict)
+    scope: str = ""
+    active: bool = True
+    created_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            object.__setattr__(self, "id", f"pd-{uuid.uuid4().hex[:12]}")
+        if not self.created_at:
+            self.created_at = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "name": self.name,
+            "version": self.version,
+            "rule_type": self.rule_type,
+            "conditions": dict(self.conditions),
+            "scope": self.scope,
+            "active": self.active,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> PromotionDelegation:
+        return cls(
+            id=d.get("id", f"pd-{uuid.uuid4().hex[:12]}"),
+            org_id=d.get("org_id", ""),
+            name=d.get("name", ""),
+            version=d.get("version", "1.0.0"),
+            rule_type=d.get("rule_type", ""),
+            conditions=d.get("conditions", {}),
+            scope=d.get("scope", ""),
+            active=d.get("active", True),
+            created_at=d.get("created_at", ""),
+        )

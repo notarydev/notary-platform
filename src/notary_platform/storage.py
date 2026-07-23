@@ -66,7 +66,11 @@ from notary_platform.models import (
 from notary_platform.sweep.jobs import SweepJob
 from notary_platform.sweep.models import (
     AssessmentRecord,
+    AssuranceCandidate,
     EvaluatorContractRecord,
+    PromotionDelegation,
+    ReviewDecision,
+    SuppressionRule,
     SweepDefinition,
     SweepRun,
 )
@@ -610,6 +614,44 @@ class StorageBackend(abc.ABC):
     @abc.abstractmethod
     def list_assessments(self, run_id: str) -> list[AssessmentRecord]: ...
 
+    # ── WP-080: Assurance Candidates ──
+
+    @abc.abstractmethod
+    def create_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate: ...
+
+    @abc.abstractmethod
+    def get_assurance_candidate(self, candidate_id: str) -> AssuranceCandidate | None: ...
+
+    @abc.abstractmethod
+    def list_assurance_candidates(self, org_id: str) -> list[AssuranceCandidate]: ...
+
+    @abc.abstractmethod
+    def update_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate: ...
+
+    # ── WP-080: Review Decisions ──
+
+    @abc.abstractmethod
+    def create_review_decision(self, decision: ReviewDecision) -> ReviewDecision: ...
+
+    @abc.abstractmethod
+    def list_review_decisions(self, candidate_id: str) -> list[ReviewDecision]: ...
+
+    # ── WP-080: Suppression Rules ──
+
+    @abc.abstractmethod
+    def create_suppression_rule(self, rule: SuppressionRule) -> SuppressionRule: ...
+
+    @abc.abstractmethod
+    def list_suppression_rules(self, org_id: str) -> list[SuppressionRule]: ...
+
+    # ── WP-080: Promotion Delegations ──
+
+    @abc.abstractmethod
+    def create_promotion_delegation(self, delegation: PromotionDelegation) -> PromotionDelegation: ...
+
+    @abc.abstractmethod
+    def list_promotion_delegations(self, org_id: str) -> list[PromotionDelegation]: ...
+
 
 class MemoryStorage(StorageBackend):
     """In-memory repository for incidents and certificates (local/dev)."""
@@ -675,6 +717,11 @@ class MemoryStorage(StorageBackend):
         self._sweep_runs: dict[str, SweepRun] = {}
         self._sweep_jobs: dict[str, SweepJob] = {}
         self._assessments: dict[str, AssessmentRecord] = {}
+        # WP-080: Assurance Candidates
+        self._assurance_candidates: dict[str, AssuranceCandidate] = {}
+        self._review_decisions: dict[str, ReviewDecision] = {}
+        self._suppression_rules: dict[str, SuppressionRule] = {}
+        self._promotion_delegations: dict[str, PromotionDelegation] = {}
 
     def reset(self) -> None:
         """Clear local/dev state for repeatable demos and tests."""
@@ -1326,6 +1373,52 @@ class MemoryStorage(StorageBackend):
 
     def list_assessments(self, run_id: str) -> list[AssessmentRecord]:
         return [a for a in self._assessments.values() if a.run_id == run_id]
+
+    # ── WP-080: Assurance Candidates ──
+
+    def create_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate:
+        self._assurance_candidates[candidate.id] = candidate
+        return candidate
+
+    def get_assurance_candidate(self, candidate_id: str) -> AssuranceCandidate | None:
+        return self._assurance_candidates.get(candidate_id)
+
+    def list_assurance_candidates(self, org_id: str) -> list[AssuranceCandidate]:
+        return [c for c in self._assurance_candidates.values() if c.org_id == org_id]
+
+    def update_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate:
+        self._assurance_candidates[candidate.id] = candidate
+        return candidate
+
+    # ── WP-080: Review Decisions ──
+
+    def create_review_decision(self, decision: ReviewDecision) -> ReviewDecision:
+        self._review_decisions[decision.id] = decision
+        return decision
+
+    def list_review_decisions(self, candidate_id: str) -> list[ReviewDecision]:
+        return sorted(
+            [d for d in self._review_decisions.values() if d.candidate_id == candidate_id],
+            key=lambda d: d.created_at,
+        )
+
+    # ── WP-080: Suppression Rules ──
+
+    def create_suppression_rule(self, rule: SuppressionRule) -> SuppressionRule:
+        self._suppression_rules[rule.id] = rule
+        return rule
+
+    def list_suppression_rules(self, org_id: str) -> list[SuppressionRule]:
+        return [r for r in self._suppression_rules.values() if r.org_id == org_id and r.active]
+
+    # ── WP-080: Promotion Delegations ──
+
+    def create_promotion_delegation(self, delegation: PromotionDelegation) -> PromotionDelegation:
+        self._promotion_delegations[delegation.id] = delegation
+        return delegation
+
+    def list_promotion_delegations(self, org_id: str) -> list[PromotionDelegation]:
+        return [d for d in self._promotion_delegations.values() if d.org_id == org_id and d.active]
 
 
 class SharedDemoFileStorage(MemoryStorage):
@@ -2435,6 +2528,59 @@ class PostgresS3Storage(StorageBackend):
                 {"rid": run_id},
             ).mappings().all()
         return [AssessmentRecord.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-080: Assurance Candidates ──
+
+    def create_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate:
+        return self._write_wo28("assurance_candidate", candidate)
+
+    def get_assurance_candidate(self, candidate_id: str) -> AssuranceCandidate | None:
+        return self._get_wo28("assurance_candidate", candidate_id, AssuranceCandidate)
+
+    def list_assurance_candidates(self, org_id: str) -> list[AssuranceCandidate]:
+        return self._list_wo28("assurance_candidate", org_id, "", AssuranceCandidate)
+
+    def update_assurance_candidate(self, candidate: AssuranceCandidate) -> AssuranceCandidate:
+        return self._write_wo28("assurance_candidate", candidate)
+
+    # ── WP-080: Review Decisions ──
+
+    def create_review_decision(self, decision: ReviewDecision) -> ReviewDecision:
+        return self._write_wo28("review_decision", decision)
+
+    def list_review_decisions(self, candidate_id: str) -> list[ReviewDecision]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'review_decision' AND data->>'candidate_id' = %(cid)s ORDER BY data->>'created_at'",
+                {"cid": candidate_id},
+            ).mappings().all()
+        return [ReviewDecision.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-080: Suppression Rules ──
+
+    def create_suppression_rule(self, rule: SuppressionRule) -> SuppressionRule:
+        return self._write_wo28("suppression_rule", rule)
+
+    def list_suppression_rules(self, org_id: str) -> list[SuppressionRule]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'suppression_rule' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
+                {"org": org_id},
+            ).mappings().all()
+        return [SuppressionRule.from_dict(dict(r["data"])) for r in rows]
+
+    # ── WP-080: Promotion Delegations ──
+
+    def create_promotion_delegation(self, delegation: PromotionDelegation) -> PromotionDelegation:
+        return self._write_wo28("promotion_delegation", delegation)
+
+    def list_promotion_delegations(self, org_id: str) -> list[PromotionDelegation]:
+        with self._engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT data FROM wo28_objects WHERE kind = 'promotion_delegation' AND data->>'org_id' = %(org)s AND data->>'active' = 'true'",
+                {"org": org_id},
+            ).mappings().all()
+        return [PromotionDelegation.from_dict(dict(r["data"])) for r in rows]
 
 
 _storage_instance: StorageBackend | None = None
