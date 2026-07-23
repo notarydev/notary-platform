@@ -1230,15 +1230,15 @@ Update this table only after implementation, automated verification, and applica
 
 | Work package | Status | Dependency | Completion evidence |
 | --- | --- | --- | --- |
-| WP-000 Baseline and guardrails | Not started | None | Test and lint report plus golden-path test |
-| WP-010 Production persistence | Not started | WP-000 | Remote storage contract and restart tests |
-| WP-020 DEP conformance runtime | Not started | WP-000 | Valid/invalid fixtures and validator command |
-| WP-030 DEP ingress | Not started | WP-010, WP-020 | Ingress API and idempotency/integrity tests |
-| WP-040 Source profiling/mapping | Not started | WP-010, WP-030 | Profile/mapping APIs and setup UI flow |
-| WP-050 Identity/context | Not started | WP-030, WP-040 | Resolver golden fixtures and trace API |
-| WP-060 Sweep runtime | Not started | WP-010, WP-050 | Durable run and reproducibility tests |
-| WP-070 Evaluator MVP/sufficiency | Not started | WP-050, WP-060 | Three evaluator suites and E0-E4 tests |
-| WP-080 Candidates/review | Not started | WP-070 | Candidate lifecycle and authority tests |
+| WP-000 Baseline and guardrails | Complete | None | 430-pass test suite, ruff/mypy clean, golden-path test |
+| WP-010 Production persistence | Complete | WP-000 | Remote storage contract and restart tests pass |
+| WP-020 DEP conformance runtime | Complete | WP-000 | Valid/invalid fixtures and validator command pass |
+| WP-030 DEP ingress | Complete | WP-010, WP-020 | Ingress API, idempotency/integrity tests |
+| WP-040 Source profiling/mapping | Complete | WP-010, WP-030 | Profile/mapping APIs, source profiling tests |
+| WP-050 Identity/context | Complete | WP-030, WP-040 | DecisionIdentityResolver, TemporalContextResolver, DER, ResolutionTrace, tests |
+| WP-060 Sweep runtime | Complete | WP-010, WP-050 | SweepPlanner, Runner, Registry, durable jobs, reproducibility tests |
+| WP-070 Evaluator MVP/sufficiency | Complete | WP-050, WP-060 | missing_evidence, expected_outcome, replayability evaluators, E0-E4 sufficiency |
+| WP-080 Candidates/review | Complete | WP-070 | CandidateAssembler, ReviewService, suppression/delegation, API router, tests |
 | WP-090 Proof Bridge | Not started | WP-080 | Full candidate-to-proof-loop integration test |
 | WP-100 Platform UX | Not started | WP-040, WP-060, WP-080, WP-090 | Playwright desktop/mobile proof-loop flow |
 | WP-110 Evaluator depth | Not started | WP-070, WP-080 | Six evaluator types and sandbox tests |
