@@ -62,6 +62,7 @@ def get_provider(
 @router.get("/discovery/landscape")
 def get_landscape(
     org_id: str = Depends(require_auth),
+    environment_id: str = "",
 ) -> dict[str, Any]:
     ders = storage.list_decision_evidence_records(org_id)
     resources = storage.list_resources(org_id)
@@ -73,6 +74,18 @@ def get_landscape(
     candidates = storage.list_assurance_candidates(org_id)
     conflicts = storage.list_context_conflicts(org_id)
     suggestions = storage.list_advisory_suggestions(org_id)
+
+    if environment_id:
+        der_env_ids = {d.id for d in ders if d.environment_id == environment_id}
+        ders = [d for d in ders if d.environment_id == environment_id]
+        resources = [r for r in resources if r.environment_id == environment_id]
+        context_bindings = [cb for cb in context_bindings if cb.environment_id == environment_id]
+        sweep_runs = [sr for sr in sweep_runs if sr.environment_id == environment_id]
+        candidates = [c for c in candidates if c.environment_id == environment_id]
+        conflicts = [dc for dc in conflicts if dc.der_id in der_env_ids]
+        env_resource_ids = {r.resource_id for r in resources}
+        link_assertions = [la for la in link_assertions if la.source_resource_id in env_resource_ids and la.target_resource_id in env_resource_ids]
+    # source_connections, evaluators, suggestions are org-wide (no environment_id)
 
     resource_ids = {r.resource_id for r in resources}
     connected_sources = [
@@ -150,18 +163,22 @@ def get_landscape(
             der_identity_counter[der.decision_identity] += 1
     uncovered_resource_ids = resource_ids - used_resource_ids_in_ders
     for rid in sorted(uncovered_resource_ids):
-        evidence_gaps.append({
-            "resource_id": rid,
-            "gap_type": "not_covered_by_any_der",
-        })
+        evidence_gaps.append(
+            {
+                "resource_id": rid,
+                "gap_type": "not_covered_by_any_der",
+            }
+        )
     for dc in sorted(conflicts, key=lambda x: x.created_at):
-        evidence_gaps.append({
-            "resource_id": dc.resource_id if hasattr(dc, "resource_id") else "",
-            "gap_type": "context_conflict",
-            "conflict_id": dc.id,
-            "field_or_binding": dc.field_or_binding,
-            "resolution": dc.resolution,
-        })
+        evidence_gaps.append(
+            {
+                "resource_id": dc.resource_id if hasattr(dc, "resource_id") else "",
+                "gap_type": "context_conflict",
+                "conflict_id": dc.id,
+                "field_or_binding": dc.field_or_binding,
+                "resolution": dc.resolution,
+            }
+        )
 
     active_candidates = [c for c in candidates if c.lifecycle_state in ("needs_context", "reviewable")]
     sweep_summary = {

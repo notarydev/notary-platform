@@ -102,3 +102,26 @@ WP-100 Decision Landscape UX — complete graph-first Decision Landscape SPA bui
 
 ### Independent Review Status
 Independent final review against actual PR diff is still pending approval.
+
+## Review Log Entry: 2026-07-23 — Environment-Scoping Fix (Review Defect)
+
+**Reviewer:** Implementation Agent
+**Status:** IN_PROGRESS (ready for re-review)
+
+### Defect
+The `GET /v1/discovery/landscape` endpoint returned `environment_id` as metadata in every section but did **not** filter by it — all data was org-wide, which violates tenant/environment isolation.
+
+### Fix
+- Added `environment_id: str = ""` query parameter to `get_landscape()` in `src/notary_platform/api_server/routers/discovery.py`
+- When provided, filters all environment-scoped entities (DERs, resources, context bindings, sweep runs, assurance candidates, context conflicts) before computing summary counts, derived sections, corrections, and next actions
+- Entities without `environment_id` (source connections, link assertions, evaluator contracts, advisory suggestions) remain org-wide — they represent shared infrastructure, not environment-specific data
+- Frontend (`static/app/app.js`) already sends `?environment_id=<value>` via its `apiGet` helper — no frontend change needed
+
+### Changed Files
+- `src/notary_platform/api_server/routers/discovery.py` (+10 lines)
+- `tests/test_landscape_api.py` (+120 lines)
+
+### Verification Results
+- All 483 non-browser tests passed (was 480 before)
+- 3 new environment-scoping tests added and pass
+- Pre-existing browser test failure (`reports.find is not a function`) is unrelated to this change
