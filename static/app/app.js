@@ -262,6 +262,8 @@ async function R() {
       renderSetup(c);
     } else if (S.view === "discovery") {
       await renderDiscovery(c);
+    } else if (S.view === "landscape") {
+      await renderDecisionLandscape(c);
     } else if (S.view === "verification-records") {
       const vrs = await apiGet("/v1/verification-records");
       renderVRs(c, vrs);
@@ -335,6 +337,7 @@ async function R() {
     integrations: "Integrations",
     setup: "Setup",
     discovery: "Decision Discovery",
+    landscape: "Decision Landscape",
     "verification-records": "Verification Records",
     "vr-detail": "Verification Record Detail",
     incidents: "Incidents",
@@ -1454,7 +1457,284 @@ async function commitDiscoverySelection() {
   } catch (e) { notify("Discovery commit failed: " + e.message, "error"); }
 }
 
+// --- WP-100: Decision Landscape ---
 
+async function renderDecisionLandscape(c) {
+  const data = await apiGet("/v1/discovery/landscape");
+  const families = data.decision_families || [];
+  const sources = data.sources || [];
+  const evaluators = data.evaluators || [];
+  const candidates = data.candidates || [];
+  const contextCoverage = data.context_coverage || [];
+  const relationships = data.relationships || [];
+  const gaps = data.evidence_gaps || [];
+  const sweepSummary = data.sweep_summary || {};
+  const nextActions = data.next_actions || [];
+  const corrections = data.required_corrections || [];
+  const enrichment = data.optional_enrichment || [];
+  const signals = data.advisory_signals || [];
+
+  const totalDERs = families.length;
+  const totalSources = sources.length;
+  const totalEvaluators = evaluators.length;
+  const reviewableCount = candidates.filter(function(c) { return c.lifecycle_state === "reviewable"; }).length;
+  const activeRuns = sweepSummary.active_runs || 0;
+
+  var html = '';
+
+  // ── Overview chips ──
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px">';
+  html += chip(totalDERs, "Decision " + (totalDERs === 1 ? "Family" : "Families"), "--accent", "landscape?tab=families");
+  html += chip(totalSources, "Source" + (totalSources === 1 ? "" : "s"), "--green", "landscape?tab=sources");
+  html += chip(totalEvaluators, "Evaluator" + (totalEvaluators === 1 ? "" : "s"), "--blue", "landscape?tab=evaluators");
+  html += chip(reviewableCount, "Reviewable", reviewableCount > 0 ? "--amber" : "--green", "landscape?tab=candidates");
+  html += chip(activeRuns, "Active Run" + (activeRuns === 1 ? "" : "s"), activeRuns > 0 ? "--accent" : "--dim", "landscape?tab=sweep");
+  html += '</div>';
+
+  // ── Next actions banner ──
+  if (nextActions.length) {
+    html += renderSection("Next Actions", '<div class="action-row" style="flex-wrap:wrap">' + nextActions.map(function(a) {
+      return '<button class="btn btn-sm" onclick="nav(\'' + (a.action === "connect_source" ? "setup" : a.action === "review_candidates" ? "landscape?tab=candidates" : "setup") + '\')">' + esc(a.label) + '</button>';
+    }).join("") + '</div>');
+  }
+
+  // ── Corrections / enrichment alerts ──
+  if (corrections.length) {
+    html += '<div class="proof-pending" style="margin-bottom:12px"><strong>Required corrections:</strong> ' + esc(corrections.join(", ")) + '</div>';
+  }
+  if (enrichment.length) {
+    html += '<div class="proof-pending" style="background:var(--amber-bg);border-color:var(--amber);margin-bottom:12px"><strong>Optional enrichment:</strong> ' + esc(enrichment.join(", ")) + '</div>';
+  }
+
+  // ── Sweep summary ──
+  if (sweepSummary.total_runs > 0) {
+    html += renderSection("Sweep Summary",
+      '<div class="discovery-metrics">' +
+      '<span><strong>' + sweepSummary.total_runs + '</strong> total runs</span>' +
+      '<span><strong>' + (sweepSummary.completed_runs || 0) + '</strong> completed</span>' +
+      '<span><strong>' + (sweepSummary.failed_runs || 0) + '</strong> failed</span>' +
+      '<span><strong>' + (sweepSummary.total_candidates || 0) + '</strong> candidates</span>' +
+      '<span><strong>' + (sweepSummary.active_candidates || 0) + '</strong> active</span>' +
+      '</div>');
+  }
+
+  // ── Tab navigation for detail sections ──
+  var activeTab = S.viewParams.tab || "families";
+  html += '<div class="filter-pills" style="margin-bottom:16px">';
+  var tabs = [
+    {key:"families", label:"Decision Families"},
+    {key:"sources", label:"Sources"},
+    {key:"candidates", label:"Assurance Candidates"},
+    {key:"evaluators", label:"Evaluators"},
+    {key:"context", label:"Context"},
+    {key:"relationships", label:"Relationships"},
+    {key:"gaps", label:"Evidence Gaps"},
+    {key:"signals", label:"Signals"},
+    {key:"sweep", label:"Sweep History"},
+  ];
+  tabs.forEach(function(t) {
+    var active = t.key === activeTab ? ' active' : '';
+    html += '<button class="filter-pill' + active + '" onclick="nav(\'landscape?tab=' + t.key + '\')">' + esc(t.label) + '</button>';
+  });
+  html += '</div>';
+
+  // ── Tab content ──
+  html += '<div style="margin-top:8px">';
+  if (activeTab === "families") {
+    html += renderLandscapeFamilies(families);
+  } else if (activeTab === "sources") {
+    html += renderLandscapeSources(sources);
+  } else if (activeTab === "candidates") {
+    html += renderLandscapeCandidates();
+  } else if (activeTab === "evaluators") {
+    html += renderLandscapeEvaluators(evaluators);
+  } else if (activeTab === "context") {
+    html += renderLandscapeContext(contextCoverage);
+  } else if (activeTab === "relationships") {
+    html += renderLandscapeRelationships(relationships);
+  } else if (activeTab === "gaps") {
+    html += renderLandscapeGaps(gaps);
+  } else if (activeTab === "signals") {
+    html += renderLandscapeSignals(signals);
+  } else if (activeTab === "sweep") {
+    html += renderLandscapeSweep();
+  }
+  html += '</div>';
+
+  c.innerHTML = html;
+}
+
+function renderLandscapeFamilies(families) {
+  if (!families.length) return renderEmptyState("No Decision Families", "Ingest evidence resources and build DERs to see decision families here.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Go to Setup</button>');
+  var rows = families.map(function(f) {
+    var level = f.evidence_level || "—";
+    var enriched = f.enriched ? '<span class="badge badge-certified">enriched</span>' : "";
+    return ['<a href="#" onclick="nav(\'verification-records\');return false" style="text-decoration:none;font-weight:500">' + esc(f.identity) + '</a>', statusBadge(level), enriched, esc(f.environment_id || "—"), esc((f.created_at || "").slice(0, 10))];
+  });
+  return renderSection("Decision Families (" + families.length + ")", renderTable(["Identity", "Evidence Level", "Enriched", "Environment", "Created"], rows));
+}
+
+function renderLandscapeSources(sources) {
+  if (!sources.length) return renderEmptyState("No Sources Connected", "Connect a data source to begin evidence discovery.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Connect Source</button>');
+  var rows = sources.map(function(s) {
+    return [esc(s.id || "—"), esc(s.type || "—"), esc(s.provider_id || "—"), esc(s.environment_id || "—"), esc((s.created_at || "").slice(0, 10))];
+  });
+  return renderSection("Connected Sources (" + sources.length + ")", renderTable(["ID", "Type", "Provider", "Environment", "Connected"], rows));
+}
+
+async function renderLandscapeCandidates() {
+  try {
+    var candidatesData = await apiGet("/v1/discovery/candidates");
+  } catch (e) {
+    return renderErrorState("Failed to load candidates: " + e.message);
+  }
+  if (!candidatesData.length) return renderEmptyState("No Assurance Candidates", "Run a sweep to generate candidates. Candidates appear when evaluators find missing evidence, outcome mismatches, or replayability issues.", "");
+  var rows = candidatesData.map(function(c) {
+    var actions = '<button class="btn btn-sm btn-outline" onclick="openCandidateDetail(\'' + c.id + '\')">Review</button>';
+    return [esc(c.id || "—"), statusBadge(c.candidate_type || "—"), statusBadge(c.severity || "medium"), statusBadge(c.evidence_level || "—"), statusBadge(c.lifecycle_state || "—"), actions];
+  });
+  return renderSection("Assurance Candidates (" + candidatesData.length + ")", renderTable(["ID", "Type", "Severity", "E-Level", "State", "Actions"], rows));
+}
+
+function renderLandscapeEvaluators(evaluators) {
+  if (!evaluators.length) return renderEmptyState("No Evaluators Registered", "Register evaluator contracts to run sweeps.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Setup</button>');
+  var rows = evaluators.map(function(e) {
+    return [esc(e.name || "—"), esc(e.version || "—"), statusBadge(e.method_class || "—"), statusBadge(e.trust_class || "—"), esc(e.description || "")];
+  });
+  return renderSection("Registered Evaluators (" + evaluators.length + ")", renderTable(["Name", "Version", "Method", "Trust", "Description"], rows));
+}
+
+function renderLandscapeContext(contextCoverage) {
+  if (!contextCoverage.length) return renderEmptyState("No Context Coverage", "Add context bindings to link decision families to policies and expected outcomes.", "");
+  var rows = contextCoverage.map(function(cb) {
+    return [esc(cb.subject_scope || "—"), esc(cb.subject_selector || "—"), statusBadge(cb.binding_type || "—"), esc(cb.authority || "—"), esc(cb.artifact_ref || "—")];
+  });
+  return renderSection("Context Coverage (" + contextCoverage.length + ")", renderTable(["Scope", "Selector", "Binding Type", "Authority", "Artifact"], rows));
+}
+
+function renderLandscapeRelationships(relationships) {
+  if (!relationships.length) return renderEmptyState("No Relationships Mapped", "Link assertions connect resources. Ingest sources and confirm mappings to build the relationship graph.", "");
+  var rows = relationships.map(function(r) {
+    return [esc(r.source_resource_id || "—"), esc(r.relationship || "—"), esc(r.target_resource_id || "—"), statusBadge(r.status || "—"), esc(r.basis || "—")];
+  });
+  return renderSection("Relationships (" + relationships.length + ")", renderTable(["Source", "Relationship", "Target", "Status", "Basis"], rows));
+}
+
+function renderLandscapeGaps(gaps) {
+  if (!gaps.length) return renderEmptyState("No Evidence Gaps", "All resources are covered by at least one DER with no unresolved context conflicts.", "");
+  var rows = gaps.map(function(g) {
+    return [esc(g.resource_id || "—"), statusBadge(g.gap_type || "—"), esc(g.conflict_id || ""), esc(g.field_or_binding || ""), esc(g.resolution || "")];
+  });
+  return renderSection("Evidence Gaps (" + gaps.length + ")", renderTable(["Resource", "Gap Type", "Conflict ID", "Field/Binding", "Resolution"], rows));
+}
+
+function renderLandscapeSignals(signals) {
+  if (!signals.length) return renderEmptyState("No Advisory Signals", "Systematic-issue advisory signals will appear here when the discovery engine identifies them.", "");
+  var rows = signals.map(function(s) {
+    return [esc(s.suggestion_type || "—"), esc(s.workflow_id || "—"), esc(s.basis || "—"), statusBadge(s.status || "inferred"), esc(JSON.stringify(s.content || {}).slice(0, 80))];
+  });
+  return renderSection("Advisory Signals (" + signals.length + ")", renderTable(["Type", "Workflow", "Basis", "Status", "Content"], rows));
+}
+
+async function renderLandscapeSweep() {
+  try {
+    var runs = await apiGet("/v1/discovery/sweep-definitions");
+    var definitions = runs;
+  } catch (e) {
+    return renderErrorState("Failed to load sweep data: " + e.message);
+  }
+  if (!definitions.length && S.viewParams.tab === "sweep") {
+    try {
+      var allRuns = await apiGet("/v1/discovery/sweep-definitions");
+      if (!allRuns.length) return renderEmptyState("No Sweep Definitions", "Create a sweep definition and run it to see sweep history.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Setup</button>');
+    } catch (e2) {
+      return renderErrorState("Failed to load sweep definitions: " + e2.message);
+    }
+  }
+  var rows = definitions.map(function(d) {
+    return [esc(d.name || "—"), statusBadge(d.enabled ? "ready" : "planned"), esc(d.schedule || "manual"), esc(d.budget_record_limit || "—"), '<button class="btn btn-sm btn-outline" onclick="runSweep(\'' + d.id + '\')">Run</button>'];
+  });
+  return renderSection("Sweep Definitions (" + definitions.length + ")", renderTable(["Name", "Status", "Schedule", "Record Limit", "Actions"], rows));
+}
+
+async function runSweep(defId) {
+  try {
+    var result = await apiPost("/v1/discovery/sweep-definitions/" + defId + "/runs");
+    notify("Sweep run created: " + result.id, "success");
+    nav("landscape?tab=sweep");
+  } catch (e) {
+    notify("Failed to start sweep: " + e.message, "error");
+  }
+}
+
+async function openCandidateDetail(candidateId) {
+  try {
+    var c = await apiGet("/v1/discovery/candidates/" + candidateId);
+  } catch (e) {
+    notify("Failed to load candidate: " + e.message, "error");
+    return;
+  }
+  var html = '';
+  html += renderKV("ID", esc(c.id));
+  html += renderKV("Type", statusBadge(c.candidate_type || "—"));
+  html += renderKV("Severity", statusBadge(c.severity || "medium"));
+  html += renderKV("Evidence Level", statusBadge(c.evidence_level || "—"));
+  html += renderKV("Lifecycle State", statusBadge(c.lifecycle_state || "—"));
+  html += renderKV("DER", esc(c.der_id || "—"));
+  html += renderKV("Sweep Run", esc(c.sweep_run_id || "—"));
+  if (c.business_summary) html += renderKV("Summary", esc(c.business_summary));
+  if (c.expected_outcome || c.actual_outcome) {
+    html += '<div class="section-title" style="margin-top:12px">Outcome Comparison</div>';
+    html += renderKV("Expected", esc(c.expected_outcome || "—"));
+    html += renderKV("Actual", esc(c.actual_outcome || "—"));
+  }
+
+  // Review actions
+  var reviewActions = '';
+  if (c.lifecycle_state === "reviewable") {
+    reviewActions = '<div style="margin-top:12px;display:flex;gap:8px">' +
+      '<button class="btn btn-sm btn-green" onclick="submitCandidateReview(\'' + c.id + '\',\'approve_incident\',this)">Approve as Incident</button>' +
+      '<button class="btn btn-sm" onclick="submitCandidateReview(\'' + c.id + '\',\'dismiss\',this)">Dismiss</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="submitCandidateReview(\'' + c.id + '\',\'request_context\',this)">Request Context</button>' +
+      '</div>';
+  }
+  if (c.lifecycle_state === "approved_incident") {
+    reviewActions = '<div style="margin-top:12px"><button class="btn btn-sm" onclick="promoteCandidate(\'' + c.id + '\',this)">Promote via Proof Bridge</button></div>';
+  }
+
+  html += reviewActions;
+  renderDrawer("Candidate: " + c.id, html);
+}
+
+async function submitCandidateReview(candidateId, decision, btn) {
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+  try {
+    await apiPost("/v1/discovery/candidates/" + candidateId + "/reviews", {decision: decision, basis: "reviewed via Decision Landscape"});
+    notify("Review recorded: " + decision, "success");
+    closeDrawer(document.querySelector(".drawer-overlay"));
+    nav("landscape?tab=candidates");
+  } catch (e) {
+    notify("Review failed: " + e.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Retry";
+  }
+}
+
+async function promoteCandidate(candidateId, btn) {
+  btn.disabled = true;
+  btn.textContent = "Promoting...";
+  try {
+    var result = await apiPost("/v1/discovery/candidates/" + candidateId + "/promote");
+    notify("Promotion successful", "success");
+    closeDrawer(document.querySelector(".drawer-overlay"));
+    nav("landscape?tab=candidates");
+  } catch (e) {
+    notify("Promotion failed: " + e.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Retry";
+  }
+}
 
 function openImportSetup() {
   renderDrawer("Batch / Log Import", '<div class="section-sub">Paste JSON records in setup step 5 to import. Supports Zendesk, Salesforce, ServiceNow, Intercom, CSV, and JSONL formats.</div>');

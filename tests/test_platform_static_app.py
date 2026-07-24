@@ -54,3 +54,22 @@ def test_auth_failure_keeps_token_prompt_visible() -> None:
     assert 'if (S.authConfigured) {' in text
     assert "renderAuthPanel();" in text
     assert 'res.status === 401' in text
+
+
+def test_decision_landscape_view_is_registered() -> None:
+    html = Path("static/app/index.html").read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    assert 'data-view="landscape"' in html
+    assert "Decision Landscape" in js
+    assert "renderDecisionLandscape" in js
+    assert "/v1/discovery/landscape" in js
+    assert "renderLandscapeCandidates" in js
+    assert "openCandidateDetail" in js
+    assert "renderLandscapeFamilies" in js
+    assert "renderLandscapeSources" in js
+    assert "renderLandscapeEvaluators" in js
+    assert "renderLandscapeSweep" in js
+    assert "renderLandscapeContext" in js
+    assert "renderLandscapeRelationships" in js
+    assert "renderLandscapeGaps" in js
+    assert "renderLandscapeSignals" in js
