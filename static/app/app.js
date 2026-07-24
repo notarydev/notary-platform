@@ -45,6 +45,24 @@ const S = {
 function q(s) { return document.querySelector(s); }
 function qa(s) { return document.querySelectorAll(s); }
 
+function renderExplicitState(state, opts) {
+  opts = opts || {};
+  var states = {
+    loading: { icon: "\u23f3", color: "var(--dim)", bg: "var(--surface-2)", label: "Loading\u2026", detail: opts.detail || "Fetching data" },
+    empty: { icon: "\u25cb", color: "var(--dim)", bg: "var(--surface-2)", label: opts.label || "Nothing here yet", detail: opts.detail || "No data to display" },
+    partial: { icon: "\u26a0", color: "var(--amber)", bg: "var(--amber-bg)", label: opts.label || "Partial data", detail: opts.detail || "Some sources could not be loaded" },
+    blocked: { icon: "\u2717", color: "var(--red)", bg: "var(--red-bg)", label: opts.label || "Blocked", detail: opts.detail || "Action requires prerequisites" },
+    error: { icon: "\u26a0", color: "var(--red)", bg: "var(--red-bg)", label: opts.label || "Error", detail: opts.detail || "Something went wrong" },
+    cancelled: { icon: "\u2298", color: "var(--dim)", bg: "var(--surface-2)", label: opts.label || "Cancelled", detail: opts.detail || "Operation was cancelled" },
+    completed_with_errors: { icon: "\u26a0", color: "var(--amber)", bg: "var(--amber-bg)", label: opts.label || "Completed with errors", detail: opts.detail || "Finished but some items failed" }
+  };
+  var s = states[state] || states.empty;
+  var actions = opts.actions ? '<div style="margin-top:12px">' + opts.actions + '</div>' : '';
+  return '<div class="explicit-state" style="display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:var(--radius);background:' + s.bg + ';border:1px solid ' + s.color + '40;margin-bottom:16px">' +
+    '<div style="font-size:20px;color:' + s.color + '">' + s.icon + '</div>' +
+    '<div style="flex:1"><div style="font-weight:600;color:' + s.color + '">' + esc(s.label) + '</div><div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(s.detail) + '</div>' + actions + '</div></div>';
+}
+
 function _token() {
   return S.token;
 }
@@ -262,6 +280,8 @@ async function R() {
       renderSetup(c);
     } else if (S.view === "discovery") {
       await renderDiscovery(c);
+    } else if (S.view === "landscape") {
+      await renderDecisionLandscape(c);
     } else if (S.view === "verification-records") {
       const vrs = await apiGet("/v1/verification-records");
       renderVRs(c, vrs);
@@ -335,6 +355,7 @@ async function R() {
     integrations: "Integrations",
     setup: "Setup",
     discovery: "Decision Discovery",
+    landscape: "Decision Landscape",
     "verification-records": "Verification Records",
     "vr-detail": "Verification Record Detail",
     incidents: "Incidents",
@@ -1454,7 +1475,492 @@ async function commitDiscoverySelection() {
   } catch (e) { notify("Discovery commit failed: " + e.message, "error"); }
 }
 
+// --- WP-100: Decision Landscape ---
 
+async function renderDecisionLandscape(c) {
+  c.innerHTML = renderExplicitState("loading", { detail: "Loading decision landscape\u2026" });
+  var data;
+  try {
+    data = await apiGet("/v1/discovery/landscape");
+  } catch (e) {
+    c.innerHTML = renderExplicitState("error", { detail: "Failed to load landscape: " + e.message, actions: '<button class="btn btn-sm" onclick="nav(\'landscape\')">Retry</button>' });
+    return;
+  }
+  const families = data.decision_families || [];
+  const sources = data.sources || [];
+  const evaluators = data.evaluators || [];
+  const candidates = data.candidates || [];
+  const contextCoverage = data.context_coverage || [];
+  const relationships = data.relationships || [];
+  const gaps = data.evidence_gaps || [];
+  const sweepSummary = data.sweep_summary || {};
+  const nextActions = data.next_actions || [];
+  const corrections = data.required_corrections || [];
+  const enrichment = data.optional_enrichment || [];
+  const signals = data.advisory_signals || [];
+
+  const totalDERs = families.length;
+  const totalSources = sources.length;
+  const totalEvaluators = evaluators.length;
+  const reviewableCount = candidates.filter(function(c) { return c.lifecycle_state === "reviewable"; }).length;
+  const activeRuns = sweepSummary.active_runs || 0;
+
+  var html = '';
+
+  // ── Overview chips ──
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px">';
+  html += chip(totalDERs, "Decision " + (totalDERs === 1 ? "Family" : "Families"), "--accent", "landscape?tab=families");
+  html += chip(totalSources, "Source" + (totalSources === 1 ? "" : "s"), "--green", "landscape?tab=sources");
+  html += chip(totalEvaluators, "Evaluator" + (totalEvaluators === 1 ? "" : "s"), "--blue", "landscape?tab=evaluators");
+  html += chip(reviewableCount, "Reviewable", reviewableCount > 0 ? "--amber" : "--green", "landscape?tab=candidates");
+  html += chip(activeRuns, "Active Run" + (activeRuns === 1 ? "" : "s"), activeRuns > 0 ? "--accent" : "--dim", "landscape?tab=sweep");
+  html += '</div>';
+
+  // ── Next actions banner ──
+  if (nextActions.length) {
+    html += renderSection("Next Actions", '<div class="action-row" style="flex-wrap:wrap">' + nextActions.map(function(a) {
+      return '<button class="btn btn-sm" onclick="nav(\'' + (a.action === "connect_source" ? "setup" : a.action === "review_candidates" ? "landscape?tab=candidates" : "setup") + '\')">' + esc(a.label) + '</button>';
+    }).join("") + '</div>');
+  }
+
+  // ── Corrections / enrichment alerts ──
+  if (corrections.length) {
+    html += '<div class="proof-pending" style="margin-bottom:12px"><strong>Required corrections:</strong> ' + esc(corrections.join(", ")) + '</div>';
+  }
+  if (enrichment.length) {
+    html += '<div class="proof-pending" style="background:var(--amber-bg);border-color:var(--amber);margin-bottom:12px"><strong>Optional enrichment:</strong> ' + esc(enrichment.join(", ")) + '</div>';
+  }
+
+  // ── Sweep summary ──
+  if (sweepSummary.total_runs > 0) {
+    html += renderSection("Sweep Summary",
+      '<div class="discovery-metrics">' +
+      '<span><strong>' + sweepSummary.total_runs + '</strong> total runs</span>' +
+      '<span><strong>' + (sweepSummary.completed_runs || 0) + '</strong> completed</span>' +
+      '<span><strong>' + (sweepSummary.failed_runs || 0) + '</strong> failed</span>' +
+      '<span><strong>' + (sweepSummary.total_candidates || 0) + '</strong> candidates</span>' +
+      '<span><strong>' + (sweepSummary.active_candidates || 0) + '</strong> active</span>' +
+      '</div>');
+  }
+
+  // ── Tab navigation for detail sections ──
+  var activeTab = S.viewParams.tab || "families";
+  html += '<div class="filter-pills" style="margin-bottom:16px">';
+  var tabs = [
+    {key:"families", label:"Decision Families"},
+    {key:"sources", label:"Sources"},
+    {key:"candidates", label:"Assurance Candidates"},
+    {key:"evaluators", label:"Evaluators"},
+    {key:"context", label:"Context"},
+    {key:"relationships", label:"Relationships"},
+    {key:"gaps", label:"Evidence Gaps"},
+    {key:"signals", label:"Signals"},
+    {key:"sweep", label:"Sweep History"},
+  ];
+  tabs.forEach(function(t) {
+    var active = t.key === activeTab ? ' active' : '';
+    html += '<button class="filter-pill' + active + '" onclick="nav(\'landscape?tab=' + t.key + '\')">' + esc(t.label) + '</button>';
+  });
+  html += '</div>';
+
+  // ── Tab content ──
+  html += '<div style="margin-top:8px">';
+  if (activeTab === "families") {
+    html += renderLandscapeFamilies(families);
+  } else if (activeTab === "sources") {
+    html += renderLandscapeSources(sources);
+  } else if (activeTab === "candidates") {
+    html += renderLandscapeCandidates();
+  } else if (activeTab === "evaluators") {
+    html += renderLandscapeEvaluators(evaluators);
+  } else if (activeTab === "context") {
+    html += renderLandscapeContext(contextCoverage);
+  } else if (activeTab === "relationships") {
+    html += renderLandscapeRelationships(relationships);
+  } else if (activeTab === "gaps") {
+    html += renderLandscapeGaps(gaps);
+  } else if (activeTab === "signals") {
+    html += renderLandscapeSignals(signals);
+  } else if (activeTab === "sweep") {
+    c.innerHTML = html;
+    var sweepHtml = await renderLandscapeSweep();
+    html += sweepHtml;
+    c.innerHTML = html;
+    return;
+  }
+  html += '</div>';
+
+  c.innerHTML = html;
+}
+
+function renderLandscapeFamilies(families) {
+  if (!families.length) return renderEmptyState("No Decision Families", "Ingest evidence resources and build DERs to see decision families here.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Go to Setup</button>');
+  var rows = families.map(function(f) {
+    var level = f.evidence_level || "—";
+    var identityLink = f.id
+      ? '<a href="#" onclick="openDERDetail(\'' + f.id + '\');return false" style="text-decoration:none;font-weight:500">' + esc(f.identity) + '</a>'
+      : esc(f.identity);
+    return [identityLink, statusBadge(level), f.enriched ? '<span class="badge badge-certified">enriched</span>' : "", esc(f.environment_id || "—"), esc((f.created_at || "").slice(0, 10))];
+  });
+  return renderSection("Decision Families (" + families.length + ")", renderTable(["Identity", "Evidence Level", "Enriched", "Environment", "Created"], rows));
+}
+
+async function openDERDetail(derId) {
+  try {
+    var der = await apiGet("/v1/discovery/records/" + derId);
+  } catch (e) {
+    notify("Failed to load DER: " + e.message, "error");
+    return;
+  }
+  var html = '';
+  html += renderKV("ID", esc(der.id));
+  html += renderKV("Decision Identity", esc(der.decision_identity || "—"));
+  html += renderKV("Identity Method", esc(der.identity_method || "—"));
+  html += renderKV("Evidence Level", statusBadge(der.evidence_level || "—"));
+  html += renderKV("Environment", esc(der.environment_id || "—"));
+  html += renderKV("Resolution Trace ID", esc(der.resolution_trace_id || "—"));
+  html += renderKV("Version", esc(String(der.version || 1)));
+  if (der.source_resource_ids && der.source_resource_ids.length) {
+    html += renderKV("Source Resources", esc(der.source_resource_ids.join(", ")));
+  }
+  if (der.context_binding_ids && der.context_binding_ids.length) {
+    html += renderKV("Context Bindings", esc(der.context_binding_ids.join(", ")));
+  }
+  if (der.enriched) html += '<div style="margin-top:12px"><span class="badge badge-certified">enriched</span></div>';
+  var actions = '';
+  if (der.resolution_trace_id) {
+    actions += '<button class="btn btn-sm" onclick="openResolutionTrace(\'' + derId + '\')">View Resolution Trace</button>';
+  }
+  renderDrawer("DER: " + der.decision_identity, html, actions);
+}
+
+async function openResolutionTrace(derId) {
+  try {
+    var rt = await apiGet("/v1/discovery/records/" + derId + "/resolution-trace");
+  } catch (e) {
+    notify("Failed to load resolution trace: " + e.message, "error");
+    return;
+  }
+  var html = '<div class="rp-events" style="margin-top:12px">';
+  if (rt.included_bindings && rt.included_bindings.length) {
+    rt.included_bindings.forEach(function(b) {
+      html += '<div class="rp-event done"><div class="rp-icon">&#10003;</div><div style="min-width:0"><div class="rp-label">Included Binding</div><div class="rp-detail">' + esc(b) + '</div></div></div>';
+    });
+  }
+  if (rt.excluded_bindings && rt.excluded_bindings.length) {
+    rt.excluded_bindings.forEach(function(b) {
+      html += '<div class="rp-event" style="opacity:.7"><div class="rp-icon" style="color:var(--amber)">&#9888;</div><div style="min-width:0"><div class="rp-label">Excluded Binding</div><div class="rp-detail">' + esc(b) + '</div></div></div>';
+    });
+  }
+  if (rt.superseded_bindings && rt.superseded_bindings.length) {
+    rt.superseded_bindings.forEach(function(b) {
+      html += '<div class="rp-event" style="opacity:.6"><div class="rp-icon" style="color:var(--muted)">&#8593;</div><div style="min-width:0"><div class="rp-label">Superseded Binding</div><div class="rp-detail">' + esc(b) + '</div></div></div>';
+    });
+  }
+  if (rt.missing_artifacts && rt.missing_artifacts.length) {
+    rt.missing_artifacts.forEach(function(a) {
+      html += '<div class="rp-event"><div class="rp-icon" style="color:var(--red)">&#10007;</div><div style="min-width:0"><div class="rp-label">Missing Artifact</div><div class="rp-detail">' + esc(a) + '</div></div></div>';
+    });
+  }
+  if (rt.stale_artifacts && rt.stale_artifacts.length) {
+    rt.stale_artifacts.forEach(function(a) {
+      html += '<div class="rp-event"><div class="rp-icon" style="color:var(--amber)">&#9888;</div><div style="min-width:0"><div class="rp-label">Stale Artifact</div><div class="rp-detail">' + esc(a) + '</div></div></div>';
+    });
+  }
+  if (rt.redacted_artifacts && rt.redacted_artifacts.length) {
+    rt.redacted_artifacts.forEach(function(a) {
+      html += '<div class="rp-event"><div class="rp-icon" style="color:var(--purple)">&#9632;</div><div style="min-width:0"><div class="rp-label">Redacted Artifact</div><div class="rp-detail">' + esc(a) + '</div></div></div>';
+    });
+  }
+  if (rt.conflicted_bindings && rt.conflicted_bindings.length) {
+    rt.conflicted_bindings.forEach(function(b) {
+      html += '<div class="rp-event"><div class="rp-icon" style="color:var(--red)">&#9888;</div><div style="min-width:0"><div class="rp-label">Conflicted Binding</div><div class="rp-detail">' + esc(b) + '</div></div></div>';
+    });
+  }
+  html += '</div>';
+  if (rt.reasons && Object.keys(rt.reasons).length) {
+    html += '<div class="section-title" style="margin-top:16px">Reasons</div>';
+    Object.keys(rt.reasons).forEach(function(k) {
+      html += renderKV(k, esc(rt.reasons[k]));
+    });
+  }
+  html += renderKV("Trace ID", esc(rt.id || "—"));
+  html += renderKV("Created", esc((rt.created_at || "").slice(0, 19)));
+  renderDrawer("Resolution Trace", html);
+}
+
+function renderLandscapeSources(sources) {
+  if (!sources.length) return renderEmptyState("No Sources Connected", "Connect a data source to begin evidence discovery.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Connect Source</button>');
+  var rows = sources.map(function(s) {
+    return [esc(s.id || "—"), esc(s.type || "—"), esc(s.provider_id || "—"), esc(s.environment_id || "—"), esc((s.created_at || "").slice(0, 10))];
+  });
+  return renderSection("Connected Sources (" + sources.length + ")", renderTable(["ID", "Type", "Provider", "Environment", "Connected"], rows));
+}
+
+async function renderLandscapeCandidates() {
+  try {
+    var candidatesData = await apiGet("/v1/discovery/candidates");
+  } catch (e) {
+    return renderErrorState("Failed to load candidates: " + e.message);
+  }
+  if (!candidatesData.length) return renderEmptyState("No Assurance Candidates", "Run a sweep to generate candidates. Candidates appear when evaluators find missing evidence, outcome mismatches, or replayability issues.", "");
+  var rows = candidatesData.map(function(c) {
+    var actions = '<button class="btn btn-sm btn-outline" onclick="openCandidateDetail(\'' + c.id + '\')">Review</button>';
+    return [esc(c.id || "—"), statusBadge(c.candidate_type || "—"), statusBadge(c.severity || "medium"), statusBadge(c.evidence_level || "—"), statusBadge(c.lifecycle_state || "—"), actions];
+  });
+  return renderSection("Assurance Candidates (" + candidatesData.length + ")", renderTable(["ID", "Type", "Severity", "E-Level", "State", "Actions"], rows));
+}
+
+function renderLandscapeEvaluators(evaluators) {
+  if (!evaluators.length) return renderEmptyState("No Evaluators Registered", "Register evaluator contracts to run sweeps.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Setup</button>');
+  var rows = evaluators.map(function(e) {
+    return [esc(e.name || "—"), esc(e.version || "—"), statusBadge(e.method_class || "—"), statusBadge(e.trust_class || "—"), esc(e.description || "")];
+  });
+  return renderSection("Registered Evaluators (" + evaluators.length + ")", renderTable(["Name", "Version", "Method", "Trust", "Description"], rows));
+}
+
+function renderLandscapeContext(contextCoverage) {
+  if (!contextCoverage.length) return renderEmptyState("No Context Coverage", "Add context bindings to link decision families to policies and expected outcomes.", "");
+  var rows = contextCoverage.map(function(cb) {
+    return [esc(cb.subject_scope || "—"), esc(cb.subject_selector || "—"), statusBadge(cb.binding_type || "—"), esc(cb.authority || "—"), esc(cb.artifact_ref || "—")];
+  });
+  return renderSection("Context Coverage (" + contextCoverage.length + ")", renderTable(["Scope", "Selector", "Binding Type", "Authority", "Artifact"], rows));
+}
+
+function renderLandscapeRelationships(relationships) {
+  if (!relationships.length) return renderEmptyState("No Relationships Mapped", "Link assertions connect resources. Ingest sources and confirm mappings to build the relationship graph.", "");
+  var rows = relationships.map(function(r) {
+    return [esc(r.source_resource_id || "—"), esc(r.relationship || "—"), esc(r.target_resource_id || "—"), statusBadge(r.status || "—"), esc(r.basis || "—")];
+  });
+  return renderSection("Relationships (" + relationships.length + ")", renderTable(["Source", "Relationship", "Target", "Status", "Basis"], rows));
+}
+
+function renderLandscapeGaps(gaps) {
+  if (!gaps.length) return renderEmptyState("No Evidence Gaps", "All resources are covered by at least one DER with no unresolved context conflicts.", "");
+  var rows = gaps.map(function(g) {
+    return [esc(g.resource_id || "—"), statusBadge(g.gap_type || "—"), esc(g.conflict_id || ""), esc(g.field_or_binding || ""), esc(g.resolution || "")];
+  });
+  return renderSection("Evidence Gaps (" + gaps.length + ")", renderTable(["Resource", "Gap Type", "Conflict ID", "Field/Binding", "Resolution"], rows));
+}
+
+function renderLandscapeSignals(signals) {
+  if (!signals.length) return renderEmptyState("No Advisory Signals", "Systematic-issue advisory signals will appear here when the discovery engine identifies them.", "");
+  var rows = signals.map(function(s) {
+    var typeIcon = s.suggestion_type === "systematic_issue" ? '<span style="color:var(--red)">&#9888;</span> ' : "";
+    var safetyLabel = "";
+    if (s.content && s.content.safety_status) {
+      safetyLabel = statusBadge(s.content.safety_status);
+    }
+    var basis = esc(s.basis || "\u2014");
+    if (s.content && s.content.systematic_scope) {
+      basis += '<div style="font-size:11px;color:var(--dim);margin-top:2px">' + esc(s.content.systematic_scope) + '</div>';
+    }
+    return [
+      typeIcon + esc(s.suggestion_type || "\u2014"),
+      esc(s.workflow_id || "\u2014"),
+      basis,
+      safetyLabel || statusBadge(s.status || "inferred"),
+      esc((s.expected_unlock_value || "").slice(0, 60))
+    ];
+  });
+  return renderSection("Advisory Signals (" + signals.length + ")", renderTable(["Type", "Workflow", "Basis / Scope", "Safety / Status", "Expected Unlock"], rows));
+}
+
+async function renderLandscapeSweep() {
+  try {
+    var runs = await apiGet("/v1/discovery/sweep-definitions");
+    var definitions = runs;
+  } catch (e) {
+    return renderErrorState("Failed to load sweep data: " + e.message);
+  }
+  if (!definitions.length && S.viewParams.tab === "sweep") {
+    try {
+      var allRuns = await apiGet("/v1/discovery/sweep-definitions");
+      if (!allRuns.length) return renderEmptyState("No Sweep Definitions", "Create a sweep definition and run it to see sweep history.", '<button class="btn btn-sm" onclick="nav(\'setup\')">Setup</button>');
+    } catch (e2) {
+      return renderErrorState("Failed to load sweep definitions: " + e2.message);
+    }
+  }
+  var rows = definitions.map(function(d) {
+    return [esc(d.name || "—"), statusBadge(d.enabled ? "ready" : "planned"), esc(d.schedule || "manual"), esc(d.budget_record_limit || "—"), '<button class="btn btn-sm btn-outline" onclick="runSweep(\'' + d.id + '\')">Run</button>'];
+  });
+  return renderSection("Sweep Definitions (" + definitions.length + ")", renderTable(["Name", "Status", "Schedule", "Record Limit", "Actions"], rows));
+}
+
+async function runSweep(defId) {
+  try {
+    var result = await apiPost("/v1/discovery/sweep-definitions/" + defId + "/runs");
+    notify("Sweep run created: " + result.id, "success");
+    nav("landscape?tab=sweep");
+  } catch (e) {
+    notify("Failed to start sweep: " + e.message, "error");
+  }
+}
+
+async function openCandidateDetail(candidateId) {
+  var c;
+  try {
+    c = await apiGet("/v1/discovery/candidates/" + candidateId);
+  } catch (e) {
+    notify("Failed to load candidate: " + e.message, "error");
+    return;
+  }
+
+  var derData = null;
+  if (c.der_id) {
+    try { derData = await apiGet("/v1/discovery/records/" + c.der_id); } catch (e) { /* DER not loaded */ }
+  }
+
+  var eligibilityData = null;
+  if (c.lifecycle_state === "approved_incident") {
+    try { eligibilityData = await apiGet("/v1/discovery/candidates/" + candidateId + "/proof-eligibility"); } catch (e) { /* not loaded */ }
+  }
+
+  var reviewsData = [];
+  try { reviewsData = await apiGet("/v1/discovery/candidates/" + candidateId + "/reviews"); } catch (e) { /* not loaded */ }
+
+  var html = '';
+
+  html += renderKV("ID", esc(c.id));
+  html += renderKV("Type", statusBadge(c.candidate_type || "\u2014"));
+  html += renderKV("Severity", statusBadge(c.severity || "medium"));
+  html += renderKV("Lifecycle State", statusBadge(c.lifecycle_state || "\u2014"));
+
+  html += '<div class="section-title" style="margin-top:16px">Evidence Sufficiency (E0\u2013E4)</div>';
+  var levels = ["E0","E1","E2","E3","E4"];
+  var levelNames = ["Observation","Context Binding","Validated Context","Sealed Evidence","Full Proof"];
+  var currentIdx = levels.indexOf(c.evidence_level || "");
+  html += '<div style="display:flex;gap:6px;margin-bottom:16px">';
+  for (var li = 0; li < levels.length; li++) {
+    var reached = li <= currentIdx && currentIdx >= 0;
+    var bg = reached ? "var(--green-bg)" : "var(--surface-2)";
+    var border = reached ? "1px solid var(--green)" : "1px solid var(--border)";
+    var color = reached ? "var(--green)" : "var(--dim)";
+    html += '<div style="flex:1;padding:10px;border-radius:var(--radius-sm);background:' + bg + ';border:' + border + ';text-align:center">';
+    html += '<div style="font-family:var(--fm);font-size:16px;font-weight:700;color:' + color + '">' + levels[li] + '</div>';
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + levelNames[li] + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += renderKV("Evidence Level", statusBadge(c.evidence_level || "\u2014"));
+  html += renderKV("DER ID", c.der_id
+    ? '<a href="#" onclick="openDERDetail(\'' + esc(c.der_id) + '\');return false" style="color:var(--accent)">' + esc(c.der_id) + '</a>'
+    : "\u2014");
+  html += renderKV("Sweep Run", esc(c.sweep_run_id || "\u2014"));
+
+  if (c.business_summary) {
+    html += '<div class="section-title" style="margin-top:16px">Business Summary</div>';
+    html += '<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">' + esc(c.business_summary) + '</div>';
+  }
+
+  if (c.expected_outcome || c.actual_outcome) {
+    html += '<div class="section-title" style="margin-top:16px">Outcome Comparison</div>';
+    html += '<div style="display:flex;gap:16px;margin-bottom:12px">';
+    html += '<div style="flex:1;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm)"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">Expected</div><div style="font-size:14px;font-weight:600">' + esc(c.expected_outcome || "\u2014") + '</div></div>';
+    html += '<div style="flex:1;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm)"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">Actual</div><div style="font-size:14px;font-weight:600">' + esc(c.actual_outcome || "\u2014") + '</div></div>';
+    html += '</div>';
+  }
+
+  if (derData) {
+    html += '<div class="section-title" style="margin-top:16px">Decision Evidence Record</div>';
+    html += renderKV("Decision Identity", esc(derData.decision_identity || "\u2014"));
+    html += renderKV("Identity Method", esc(derData.identity_method || "\u2014"));
+    html += renderKV("Environment", esc(derData.environment_id || "\u2014"));
+    html += renderKV("Version", esc(String(derData.version || 1)));
+    if (derData.source_resource_ids && derData.source_resource_ids.length) {
+      html += renderKV("Source Resources", esc(String(derData.source_resource_ids.length)));
+    }
+    if (derData.context_binding_ids && derData.context_binding_ids.length) {
+      html += renderKV("Context Bindings", esc(String(derData.context_binding_ids.length)));
+    }
+    if (derData.resolution_trace_id) {
+      html += '<div style="margin-top:8px"><button class="btn btn-sm" onclick="openResolutionTrace(\'' + esc(c.der_id) + '\')">View Resolution Trace</button></div>';
+    }
+  }
+
+  if (eligibilityData) {
+    html += '<div class="section-title" style="margin-top:16px">Proof Bridge Eligibility</div>';
+    html += '<div style="padding:12px;border:1px solid ' + (eligibilityData.eligible ? "var(--green)" : "var(--red)") + ';border-radius:var(--radius-sm);background:' + (eligibilityData.eligible ? "var(--green-bg)" : "var(--red-bg)") + ';margin-bottom:12px">';
+    html += '<div style="font-weight:600;color:' + (eligibilityData.eligible ? "var(--green)" : "var(--red)") + '">' + (eligibilityData.eligible ? "\u2713 Eligible for promotion" : "\u2717 Not eligible") + '</div>';
+    if (eligibilityData.reason) {
+      html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + esc(eligibilityData.reason) + '</div>';
+    }
+    html += '</div>';
+    if (eligibilityData.failures && eligibilityData.failures.length) {
+      html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase">Prerequisites</div>';
+      eligibilityData.failures.forEach(function(f) {
+        html += '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px">';
+        html += '<span style="color:var(--red);font-weight:600">' + esc(f.code) + '</span> \u2014 ' + esc(f.prerequisite);
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    if (eligibilityData.next_actions && eligibilityData.next_actions.length) {
+      html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase">Next Actions</div>';
+      eligibilityData.next_actions.forEach(function(a) {
+        html += '<div style="padding:6px 12px;border-left:2px solid var(--accent);margin-bottom:4px;font-size:12px">' + esc(a) + '</div>';
+      });
+      html += '</div>';
+    }
+    if (eligibilityData.authority) {
+      html += renderKV("Authority", esc(eligibilityData.authority.kind || "\u2014"));
+    }
+  }
+
+  if (reviewsData.length) {
+    html += '<div class="section-title" style="margin-top:16px">Review History (' + reviewsData.length + ')</div>';
+    var reviewRows = reviewsData.map(function(r) {
+      return [esc(r.id || "\u2014"), statusBadge(r.decision || "\u2014"), esc(r.basis || "\u2014"), esc((r.created_at || "").slice(0, 19))];
+    });
+    html += renderTable(["ID", "Decision", "Basis", "Created"], reviewRows);
+  }
+
+  var actionHtml = '';
+  if (c.lifecycle_state === "reviewable") {
+    actionHtml = '<div style="display:flex;gap:8px">' +
+      '<button class="btn btn-sm btn-green" onclick="submitCandidateReview(\'' + c.id + '\',\'approve_incident\',this)">Approve as Incident</button>' +
+      '<button class="btn btn-sm" onclick="submitCandidateReview(\'' + c.id + '\',\'dismiss\',this)">Dismiss</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="submitCandidateReview(\'' + c.id + '\',\'request_context\',this)">Request Context</button>' +
+      '</div>';
+  }
+  if (c.lifecycle_state === "approved_incident") {
+    actionHtml = '<div style="display:flex;gap:8px"><button class="btn btn-sm btn-green" onclick="promoteCandidate(\'' + c.id + '\',this)">Promote via Proof Bridge</button></div>';
+  }
+
+  renderDrawer("Candidate: " + c.id, html, actionHtml);
+}
+
+
+async function submitCandidateReview(candidateId, decision, btn) {
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+  try {
+    await apiPost("/v1/discovery/candidates/" + candidateId + "/reviews", {decision: decision, basis: "reviewed via Decision Landscape"});
+    notify("Review recorded: " + decision, "success");
+    closeDrawer(document.querySelector(".drawer-overlay"));
+    nav("landscape?tab=candidates");
+  } catch (e) {
+    notify("Review failed: " + e.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Retry";
+  }
+}
+
+async function promoteCandidate(candidateId, btn) {
+  btn.disabled = true;
+  btn.textContent = "Promoting...";
+  try {
+    var result = await apiPost("/v1/discovery/candidates/" + candidateId + "/promote");
+    notify("Promotion successful", "success");
+    closeDrawer(document.querySelector(".drawer-overlay"));
+    nav("landscape?tab=candidates");
+  } catch (e) {
+    notify("Promotion failed: " + e.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Retry";
+  }
+}
 
 function openImportSetup() {
   renderDrawer("Batch / Log Import", '<div class="section-sub">Paste JSON records in setup step 5 to import. Supports Zendesk, Salesforce, ServiceNow, Intercom, CSV, and JSONL formats.</div>');
@@ -4334,6 +4840,8 @@ function init() {
   if (params.get("view")) {
     S.view = params.get("view");
   }
+  S.viewParams = {};
+  params.forEach((value, key) => { S.viewParams[key] = value; });
   loadEnvironments();
   R();
 }

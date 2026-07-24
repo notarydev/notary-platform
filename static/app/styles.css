@@ -605,3 +605,18 @@ section{margin-bottom:24px}
   .discovery-input-row{grid-template-columns:1fr}
   .discovery-mapping-grid{grid-template-columns:1fr}
 }
+
+/* ── WP-100: Decision Landscape ── */
+.explicit-state{transition:border-color .18s}
+.explicit-state:hover{border-color:currentColor}
+.candidate-header{margin-bottom:16px}
+.candidate-id{font-family:var(--fm);font-size:14px;font-weight:600}
+.candidate-meta{display:flex;gap:6px;margin-top:6px}
+.proof-state-summary{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.proof-state-item{flex:1;min-width:120px;padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface-2);text-align:center}
+.proof-state-active{border-color:var(--green);background:var(--green-bg)}
+.proof-state-inactive{border-color:var(--red);background:var(--red-bg)}
+.proof-state-number{font-family:var(--fm);font-size:20px;font-weight:700}
+.proof-state-active .proof-state-number{color:var(--green)}
+.proof-state-inactive .proof-state-number{color:var(--red)}
+.proof-state-label{font-size:11px;color:var(--muted);margin-top:2px;text-transform:uppercase}
