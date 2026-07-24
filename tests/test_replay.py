@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -199,9 +201,7 @@ class TestReplayAgent:
         result = replay_snapshot(snap, changed_agent, strict_order=True)
         assert result["decision"] == "UNKNOWN"
         assert result["replay_status"] == "escalation_required"
-        assert result["misses"] == [
-            {"method": "POST", "url": "https://api.example.com/credit-check-v2", "body": None}
-        ]
+        assert result["misses"] == [{"method": "POST", "url": "https://api.example.com/credit-check-v2", "body": None}]
 
     def test_replay_fails_closed_on_out_of_order_call(self) -> None:
         snap = _make_snapshot_with_http({"score": 650}, "DENY")
@@ -248,12 +248,16 @@ class TestReplayAgent:
         assert result["unconsumed_entries"] == 1
 
     def test_no_network_calls(self) -> None:
-        import sys
-
-        # Replay must not pull in blocking HTTP client libraries. httpx is a
-        # test-harness dependency (FastAPI TestClient) so it is excluded here.
-        for mod in ("requests", "urllib3"):
-            assert mod not in sys.modules
+        # Run this assertion in a clean interpreter so unrelated cloud-storage
+        # tests cannot preload urllib3 through boto3.
+        probe = (
+            "import sys; "
+            "import notary_platform.replay_engine.replay; "
+            "blocked = sorted(m for m in ('requests', 'urllib3') if m in sys.modules); "
+            "sys.exit(','.join(blocked) if blocked else 0)"
+        )
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
 
 
 class TestReplayEndpoint:

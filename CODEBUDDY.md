@@ -57,7 +57,7 @@ Forensic proof-of-mitigation platform. Root cause analysis for AI decision failu
 
 ## Git workflow (external agents)
 
-All changes must go through branches and pull requests — never commit directly to `main`.
+All changes must go through one branch and one pull request per evaluation package — never commit directly to `main` or stack a new review branch on top of an older one.
 
 ### Branch naming
 
@@ -75,7 +75,7 @@ Examples: `emergent/fix-env-select`, `opencode/cleanup-docs`, `manual/update-rea
 
 ### Process
 
-1. `git checkout -b <source>/<description> main` — create a branch from main
+1. `git checkout -b <source>/<description> main` — create the single branch for this work package from main
 2. Make changes, test locally (`make test`, `make lint`)
 3. `git add -A && git commit -m "scope: message"`
 4. `git push -u origin <branch>` — push the branch
@@ -83,6 +83,8 @@ Examples: `emergent/fix-env-select`, `opencode/cleanup-docs`, `manual/update-rea
 6. Request review from the repo owner
 7. Once approved, merge to `main`
 8. Deploy: `./infra/deploy-api.sh`
+
+If you are continuing an unfinished package, keep using that branch instead of creating a second review branch.
 
 ### After deploy
 

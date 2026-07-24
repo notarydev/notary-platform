@@ -27,6 +27,7 @@ def storage(monkeypatch):
         data = store.get(Key)
         if data is None:
             from botocore.exceptions import ClientError
+
             raise ClientError({"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject")
         return {"Body": BytesIO(data)}
 
@@ -48,9 +49,7 @@ class TestPostgresS3StorageContract:
     def test_snapshot_writes_fixed_path(self, storage):
         storage.persist_evidence("inc-1", "snapshot", {"root": "abc"})
         key = "evidence/inc-1/snapshot.json"
-        assert any(
-            call[1]["Key"] == key for call in storage._s3.put_object.call_args_list
-        ), f"snapshot must be written to {key}"
+        assert any(call[1]["Key"] == key for call in storage._s3.put_object.call_args_list), f"snapshot must be written to {key}"
 
     def test_snapshot_roundtrip(self, storage):
         snap = {"root_hash": "abc", "elements": [{"id": 1}]}
@@ -63,9 +62,7 @@ class TestPostgresS3StorageContract:
     def test_certificate_writes_fixed_path(self, storage):
         storage.persist_evidence("inc-1", "certificate", {"claim": "test"})
         key = "evidence/inc-1/certificate.json"
-        assert any(
-            call[1]["Key"] == key for call in storage._s3.put_object.call_args_list
-        ), f"certificate must be written to {key}"
+        assert any(call[1]["Key"] == key for call in storage._s3.put_object.call_args_list), f"certificate must be written to {key}"
 
     def test_certificate_roundtrip(self, storage):
         cert = {"claim": "test-mitigation", "signature": "sig123"}
@@ -83,3 +80,51 @@ class TestPostgresS3StorageContract:
         assert k.startswith("evidence/inc-1/replay/")
         assert k.endswith(".json")
         assert k != "evidence/inc-1/replay.json"
+
+    def test_evidence_bundle_preserves_identity_tenant_and_manifest(self):
+        storage = PostgresS3Storage.__new__(PostgresS3Storage)
+        storage._write_wo28 = MagicMock()
+        storage._get_wo28 = MagicMock(return_value=None)
+        storage._s3 = MagicMock()
+        storage._bucket = "test-bucket"
+        storage._prefix = "evidence"
+        bundle = {
+            "id": f"urn:notary:evidence-bundle:{'a' * 64}",
+            "type": "org.dep.evidence-bundle",
+            "subject_ref": "urn:notary:assurance-candidate:ac-1",
+            "created_at": "2026-07-23T00:00:00+00:00",
+            "provenance": {
+                "epistemic_status": "derived",
+                "provider_id": "urn:notary:proof-bridge",
+                "collected_at": "2026-07-23T00:00:00+00:00",
+            },
+            "manifest_digest": {"algorithm": "sha-256", "value": "a" * 64},
+            "subjects": [
+                {
+                    "resource_ref": "urn:notary:resource:1",
+                    "digest": {"algorithm": "sha-256", "value": "b" * 64},
+                }
+            ],
+            "declared_omissions": [],
+            "custody_events": [],
+            "sealed_at": "2026-07-23T00:00:00+00:00",
+            "extensions": {
+                "urn:notary:proof-bridge": {
+                    "candidate_id": "ac-1",
+                    "environment_id": "env-test",
+                }
+            },
+        }
+
+        ref = storage.store_evidence_bundle(bundle, "org-a")
+
+        assert ref == bundle["id"]
+        persisted = storage._write_wo28.call_args.args[1]
+        assert persisted.id == bundle["id"]
+        assert persisted.org_id == "org-a"
+        assert persisted.environment_id == "env-test"
+        assert persisted.manifest_digest == bundle["manifest_digest"]
+        assert persisted.subjects == bundle["subjects"]
+        put = storage._s3.put_object.call_args.kwargs
+        assert put["IfNoneMatch"] == "*"
+        assert put["Key"] == f"evidence/evidence-bundles/{'a' * 64}.json"

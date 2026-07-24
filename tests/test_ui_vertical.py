@@ -29,6 +29,7 @@ def server() -> Generator[subprocess.Popen[Any], None, None]:
     while time.time() < deadline:
         try:
             import urllib.request
+
             with urllib.request.urlopen(f"{BASE_URL}/health", timeout=1):
                 break
         except Exception:
@@ -87,13 +88,15 @@ def test_release_gate_end_to_end(page: Page, server: subprocess.Popen[Any]) -> N
     if page.locator("button:has-text('Verify Fix')").is_visible():
         page.locator("button:has-text('Verify Fix')").click()
         time.sleep(1)
-    if page.locator("button:has-text('Issue Proof')").is_visible():
-        page.locator("button:has-text('Issue Proof')").click()
+    issue_proof = page.locator("button:has-text('Issue Proof')")
+    if issue_proof.is_visible() and issue_proof.is_enabled():
+        issue_proof.click()
         time.sleep(1)
 
     # Promote to scenario if eligible.
-    if page.locator("button:has-text('Promote to Scenario')").is_visible():
-        page.locator("button:has-text('Promote to Scenario')").click()
+    promote = page.locator("button:has-text('Promote to Scenario')")
+    if promote.is_visible() and promote.is_enabled():
+        promote.click()
         time.sleep(1)
 
     # Readiness view should be reachable.

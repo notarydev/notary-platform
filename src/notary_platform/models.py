@@ -491,6 +491,7 @@ class VerificationRecord:
     environment_id: str = "env:demo"
     source_type: DataSourceType = DataSourceType.api_submission
     external_ref: str = ""
+    bridge_key: str = ""
     agent_id: str = ""
     business_function: str = ""
     events: List[AIExecutionEvent] = field(default_factory=list)
@@ -535,6 +536,7 @@ class VerificationRecord:
             "environment_id": self.environment_id,
             "source_type": self.source_type.value,
             "external_ref": self.external_ref,
+            "bridge_key": self.bridge_key,
             "agent_id": self.agent_id,
             "business_function": self.business_function,
             "events": [e.to_dict() for e in self.events],
@@ -590,12 +592,14 @@ class VerificationRecord:
                 kind = EventKind(e.get("kind", "model_call"))
             except ValueError:
                 kind = EventKind.model_call
-            events.append(AIExecutionEvent(
-                id=e.get("id", uuid.uuid4().hex),
-                kind=kind,
-                payload=e.get("payload", {}),
-                order=e.get("order", 0),
-            ))
+            events.append(
+                AIExecutionEvent(
+                    id=e.get("id", uuid.uuid4().hex),
+                    kind=kind,
+                    payload=e.get("payload", {}),
+                    order=e.get("order", 0),
+                )
+            )
 
         return cls(
             id=d.get("id", ""),
@@ -603,6 +607,7 @@ class VerificationRecord:
             environment_id=d.get("environment_id", "env:demo"),
             source_type=str_to_enum(DataSourceType, d.get("source_type", "api_submission"), DataSourceType.api_submission),
             external_ref=d.get("external_ref", ""),
+            bridge_key=d.get("bridge_key", ""),
             agent_id=d.get("agent_id", ""),
             business_function=d.get("business_function", ""),
             events=events,
@@ -2000,6 +2005,71 @@ class SetupReadinessAssessment:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
 
+@dataclass
+class EvidenceBundle:
+    id: str
+    org_id: str
+    environment_id: str
+    type: str
+    subject_ref: str
+    created_at: str
+    provenance: dict[str, Any]
+    manifest_digest: dict[str, str]
+    subjects: list[dict[str, Any]]
+    declared_omissions: list[str]
+    custody_events: list[dict[str, Any]]
+    sealed_at: str
+    integrity: dict[str, str] = field(default_factory=dict)
+    relationships: list[dict[str, str]] = field(default_factory=list)
+    extensions: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def bundle_id(self) -> str:
+        return self.id
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "id": self.id,
+            "type": self.type,
+            "subject_ref": self.subject_ref,
+            "created_at": self.created_at,
+            "provenance": dict(self.provenance),
+            "manifest_digest": dict(self.manifest_digest),
+            "subjects": [dict(subject) for subject in self.subjects],
+            "declared_omissions": list(self.declared_omissions),
+            "custody_events": [dict(event) for event in self.custody_events],
+            "sealed_at": self.sealed_at,
+        }
+        if self.integrity:
+            result["integrity"] = dict(self.integrity)
+        if self.relationships:
+            result["relationships"] = [dict(relationship) for relationship in self.relationships]
+        if self.extensions:
+            result["extensions"] = dict(self.extensions)
+        return result
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EvidenceBundle":
+        extension = d.get("extensions", {}).get("urn:notary:proof-bridge", {})
+        return cls(
+            id=d.get("id", d.get("bundle_id", "")),
+            org_id=d.get("org_id", extension.get("org_id", "")),
+            environment_id=d.get("environment_id", extension.get("environment_id", "")),
+            type=d.get("type", "org.dep.evidence-bundle"),
+            subject_ref=d.get("subject_ref", extension.get("candidate_ref", "")),
+            created_at=d.get("created_at", ""),
+            provenance=dict(d.get("provenance", {})),
+            manifest_digest=dict(d.get("manifest_digest", {})),
+            subjects=[dict(subject) for subject in d.get("subjects", [])],
+            declared_omissions=list(d.get("declared_omissions", [])),
+            custody_events=[dict(event) for event in d.get("custody_events", [])],
+            sealed_at=d.get("sealed_at", ""),
+            integrity=dict(d.get("integrity", {})),
+            relationships=[dict(relationship) for relationship in d.get("relationships", [])],
+            extensions=dict(d.get("extensions", {})),
+        )
+
+
 # Attach generic from_dict to all dataclasses for storage reconstruction.
 _DATACLASS_MODELS = [
     Organization,
@@ -2044,6 +2114,7 @@ _DATACLASS_MODELS = [
     ImportPolicy,
     RecordSelectionResult,
     SetupReadinessAssessment,
+    EvidenceBundle,
 ]
 for _model_cls in _DATACLASS_MODELS:
     if not hasattr(_model_cls, "from_dict"):

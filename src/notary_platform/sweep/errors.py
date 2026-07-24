@@ -1,0 +1,10 @@
+"""Stable error codes for Sweep operations."""
+
+SWEEP_BUDGET_EXCEEDED = "sweep_budget_exceeded"
+EVALUATOR_PREREQUISITE_MISSING = "evaluator_prerequisite_missing"
+EVALUATOR_EXECUTION_FAILED = "evaluator_execution_failed"
+SWEEP_RUN_NOT_FOUND = "sweep_run_not_found"
+SWEEP_DEFINITION_NOT_FOUND = "sweep_definition_not_found"
+EVALUATOR_NOT_FOUND = "evaluator_not_found"
+SWEEP_ALREADY_COMPLETED = "sweep_already_completed"
+SWEEP_CANCELLED = "sweep_cancelled"

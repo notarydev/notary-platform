@@ -144,11 +144,7 @@ def _scenario_agent_factory(scenario_id: str) -> Callable[..., str]:
                 pass
             retroactive_allowed = bool(recorded.get("retroactive_refund_allowed", False))
             human_review_required = bool(recorded.get("human_review_required", False))
-            enforce = bool(
-                kwargs.get("require_policy_match_for_refund_claims")
-                or kwargs.get("escalate_when_policy_requires_human_review")
-                or mode == "fixed"
-            )
+            enforce = bool(kwargs.get("require_policy_match_for_refund_claims") or kwargs.get("escalate_when_policy_requires_human_review") or mode == "fixed")
             if enforce and (not retroactive_allowed or human_review_required):
                 return "ESCALATE_TO_HUMAN"
             return "OFFER_RETROACTIVE_REFUND"
@@ -253,10 +249,11 @@ class IngestionService:
         agent_id: str = "",
         environment_id: str = "env:demo",
         promoted_to_incident: str = "",
+        record_id: str = "",
     ) -> VerificationRecord:
         from notary_platform.models import sdk_element_to_event
 
-        vr_id = self._next_vr_id()
+        vr_id = record_id or self._next_vr_id()
         events = [sdk_element_to_event(e, i) for i, e in enumerate(snapshot.get("elements", []))]
 
         # Extract metadata from snapshot body (SDK submit may include these fields)
@@ -410,9 +407,9 @@ class IngestionService:
         vr.replayability, vr.replayability_reason, vr.missing_prerequisites = replayability.assess(vr)
         return self.storage.create_vr(vr)
 
-    def create_incident_from_vr(self, vr: VerificationRecord) -> Incident:
+    def create_incident_from_vr(self, vr: VerificationRecord, incident_id: str = "") -> Incident:
         snapshot = self._snapshot_from_vr(vr)
-        incident = self.storage.create_incident(snapshot, org_id=vr.org_id)
+        incident = self.storage.create_incident(snapshot, org_id=vr.org_id, incident_id=incident_id)
         incident._record_custody("ingested", actor="ingestion_service", detail=f"from vr {vr.id}")
         self.storage.update_incident(incident)
         self.storage.persist_evidence(incident.incident_id, "snapshot", snapshot)
@@ -463,11 +460,11 @@ class ReplayabilityService:
             msg = "Replayability could not be determined."
 
         if score >= 0.8 and state == ReplayabilityStatus.replayable:
-            vr.defensibility_summary = f"{int(score*100)}% of the decision path is deterministically re-testable."
+            vr.defensibility_summary = f"{int(score * 100)}% of the decision path is deterministically re-testable."
         elif score >= 0.5:
-            vr.defensibility_summary = f"{int(score*100)}% deterministically re-testable. Remaining relies on sealed evidence assumptions."
+            vr.defensibility_summary = f"{int(score * 100)}% deterministically re-testable. Remaining relies on sealed evidence assumptions."
         else:
-            vr.defensibility_summary = f"Evidence-only: {int(score*100)}% deterministically testable. Manual verification required."
+            vr.defensibility_summary = f"Evidence-only: {int(score * 100)}% deterministically testable. Manual verification required."
 
         return state, msg, missing
 
@@ -488,10 +485,7 @@ class ReplayabilityService:
                 seed = payload.get("seed", metadata.get("seed"))
                 return temperature == 0.0 and seed is not None
 
-            deterministic_llm = all(
-                _deterministic_llm_payload(e.payload)
-                for e in llm_events
-            )
+            deterministic_llm = all(_deterministic_llm_payload(e.payload) for e in llm_events)
             if deterministic_llm:
                 penalty += 1.0
                 flags.append(
@@ -874,6 +868,32 @@ class MutationService:
                     incident.status = IncidentStatus.mitigated
                 incident._record_custody("mutation_tested", actor="mutation_service", detail=f"test={test.id}")
                 self.storage.update_incident(incident)
+                if test.verdict == "verified":
+                    lineage = incident.snapshot_summary.get("proof_bridge_lineage", {})
+                    candidate = self.storage.get_assurance_candidate(lineage.get("candidate_id", ""))
+                    der = self.storage.get_decision_evidence_record(lineage.get("der_id", ""))
+                    from notary_platform.sweep.bridge import ProofBridgeService
+                    from notary_platform.sweep.sufficiency import EvidenceSufficiencyService
+
+                    if (
+                        candidate is not None
+                        and der is not None
+                        and candidate.org_id == org_id
+                        and der.org_id == org_id
+                        and candidate.environment_id == der.environment_id == vr.environment_id
+                        and lineage.get("candidate_id") == candidate.id
+                        and lineage.get("der_id") == candidate.der_id
+                        and vr.bridge_key == ProofBridgeService._bridge_key(candidate)
+                    ):
+                        level = EvidenceSufficiencyService.recalculate_after_verification(
+                            candidate.evidence_level,
+                            has_replay_result=True,
+                            has_verified_mutation=True,
+                        )
+                        candidate.evidence_level = level
+                        der.evidence_level = level
+                        self.storage.update_assurance_candidate(candidate)
+                        self.storage.create_decision_evidence_record(der)
 
         return test
 

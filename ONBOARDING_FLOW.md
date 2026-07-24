@@ -22,17 +22,24 @@ The SPA loads `app.js` and calls `GET /v1/platform/home` to get org stats, envir
 SPA nav('setup') → renders Setup view from renderSetup(step)
 ```
 
-The setup wizard has steps:
+The setup wizard is the canonical assurance plan. It has steps:
 
 | Step | Frontend | Backend |
 |------|----------|---------|
-| 1. SDK Install | Shows `pip install notary-sdk` code snippet, API token | `GET /v1/platform/keys` lists keys |
-| 2. Connect systems | Renders available systems from `_SEED` + selection UI | `GET /v1/platform/org/systems` returns systems |
-| 3. Capture method | Radio buttons (SDK .submit / Webhook / Manual) | — |
-| 4. Workflow confirmation | Visual flow of data lifecycle | — |
-| 5. Done | Redirects to Verification Records | — |
+| 1. Define objective | Select a decision workflow template | `AssuranceSetupPlan` |
+| 2. Configure workflow | Describe failure, safe outcome, and risk | `AssuranceSetupPlan` |
+| 3. Register AI system | Attach the system that makes the decision | `AI system` APIs |
+| 4. Define evidence boundary | Select the evidence that explains the decision | `EvidenceContract` |
+| 5. Choose capture method | Select SDK, API, webhook, or manual capture | `CapturePolicy` |
+| 6. Select records | Define which decisions are worth proving | `RecordSelectionRules` |
+| 7. Discover decision records | Preview, map, and selectively commit an export | `/v1/setup/plans/{plan_id}/imports/*` |
+| 8. Send or import records | Create the first Verification Records | Verification router / import commit |
+| 9. Review replayability | Replay the captured decision path | Replay router |
+| 10. Assess readiness | Evaluate proof and release-gate prerequisites | `SetupReadinessService` |
 
-**Caveat:** The setup wizard is a demo facade — it doesn't actually install SDKs or connect real systems. It sets `setupSystems` and `setupCaptureMethod` in `S` (in-memory JS state) but doesn't persist. Real onboarding would POST to a backend endpoint.
+Decision Discovery is a phase inside this same plan. The legacy top-level Discovery nav is retained as a shortcut into Setup step 7 and uses the active `setupPlanId`; it does not create a parallel plan.
+
+The wizard does not install SDKs automatically. It provides the capture method, token, endpoint, and copy-paste integration path; the selected plan and capture method are persisted through the Setup APIs.
 
 **Files:** `app.js:510-660` (setup wizard functions), `routers/platform.py:60` (`get_systems`)
 

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decisionevidence.org/schemas/dep/0.1/common.schema.json",
+  "title": "DEP Common Definitions",
+  "$defs": {
+    "uri": {"type": "string", "format": "uri"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "digest": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": {"type": "string", "enum": ["sha-256", "sha-384", "sha-512"]},
+        "value": {"type": "string", "minLength": 32}
+      },
+      "additionalProperties": false
+    },
+    "epistemicStatus": {
+      "type": "string",
+      "enum": ["observed", "asserted_by_provider", "customer_confirmed", "derived", "inferred", "missing", "conflicted"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["epistemic_status", "provider_id", "collected_at"],
+      "properties": {
+        "epistemic_status": {"$ref": "#/$defs/epistemicStatus"},
+        "provider_id": {"$ref": "#/$defs/uri"},
+        "provider_object_id": {"type": "string"},
+        "collected_at": {"$ref": "#/$defs/timestamp"},
+        "transformations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/uri"},
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["predicate", "object_ref"],
+      "properties": {
+        "predicate": {
+          "oneOf": [
+            {"enum": ["describes", "derived-from", "governed-by", "expected-by", "constrained-by", "produced-by", "corroborates", "contradicts", "supersedes", "included-in", "evaluated-by", "reviewed-by", "verified-by", "remediated-by", "prevents"]},
+            {"type": "string", "format": "uri"}
+          ]
+        },
+        "object_ref": {"$ref": "#/$defs/uri"}
+      },
+      "additionalProperties": false
+    },
+    "externalReference": {
+      "type": "object",
+      "required": ["uri", "media_type", "digest", "access_class"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "media_type": {"type": "string"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "access_class": {"type": "string"},
+        "redactions": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "resourceCore": {
+      "type": "object",
+      "required": ["id", "type", "subject_ref", "created_at", "provenance"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uri"},
+        "type": {"type": "string", "pattern": "^org\\.dep\\."},
+        "subject_ref": {"$ref": "#/$defs/uri"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "integrity": {"$ref": "#/$defs/digest"},
+        "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}, "default": []},
+        "extensions": {"type": "object", "propertyNames": {"format": "uri"}}
+      }
+    }
+  }
+}
