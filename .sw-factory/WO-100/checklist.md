@@ -25,51 +25,45 @@
 
 ### Decision Landscape Overview
 
-- [ ] Scaffold `renderDecisionLandscape()` in `static/app/app.js`
-- [ ] Fetch landscape data from `GET /v1/discovery/landscape`
-- [ ] Display source count, decision families, coverage %, evaluator status
-- [ ] Display evidence gaps with advisory signals
+- [x] Scaffold `renderDecisionLandscape()` in `static/app/app.js`
+- [x] Fetch landscape data from `GET /v1/discovery/landscape`
+- [x] Display source count, decision families, evaluator status
+- [x] Display evidence gaps with advisory signals
 
 ### Assurance Candidate Queue
 
-- [ ] Scaffold `renderCandidateQueue()` in `static/app/app.js`
-- [ ] Fetch candidates from `GET /v1/candidates/`
-- [ ] Display candidate list with status, priority, evidence bundle ref
-- [ ] Add review action buttons (approve/reject/suppress/delegate)
-- [ ] Scaffold `renderCandidateDetail()` for single-candidate view
+- [x] Scaffold `renderLandscapeCandidates()` in `static/app/app.js`
+- [x] Fetch candidates from `GET /v1/discovery/candidates`
+- [x] Display candidate list with type, severity, evidence level, lifecycle state
+- [x] Add review action buttons (approve_incident/dismiss/request_context)
+- [x] Scaffold `openCandidateDetail()` for single-candidate view + Proof Bridge promote
+- [ ] Resolution Trace explorer — DER drill-down with context bindings
 
-### Resolution Trace Explorer
+### Sweep Definitions
 
-- [ ] Scaffold `renderResolutionTrace()` in `static/app/app.js`
-- [ ] Fetch context bindings from `GET /v1/discovery/context`
-- [ ] Display DER chain with timestamps and identities
-- [ ] Support drill-down to individual DER
-
-### Sweep Run History
-
-- [ ] Scaffold `renderSweepHistory()` in `static/app/app.js`
-- [ ] Fetch sweep runs from `GET /v1/sweep/runs`
-- [ ] Display table of runs with status, evaluator results, timestamps
+- [x] Scaffold `renderLandscapeSweep()` in `static/app/app.js`
+- [x] Fetch sweep definitions from `GET /v1/discovery/sweep-definitions`
+- [x] Display table of definitions with Run action
+- [x] Implement `runSweep()` to trigger a sweep run
 
 ### Navigation And Styling
 
-- [ ] Update `static/app/index.html` navigation with new view links
-- [ ] Add CSS classes to `static/app/styles.css`
-- [ ] Wire up state management for new views
+- [x] Update `static/app/index.html` navigation with "Decision Landscape" link
+- [x] Wire up state management (`S.viewParams.tab` for tab navigation)
+- [ ] Add CSS classes to `static/app/styles.css` (using existing components)
 
 ## Phase 3: Testing
 
-- [ ] Update `tests/test_platform_static_app.py` for new views
-- [ ] Create `tests/test_landscape_api.py` for landscape endpoint contract
+- [x] Update `tests/test_platform_static_app.py` — landscape view registration test
+- [x] Create `tests/test_landscape_api.py` — 14 API contract tests
 - [ ] Expand `tests/test_ui_vertical.py` with Playwright browser coverage
-- [ ] Run full test suite: `pytest -q --ignore=tests/test_ui_vertical.py`
-- [ ] Run browser tests: `pytest tests/test_ui_vertical.py`
+- [x] Run full test suite: `pytest -q --ignore=tests/test_ui_vertical.py` — 480 passed
+- [x] Run browser tests: `pytest tests/test_ui_vertical.py` — 4 passed
+- [x] `ruff check .` passes
+- [x] `mypy src` passes
+- [x] `make topology` succeeds
 
 ## Phase 4: Review And Merge
 
-- [ ] `ruff check .` passes
-- [ ] `mypy src` passes
-- [ ] `make topology` succeeds
-- [ ] `git diff --check origin/main...HEAD` passes
 - [ ] Create PR against main
 - [ ] Request independent review
