@@ -11,6 +11,7 @@ graph objects.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -20,14 +21,18 @@ import pytest
 from playwright.sync_api import Page, expect
 
 BASE_URL = "http://localhost:8765"
+SERVE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed_and_serve.py")
 
 
 @pytest.fixture(scope="module")
 def server() -> Generator[subprocess.Popen[Any], None, None]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.path.join(os.path.dirname(SERVE_SCRIPT), "src")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "notary_platform.api_server.main:app", "--port", "8765"],
+        [sys.executable, SERVE_SCRIPT, "8765"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
     )
     deadline = time.time() + 30
     while time.time() < deadline:
@@ -43,15 +48,11 @@ def server() -> Generator[subprocess.Popen[Any], None, None]:
     proc.wait(timeout=10)
 
 
-def _seed(page: Page) -> None:
-    """Seed landscape fixtures via the real API."""
-    import pathlib
+def _seed() -> None:
+    """Landscape fixtures are pre-seeded by seed_and_serve.py. No-op."""
 
-    seed_js = (pathlib.Path("/tmp/wp100_seed.js")).read_text()
-    page.goto(f"{BASE_URL}/app/")
-    page.wait_for_load_state("networkidle")
-    page.evaluate("(async () => {" + seed_js + " return await seedWP100(); })()")
-    time.sleep(2)
+    # Wait for seed data to be processed
+    time.sleep(3)
 
 
 def _nav(page: Page, tab: str = "") -> None:
@@ -84,7 +85,7 @@ def _close_drawer(page: Page) -> None:
 
 
 def test_landscape_loads_with_persisted_data(page: Page, server: subprocess.Popen[Any]) -> None:
-    _seed(page)
+    _seed()
     _nav(page)
     expect(page.locator("text=Decision Landscape").first).to_be_visible()
     expect(page.locator(".queue-chip").first).to_be_visible()
