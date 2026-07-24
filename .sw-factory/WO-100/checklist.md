@@ -37,7 +37,15 @@
 - [x] Display candidate list with type, severity, evidence level, lifecycle state
 - [x] Add review action buttons (approve_incident/dismiss/request_context)
 - [x] Scaffold `openCandidateDetail()` for single-candidate view + Proof Bridge promote
-- [ ] Resolution Trace explorer — DER drill-down with context bindings
+  - [x] E0–E4 evidence sufficiency visual indicator
+  - [x] DER detail with identity, method, environment, version, context bindings, source resources
+  - [x] Resolution trace link from DER detail
+  - [x] Proof eligibility status with failures, next actions, authority
+  - [x] Review history
+  - [x] Outcome comparison (expected vs actual)
+  - [x] Business summary display
+  - [x] Action buttons per lifecycle state
+- [x] Resolution Trace explorer — DER drill-down with context bindings
 
 ### Sweep Definitions
 
@@ -50,20 +58,20 @@
 
 - [x] Update `static/app/index.html` navigation with "Decision Landscape" link
 - [x] Wire up state management (`S.viewParams.tab` for tab navigation)
-- [ ] Add CSS classes to `static/app/styles.css` (using existing components)
+  - [x] Add CSS classes to `static/app/styles.css` (using existing components)
 
 ## Phase 3: Testing
 
 - [x] Update `tests/test_platform_static_app.py` — landscape view registration test
 - [x] Create `tests/test_landscape_api.py` — 14 API contract tests
-- [ ] Expand `tests/test_ui_vertical.py` with Playwright browser coverage
-- [x] Run full test suite: `pytest -q --ignore=tests/test_ui_vertical.py` — 480 passed
-- [x] Run browser tests: `pytest tests/test_ui_vertical.py` — 4 passed
+- [x] Expand `tests/test_ui_vertical.py` with Playwright browser coverage — 34 tests covering landscape journey, families, candidates, DER detail, resolution trace, evidence gaps, signals safety, state coverage, responsive, authority safety, sweep, tab navigation
+- [x] Run browser tests: `pytest tests/test_ui_vertical.py` — 34 passed
+- [x] Run all tests: `pytest tests/test_ui_vertical.py tests/test_landscape_api.py tests/test_platform_static_app.py` — 55 passed
 - [x] `ruff check .` passes
 - [x] `mypy src` passes
 - [x] `make topology` succeeds
 
 ## Phase 4: Review And Merge
 
-- [ ] Create PR against main
+- [x] Create PR against main
 - [ ] Request independent review
